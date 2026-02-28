@@ -18,19 +18,43 @@ That's it — no manual file copying needed.
 
 ### 2. Install the MCP server
 
-**Option A: Pre-built binary (recommended, no runtime needed)**
+Download the binary for your platform from [GitHub Releases](https://github.com/tomyud1/godot-mcp/releases):
 
-Download the binary for your platform from [GitHub Releases](https://github.com/tomyud1/godot-mcp/releases) and place it somewhere on your PATH (e.g., `~/.local/bin/` on Linux/macOS).
+| Platform | File |
+|----------|------|
+| Windows | `godot-mcp-server-windows-amd64.exe` |
+| macOS (Apple Silicon) | `godot-mcp-server-darwin-arm64` |
+| macOS (Intel) | `godot-mcp-server-darwin-amd64` |
+| Linux | `godot-mcp-server-linux-amd64` |
 
-**Option B: Via npm (requires Node.js)**
+#### Windows
 
-Install [Node.js](https://nodejs.org/en/download) (LTS version), then use `npx` in the config below — it downloads the server automatically.
+1. Create a folder for the binary, e.g. `C:\Tools\`
+2. Move `godot-mcp-server-windows-amd64.exe` into that folder
+3. Rename it to `godot-mcp-server.exe`
+4. **Add the folder to your PATH:**
+   - Press `Win + R`, type `sysdm.cpl`, press Enter
+   - Go to the **Advanced** tab → click **Environment Variables**
+   - Under **User variables**, select `Path` and click **Edit**
+   - Click **New**, type `C:\Tools\`, click **OK** on every dialog
+5. Open a **new** terminal and verify:
+   ```
+   godot-mcp-server.exe --help
+   ```
 
-### 3. Add the server config to your AI client
+> If you don't want to touch PATH, skip step 4 and use the full path in your AI client config (see step 3).
 
-**Using the pre-built binary:**
+#### macOS / Linux
+
+```bash
+mv godot-mcp-server-darwin-arm64 ~/.local/bin/godot-mcp-server
+chmod +x ~/.local/bin/godot-mcp-server
+```
+
+### 3. Add the server to your AI client
 
 **Claude Desktop** — Settings → Developer → Edit Config:
+
 ```json
 {
   "mcpServers": {
@@ -41,31 +65,23 @@ Install [Node.js](https://nodejs.org/en/download) (LTS version), then use `npx` 
 }
 ```
 
-**Claude Code** — run in terminal:
-```bash
-claude mcp add godot godot-mcp-server
-```
-
-**Using npm:**
-
-**Claude Desktop** / **Cursor** — Settings → Developer → Edit Config:
+Windows without PATH — use the full path instead:
 ```json
 {
   "mcpServers": {
     "godot": {
-      "command": "npx",
-      "args": ["-y", "godot-mcp-server"]
+      "command": "C:\\Tools\\godot-mcp-server.exe"
     }
   }
 }
 ```
 
-**Claude Code** — run in terminal:
+**Claude Code:**
 ```bash
-claude mcp add godot -- npx -y godot-mcp-server
+claude mcp add godot godot-mcp-server
 ```
 
-Works with any MCP-compatible client (Cline, Windsurf, Cursor, etc.)
+Works with any MCP-compatible client (Cursor, Windsurf, Cline, etc.) — same JSON format.
 
 ### 4. Restart your AI client
 
@@ -111,8 +127,8 @@ AI cannot create 100% of a game by itself — it struggles with complex UI layou
 ```
 ┌─────────────┐    MCP (stdio)    ┌─────────────┐   WebSocket    ┌──────────────┐
 │  AI Client   │◄────────────────►│  MCP Server  │◄─────────────►│ Godot Editor │
-│  (Claude,    │                  │  (Go binary  │   port 6505   │  (Plugin)    │
-│   Cursor)    │                  │   or Node)   │               │              │
+│  (Claude,    │                  │  (Go binary) │   port 6505   │  (Plugin)    │
+│   Cursor)    │                  │              │               │              │
 └─────────────┘                  │  Visualizer  │               │  32 tool     │
                                  │  HTTP :6510  │               │  handlers    │
                                  └──────┬───────┘               └──────────────┘
@@ -137,20 +153,17 @@ AI cannot create 100% of a game by itself — it struggles with complex UI layou
 
 ## Development
 
-**Go server (recommended):**
 ```bash
 cd mcp-server-go
 make build
 ```
+
 Binary is at `mcp-server-go/bin/godot-mcp-server`. Cross-compile for all platforms with `make build-all`.
 
-**Node.js server:**
-```bash
-cd mcp-server
-npm install
-npm run build
+On Windows without `make`:
 ```
-Then point your AI client at `mcp-server/dist/index.js` instead of using `npx`.
+go build -o bin\godot-mcp-server.exe ./cmd/godot-mcp-server
+```
 
 ---
 
@@ -160,4 +173,4 @@ MIT
 
 ---
 
-**[npm package](https://www.npmjs.com/package/godot-mcp-server)** · **[Report Issues](https://github.com/tomyud1/godot-mcp/issues)**
+**[GitHub](https://github.com/tomyud1/godot-mcp)** · **[Report Issues](https://github.com/tomyud1/godot-mcp/issues)**
