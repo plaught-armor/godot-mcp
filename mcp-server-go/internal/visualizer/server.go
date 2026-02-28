@@ -140,16 +140,12 @@ func buildHTML(projectDataJSON []byte) (string, error) {
 	// Inline CSS (same as TS version)
 	html = strings.Replace(html, "%%CSS%%", string(cssBytes), 1)
 
-	// Replace the bundled script block with module imports.
-	// The TS version injects a single IIFE; we instead load ES modules directly.
-	// state.js exports PROJECT_DATA which reads from window.__PROJECT_DATA__.
-	moduleScript := fmt.Sprintf(
-		"window.__PROJECT_DATA__ = %s;\n",
-		string(projectDataJSON),
-	)
-	moduleScript += `import './main.js';`
-
-	html = strings.Replace(html, "%%SCRIPT%%", moduleScript, 1)
+	// Inject project data as a regular (non-module) script so it runs before
+	// the ES module import.  Module imports are hoisted, so if both were in
+	// the same <script type="module">, the import would execute first and
+	// state.js would read window.__PROJECT_DATA__ before it was set.
+	dataScript := fmt.Sprintf("window.__PROJECT_DATA__ = %s;", string(projectDataJSON))
+	html = strings.Replace(html, "%%DATA%%", dataScript, 1)
 
 	return html, nil
 }

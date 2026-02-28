@@ -4,21 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/bridge"
 	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/tools"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/visualizer"
 )
 
 const (
 	serverName    = "godot-mcp-server"
-	serverVersion = "0.3.0"
+	serverVersion = "0.3.1"
 )
 
 // New creates and configures the MCP server with all tools registered.
-func New(b *bridge.GodotBridge, viz *visualizer.Server) *mcp.Server {
+func New(b *bridge.GodotBridge) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Version: serverVersion,
@@ -43,7 +41,7 @@ func New(b *bridge.GodotBridge, viz *visualizer.Server) *mcp.Server {
 				Description: td.Description,
 				InputSchema: td.InputSchema,
 			},
-			toolHandler(b, viz, td),
+			toolHandler(b, td),
 		)
 	}
 
@@ -92,7 +90,7 @@ func statusHandler(b *bridge.GodotBridge) mcp.ToolHandler {
 	}
 }
 
-func toolHandler(b *bridge.GodotBridge, viz *visualizer.Server, td *tools.ToolDef) mcp.ToolHandler {
+func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args map[string]any
 		if req.Params.Arguments != nil {
@@ -119,33 +117,8 @@ func toolHandler(b *bridge.GodotBridge, viz *visualizer.Server, td *tools.ToolDe
 			}
 		}
 
-		// Post-processing for map_project
-		if td.Name == "map_project" {
-			result = handleMapProject(viz, result)
-		}
-
 		return textResult(result)
 	}
-}
-
-func handleMapProject(viz *visualizer.Server, result any) any {
-	m, ok := result.(map[string]any)
-	if !ok {
-		return result
-	}
-	projectMap, ok := m["project_map"]
-	if !ok {
-		return result
-	}
-
-	url, err := viz.Serve(projectMap)
-	if err != nil {
-		log.Printf("[mcpserver] Visualization failed: %v", err)
-		return result
-	}
-
-	m["visualization_url"] = url
-	return m
 }
 
 func textResult(v any) (*mcp.CallToolResult, error) {

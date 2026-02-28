@@ -10,7 +10,6 @@ func init() {
 	AllTools = append(AllTools, scriptTools...)
 	AllTools = append(AllTools, projectTools...)
 	AllTools = append(AllTools, assetTools...)
-	AllTools = append(AllTools, visualizerTools...)
 
 	toolIndex = make(map[string]*ToolDef, len(AllTools))
 	for i := range AllTools {

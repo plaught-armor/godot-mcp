@@ -50,6 +50,7 @@ type pendingRequest struct {
 }
 
 type connectionCallback func(connected bool, info *GodotInfo)
+type visualizerCallback func(data json.RawMessage)
 
 // GodotBridge manages the WebSocket connection to the Godot plugin.
 type GodotBridge struct {
@@ -61,6 +62,7 @@ type GodotBridge struct {
 	info       *GodotInfo
 	pending    map[string]*pendingRequest
 	callbacks  []connectionCallback
+	vizCb      visualizerCallback
 	httpServer *http.Server
 	cancelRead context.CancelFunc
 }
@@ -154,6 +156,32 @@ func (b *GodotBridge) OnConnectionChange(fn connectionCallback) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.callbacks = append(b.callbacks, fn)
+}
+
+// OnVisualizerRequest registers a callback for when Godot sends project map data to visualize.
+func (b *GodotBridge) OnVisualizerRequest(fn visualizerCallback) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.vizCb = fn
+}
+
+// SendNotification sends a one-way message to Godot (no response expected).
+func (b *GodotBridge) SendNotification(msgType string, fields map[string]any) error {
+	b.mu.Lock()
+	conn := b.conn
+	b.mu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("Godot is not connected")
+	}
+	msg := map[string]any{"type": msgType}
+	for k, v := range fields {
+		msg[k] = v
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return conn.Write(context.Background(), websocket.MessageText, data)
 }
 
 // InvokeTool sends a tool invocation to Godot and waits for the result.
@@ -286,6 +314,15 @@ func (b *GodotBridge) handleMessage(msg IncomingMessage) {
 			log.Printf("[GodotBridge] Godot project: %s", msg.ProjectPath)
 		}
 		b.mu.Unlock()
+	case "open_visualizer":
+		b.mu.Lock()
+		cb := b.vizCb
+		b.mu.Unlock()
+		if cb != nil {
+			go cb(msg.Result) // Run in goroutine — viz.Serve() blocks while starting HTTP server
+		} else {
+			log.Printf("[GodotBridge] Received open_visualizer but no handler registered")
+		}
 	default:
 		log.Printf("[GodotBridge] Unknown message type: %s", msg.Type)
 	}

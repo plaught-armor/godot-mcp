@@ -7,6 +7,8 @@ class_name MCPClient
 signal connected
 signal disconnected
 signal tool_requested(request_id: String, tool_name: String, args: Dictionary)
+signal visualizer_opened(url: String)
+signal visualizer_failed(error: String)
 
 const DEFAULT_URL := "ws://127.0.0.1:6505"
 const RECONNECT_DELAY := 3.0 # seconds
@@ -14,6 +16,7 @@ const MAX_RECONNECT_DELAY := 30.0 # max backoff
 const MAX_PACKETS_PER_FRAME := 32
 
 var socket: WebSocketPeer = WebSocketPeer.new()
+const OUTBOUND_BUFFER_SIZE := 10 * 1024 * 1024 # 10 MB — matches Go server read limit
 var server_url: String = DEFAULT_URL
 var _is_connected := false
 var _reconnect_timer: Timer
@@ -87,6 +90,13 @@ func send_tool_result(request_id: String, success: bool, result = null, error: S
 	print("[MCP] Sent result for ", request_id, " (success=", success, ")")
 
 
+func send_visualizer_request(project_map: Dictionary) -> void:
+	_send_message({
+		&"type": &"open_visualizer",
+		&"result": project_map,
+	})
+
+
 func is_connected_to_server() -> bool:
 	return _is_connected
 
@@ -96,6 +106,7 @@ func _attempt_connection() -> void:
 		socket.close()
 
 	print("[MCP] Connecting to ", server_url, "...")
+	socket.outbound_buffer_size = OUTBOUND_BUFFER_SIZE
 	var err := socket.connect_to_url(server_url)
 	if err == OK:
 		set_process(true)
@@ -158,6 +169,13 @@ func _handle_message(json_string: String) -> void:
 			var args: Dictionary = message.get(&"args", { })
 			print("[MCP] Tool request: ", tool_name, " (", request_id, ")")
 			tool_requested.emit(request_id, tool_name, args)
+		"visualizer_status":
+			var url: String = message.get(&"url", "")
+			var err: String = message.get(&"error", "")
+			if url != "":
+				visualizer_opened.emit(url)
+			else:
+				visualizer_failed.emit(err)
 		_:
 			print("[MCP] Unknown message type: ", msg_type)
 

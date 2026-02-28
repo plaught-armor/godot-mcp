@@ -21,7 +21,6 @@ const BACKGROUND_SAFE_TOOLS: Array[StringName] = [
 	&"read_file",
 	&"search_project",
 	&"list_scripts",
-	&"map_project",
 	&"map_scenes",
 	&"validate_script",
 ]
@@ -55,9 +54,16 @@ func _enter_tree() -> void:
 	_mcp_client.connected.connect(_on_connected)
 	_mcp_client.disconnected.connect(_on_disconnected)
 	_mcp_client.tool_requested.connect(_on_tool_requested)
+	_mcp_client.visualizer_opened.connect(func(url: String):
+		print_rich("[Godot MCP] Project visualizer available at [url]%s[/url]" % url)
+	)
+	_mcp_client.visualizer_failed.connect(func(err: String):
+		push_error("[Godot MCP] Visualizer failed: ", err)
+	)
 
-	# Add status indicator to editor
+	# Add status indicator and menu items to editor
 	_setup_status_indicator()
+	add_tool_menu_item("MCP: Map Project", _on_map_project_pressed)
 
 	# Start connection
 	_mcp_client.connect_to_server()
@@ -84,6 +90,8 @@ func _exit_tree() -> void:
 	if _status_label:
 		remove_control_from_container(EditorPlugin.CONTAINER_TOOLBAR, _status_label)
 		_status_label.queue_free()
+
+	remove_tool_menu_item("MCP: Map Project")
 
 	print("[Godot MCP] Plugin unloaded")
 
@@ -156,7 +164,7 @@ func _thread_loop() -> void:
 
 		for req: Dictionary in batch:
 			var result: Dictionary = _tool_executor.execute_tool(req[&"tool"], req[&"args"])
-			call_deferred(&"_send_result", req[&"id"], result)
+			_send_result.call_deferred(req[&"id"], result)
 
 
 func _send_result(request_id: String, result: Dictionary) -> void:
@@ -167,3 +175,29 @@ func _send_result(request_id: String, result: Dictionary) -> void:
 	else:
 		var error: String = result.get(&"error", "Unknown error")
 		_mcp_client.send_tool_result(request_id, false, null, error)
+
+
+func _on_map_project_pressed() -> void:
+	if not _mcp_client.is_connected_to_server():
+		push_warning("[Godot MCP] Cannot map project — not connected to MCP server")
+		return
+	# Run map_project on a background thread to avoid blocking the editor
+	var thread := Thread.new()
+	thread.start(func():
+		var result: Dictionary = _tool_executor.execute_tool(&"map_project", {})
+		if result.get(&"ok", false):
+			var project_map: Dictionary = result.get(&"project_map", {})
+			_send_visualizer_data.call_deferred(project_map, thread)
+		else:
+			push_error("[Godot MCP] Map project failed: ", result.get(&"error", "Unknown error"))
+			_cleanup_thread.call_deferred(thread)
+	)
+
+
+func _send_visualizer_data(project_map: Dictionary, thread: Thread) -> void:
+	_mcp_client.send_visualizer_request(project_map)
+	thread.wait_to_finish()
+
+
+func _cleanup_thread(thread: Thread) -> void:
+	thread.wait_to_finish()

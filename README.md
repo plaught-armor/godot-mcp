@@ -4,7 +4,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 32 tools · Interactive project visualizer · MIT license
+> Godot 4.x · 31 tools · Interactive project visualizer · MIT license
 
 ---
 
@@ -94,7 +94,7 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ## What Can It Do?
 
-### 32 Tools Across 6 Categories
+### 31 Tools Across 5 Categories
 
 | Category | Tools | Examples |
 |----------|-------|---------|
@@ -103,11 +103,10 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 | **Script Operations** | 6 | Apply code edits, validate syntax, rename/move files with reference updates |
 | **Project Tools** | 9 | Read project settings, input map, collision layers, console errors, scene tree dumps |
 | **Asset Generation** | 1 | Generate 2D sprites from SVG |
-| **Visualization** | 1 | Interactive browser-based project map |
 
 ### Interactive Visualizer
 
-Run `map_project` and get a browser-based explorer at `localhost:6510`:
+Open the visualizer from the Godot editor: **Project → Tools → MCP: Map Project**. A browser-based explorer opens at `localhost:6510`:
 - Force-directed graph of all scripts and their relationships
 - Click any script to see variables, functions, signals, and connections
 - Edit code directly in the visualizer — changes sync to Godot in real time
