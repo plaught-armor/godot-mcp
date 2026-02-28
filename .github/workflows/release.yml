@@ -30,6 +30,7 @@ jobs:
             goarch: amd64
             suffix: windows-amd64
             ext: .exe
+            asset_name: godot-mcp-server.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -45,10 +46,14 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go build -o ../godot-mcp-server-${{ matrix.suffix }}${{ matrix.ext }} ./cmd/godot-mcp-server
 
+      - name: Rename for release
+        if: matrix.asset_name
+        run: mv godot-mcp-server-${{ matrix.suffix }}${{ matrix.ext }} ${{ matrix.asset_name }}
+
       - uses: actions/upload-artifact@v4
         with:
           name: godot-mcp-server-${{ matrix.suffix }}
-          path: godot-mcp-server-${{ matrix.suffix }}${{ matrix.ext }}
+          path: ${{ matrix.asset_name || format('godot-mcp-server-{0}{1}', matrix.suffix, matrix.ext) }}
 
   release:
     needs: build

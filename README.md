@@ -22,7 +22,7 @@ Download the binary for your platform from [GitHub Releases](https://github.com/
 
 | Platform | File |
 |----------|------|
-| Windows | `godot-mcp-server-windows-amd64.exe` |
+| Windows | `godot-mcp-server.exe` |
 | macOS (Apple Silicon) | `godot-mcp-server-darwin-arm64` |
 | macOS (Intel) | `godot-mcp-server-darwin-amd64` |
 | Linux | `godot-mcp-server-linux-amd64` |
@@ -30,19 +30,18 @@ Download the binary for your platform from [GitHub Releases](https://github.com/
 #### Windows
 
 1. Create a folder for the binary, e.g. `C:\Tools\`
-2. Move `godot-mcp-server-windows-amd64.exe` into that folder
-3. Rename it to `godot-mcp-server.exe`
-4. **Add the folder to your PATH:**
+2. Move `godot-mcp-server.exe` into that folder
+3. **Add the folder to your PATH:**
    - Press `Win + R`, type `sysdm.cpl`, press Enter
    - Go to the **Advanced** tab → click **Environment Variables**
    - Under **User variables**, select `Path` and click **Edit**
    - Click **New**, type `C:\Tools\`, click **OK** on every dialog
-5. Open a **new** terminal and verify:
+4. Open a **new** terminal and verify:
    ```
    godot-mcp-server.exe --help
    ```
 
-> If you don't want to touch PATH, skip step 4 and use the full path in your AI client config (see step 3).
+> If you don't want to touch PATH, skip step 3 and use the full path in your AI client config (see below).
 
 #### macOS / Linux
 
