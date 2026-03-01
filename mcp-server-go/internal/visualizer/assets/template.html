@@ -62,6 +62,23 @@
     </svg>
     New Script
   </div>
+  <div id="script-node-actions" style="display:none">
+    <div class="menu-divider"></div>
+    <div class="menu-item" onclick="renameScript()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+      Rename / Move
+    </div>
+    <div class="menu-item danger" onclick="deleteScript()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      </svg>
+      Delete
+    </div>
+  </div>
   <div class="menu-divider"></div>
   <div class="menu-item" onclick="refreshProject()">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -157,8 +174,16 @@
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Script Path</label>
-        <input type="text" id="new-script-path" placeholder="res://scripts/my_script.gd">
+        <label>Folder</label>
+        <div style="display:flex;gap:6px">
+          <select id="new-script-folder" style="flex:1"></select>
+          <input type="text" id="new-script-custom-folder" placeholder="or type custom path..." style="flex:1;display:none">
+          <button class="toggle-custom-folder" onclick="toggleCustomFolder()" title="Type custom path" style="padding:4px 8px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);cursor:pointer;font-size:12px">...</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Filename</label>
+        <input type="text" id="new-script-filename" placeholder="my_script.gd">
       </div>
       <div class="form-group">
         <label>Extends</label>
@@ -183,6 +208,56 @@
     <div class="modal-footer">
       <button class="cancel" onclick="closeNewScriptModal()">Cancel</button>
       <button class="confirm" onclick="submitNewScript()">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- Rename / Move Script Modal -->
+<div id="rename-script-modal" class="modal" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>Rename / Move Script</h3>
+      <button class="close-btn" onclick="closeRenameScriptModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Folder</label>
+        <div style="display:flex;gap:6px">
+          <select id="rename-script-folder" style="flex:1"></select>
+          <input type="text" id="rename-script-custom-folder" placeholder="or type custom path..." style="flex:1;display:none">
+          <button class="toggle-custom-folder" onclick="toggleRenameCustomFolder()" title="Type custom path" style="padding:4px 8px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:4px;color:var(--text-secondary);cursor:pointer;font-size:12px">...</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Filename</label>
+        <input type="text" id="rename-script-filename" placeholder="my_script.gd">
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="rename-update-refs" checked>
+        <label for="rename-update-refs" style="margin:0">Update references in other files</label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="cancel" onclick="closeRenameScriptModal()">Cancel</button>
+      <button class="confirm" onclick="submitRenameScript()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Script Modal -->
+<div id="delete-script-modal" class="modal" style="display:none">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 id="delete-script-title">Delete Script</h3>
+      <button class="close-btn" onclick="closeDeleteScriptModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="delete-script-info" style="margin-bottom:12px"></div>
+      <div id="delete-script-refs" style="margin-bottom:12px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="cancel" onclick="closeDeleteScriptModal()">Cancel</button>
+      <button class="confirm" style="background:rgba(243,139,168,0.2);color:#f38ba8;border-color:rgba(243,139,168,0.4)" onclick="confirmDeleteScript()">Delete</button>
     </div>
   </div>
 </div>

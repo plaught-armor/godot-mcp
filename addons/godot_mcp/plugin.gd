@@ -5,25 +5,14 @@ extends EditorPlugin
 
 const MCPClientScript = preload("res://addons/godot_mcp/mcp_client.gd")
 const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
-# Tools that touch the editor UI / scene tree and MUST run on the main thread.
-const MAIN_THREAD_TOOLS: Array[StringName] = [
-	&"get_console_log",
-	&"get_errors",
-	&"clear_console_log",
-	&"open_in_godot",
-	&"scene_tree_dump",
-	&"get_node_properties",
-]
 # Tools safe to run on a background thread (pure read, no editor API calls).
 # Everything else runs on the main thread (filesystem refresh, editor UI, etc.).
-const BACKGROUND_SAFE_TOOLS: Array[StringName] = [
-	&"list_dir",
-	&"read_file",
-	&"search_project",
-	&"list_scripts",
-	&"map_scenes",
-	&"validate_script",
-]
+func _is_background_safe(tool_name: StringName) -> bool:
+	match tool_name:
+		&"list_dir", &"read_file", &"search_project", \
+		&"list_scripts", &"map_scenes", &"validate_script":
+			return true
+	return false
 
 var _mcp_client: MCPClient # MCPClient
 var _tool_executor: ToolExecutor # ToolExecutor
@@ -46,9 +35,7 @@ func _enter_tree() -> void:
 
 	# Create tool executor
 	_tool_executor = ToolExecutorScript.new()
-	_tool_executor.name = "ToolExecutor"
-	add_child(_tool_executor) # _ready() runs here, creating child tools
-	_tool_executor.set_editor_plugin(self) # Now _visualizer_tools exists
+	_tool_executor.set_editor_plugin(self)
 
 	# Connect signals
 	_mcp_client.connected.connect(_on_connected)
@@ -84,8 +71,7 @@ func _exit_tree() -> void:
 		_mcp_client.disconnect_from_server()
 		_mcp_client.queue_free()
 
-	if _tool_executor:
-		_tool_executor.queue_free()
+	_tool_executor = null
 
 	if _status_label:
 		remove_control_from_container(EditorPlugin.CONTAINER_TOOLBAR, _status_label)
@@ -125,7 +111,7 @@ func _on_tool_requested(request_id: String, tool_name: String, args: Dictionary)
 
 	# Only pure-read tools go to the background thread; everything else
 	# stays on the main thread (filesystem refresh, editor UI, etc.).
-	if StringName(tool_name) not in BACKGROUND_SAFE_TOOLS:
+	if not _is_background_safe(tool_name):
 		var result: Dictionary = _tool_executor.execute_tool(tool_name, args)
 		_send_result(request_id, result)
 		return
@@ -168,13 +154,11 @@ func _thread_loop() -> void:
 
 
 func _send_result(request_id: String, result: Dictionary) -> void:
-	var success: bool = result.get(&"ok", false)
-	if success:
+	if result[&"ok"]:
 		result.erase(&"ok")
 		_mcp_client.send_tool_result(request_id, true, result)
 	else:
-		var error: String = result.get(&"error", "Unknown error")
-		_mcp_client.send_tool_result(request_id, false, null, error)
+		_mcp_client.send_tool_result(request_id, false, null, result[&"error"])
 
 
 func _on_map_project_pressed() -> void:
@@ -185,11 +169,10 @@ func _on_map_project_pressed() -> void:
 	var thread := Thread.new()
 	thread.start(func():
 		var result: Dictionary = _tool_executor.execute_tool(&"map_project", {})
-		if result.get(&"ok", false):
-			var project_map: Dictionary = result.get(&"project_map", {})
-			_send_visualizer_data.call_deferred(project_map, thread)
+		if result[&"ok"]:
+			_send_visualizer_data.call_deferred(result[&"project_map"], thread)
 		else:
-			push_error("[Godot MCP] Map project failed: ", result.get(&"error", "Unknown error"))
+			push_error("[Godot MCP] Map project failed: ", result[&"error"])
 			_cleanup_thread.call_deferred(thread)
 	)
 

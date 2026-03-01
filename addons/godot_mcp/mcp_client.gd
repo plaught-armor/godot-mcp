@@ -87,7 +87,6 @@ func send_tool_result(request_id: String, success: bool, result = null, error: S
 		response[&"error"] = error
 
 	_send_message(response)
-	print("[MCP] Sent result for ", request_id, " (success=", success, ")")
 
 
 func send_visualizer_request(project_map: Dictionary) -> void:
@@ -167,7 +166,8 @@ func _handle_message(json_string: String) -> void:
 			var request_id: String = message.get(&"id", "")
 			var tool_name: String = message.get(&"tool", "")
 			var args: Dictionary = message.get(&"args", { })
-			print("[MCP] Tool request: ", tool_name, " (", request_id, ")")
+			if not tool_name.begins_with("visualizer."):
+				print("[MCP] Tool request: ", tool_name, " (", request_id, ")")
 			tool_requested.emit(request_id, tool_name, args)
 		"visualizer_status":
 			var url: String = message.get(&"url", "")

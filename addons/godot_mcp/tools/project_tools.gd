@@ -1,5 +1,5 @@
 @tool
-extends Node
+extends RefCounted
 class_name ProjectTools
 ## Project configuration and debug tools for MCP.
 ## Handles: get_project_settings, get_input_map, get_collision_layers,
@@ -14,8 +14,13 @@ var _editor_log_rtl: RichTextLabel = null
 # Character offset for clear_console_log.
 var _clear_char_offset: int = 0
 
+var _utils: ToolUtils
+
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
+
+func set_utils(utils: ToolUtils) -> void:
+	_utils = utils
 
 # =============================================================================
 # get_project_settings
@@ -103,10 +108,6 @@ func _collect_layers(prefix: String) -> Array:
 # =============================================================================
 # get_node_properties
 # =============================================================================
-const _SKIP_PROPS: Dictionary = {
-	"script": true, "owner": true, "scene_file_path": true, "unique_name_in_owner": true,
-}
-
 const ENUM_HINTS = {
 	"anchors_preset": "0:Top Left,1:Top Right,2:Bottom Right,3:Bottom Left,4:Center Left,5:Center Top,6:Center Right,7:Center Bottom,8:Center,9:Left Wide,10:Top Wide,11:Right Wide,12:Bottom Wide,13:VCenter Wide,14:HCenter Wide,15:Full Rect",
 	"grow_horizontal": "0:Begin,1:End,2:Both",
@@ -131,19 +132,22 @@ func get_node_properties(args: Dictionary) -> Dictionary:
 		var prop_name: String = prop[&"name"]
 		if prop_name.begins_with("_"):
 			continue
-		if _SKIP_PROPS.has(prop_name):
+		if _utils.SKIP_PROPS.has(prop_name):
 			continue
-		if not (prop.get(&"usage", 0) & PROPERTY_USAGE_EDITOR):
+		if not (prop[&"usage"] & PROPERTY_USAGE_EDITOR):
 			continue
 
+		var type_name := _utils.type_id_to_name(prop[&"type"])
+		if prop[&"type"] == TYPE_OBJECT:
+			type_name = "Resource"
 		var info := {
 			&"name": prop_name,
-			&"type": _type_to_string(prop[&"type"]),
-			&"default": _serialize_value(temp.get(prop_name))
+			&"type": type_name,
+			&"default": _utils.serialize_value(temp.get(prop_name))
 		}
 
 		# Enum hints
-		if prop.has(&"hint") and prop[&"hint"] == PROPERTY_HINT_ENUM and prop.has(&"hint_string"):
+		if prop[&"hint"] == PROPERTY_HINT_ENUM:
 			info[&"enum_values"] = prop[&"hint_string"]
 		if prop_name in ENUM_HINTS:
 			info[&"enum_values"] = ENUM_HINTS[prop_name]
@@ -162,36 +166,6 @@ func get_node_properties(args: Dictionary) -> Dictionary:
 	return {&"ok": true, &"node_type": node_type, &"inheritance_chain": chain,
 		&"property_count": properties.size(), &"properties": properties}
 
-func _type_to_string(type_id: int) -> String:
-	match type_id:
-		TYPE_BOOL: return "bool"
-		TYPE_INT: return "int"
-		TYPE_FLOAT: return "float"
-		TYPE_STRING: return "String"
-		TYPE_VECTOR2: return "Vector2"
-		TYPE_VECTOR3: return "Vector3"
-		TYPE_VECTOR2I: return "Vector2i"
-		TYPE_VECTOR3I: return "Vector3i"
-		TYPE_COLOR: return "Color"
-		TYPE_RECT2: return "Rect2"
-		TYPE_OBJECT: return "Resource"
-		TYPE_ARRAY: return "Array"
-		TYPE_DICTIONARY: return "Dictionary"
-		_: return "Variant"
-
-func _serialize_value(value: Variant) -> Variant:
-	match typeof(value):
-		TYPE_VECTOR2: return {&"type": &"Vector2", &"x": value.x, &"y": value.y}
-		TYPE_VECTOR3: return {&"type": &"Vector3", &"x": value.x, &"y": value.y, &"z": value.z}
-		TYPE_COLOR: return {&"type": &"Color", &"r": value.r, &"g": value.g, &"b": value.b, &"a": value.a}
-		TYPE_VECTOR2I: return {&"type": &"Vector2i", &"x": value.x, &"y": value.y}
-		TYPE_VECTOR3I: return {&"type": &"Vector3i", &"x": value.x, &"y": value.y, &"z": value.z}
-		TYPE_OBJECT:
-			if value and value is Resource and value.resource_path:
-				return {&"type": &"Resource", &"path": value.resource_path}
-			return null
-		_: return value
-
 # =============================================================================
 # Editor Output Panel access
 # =============================================================================
@@ -206,28 +180,10 @@ func _get_editor_log_rtl() -> RichTextLabel:
 	if not _editor_plugin:
 		return null
 	var base := _editor_plugin.get_editor_interface().get_base_control()
-	var editor_log := _find_node_by_class(base, "EditorLog")
+	var editor_log := _utils.find_node_by_class(base, "EditorLog")
 	if editor_log:
-		_editor_log_rtl = _find_child_rtl(editor_log)
+		_editor_log_rtl = _utils.find_child_rtl(editor_log)
 	return _editor_log_rtl
-
-func _find_node_by_class(root: Node, cls_name: String) -> Node:
-	if root.get_class() == cls_name:
-		return root
-	for child: Node in root.get_children():
-		var found := _find_node_by_class(child, cls_name)
-		if found:
-			return found
-	return null
-
-func _find_child_rtl(node: Node) -> RichTextLabel:
-	for child: Node in node.get_children():
-		if child is RichTextLabel:
-			return child
-		var found := _find_child_rtl(child)
-		if found:
-			return found
-	return null
 
 func _read_output_panel_lines() -> Array:
 	"""Return all non-empty lines from the editor Output panel (after clear offset)."""
@@ -370,8 +326,7 @@ func open_in_godot(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path'"}
 
-	if not path.begins_with("res://"):
-		path = "res://" + path
+	path = _utils.ensure_res_path(path)
 
 	if not _editor_plugin:
 		return {&"ok": false, &"error": "Editor plugin not available"}
@@ -408,11 +363,12 @@ func scene_tree_dump(_args: Dictionary) -> Dictionary:
 	if not edited_scene:
 		return {&"ok": true, &"tree": "(no scene open)", &"message": "No scene is currently open in the editor"}
 
-	var tree_text := _dump_node(edited_scene, 0)
+	var lines: PackedStringArray = []
+	_dump_node(edited_scene, 0, lines)
 
-	return {&"ok": true, &"tree": tree_text, &"scene_path": edited_scene.scene_file_path}
+	return {&"ok": true, &"tree": "\n".join(lines), &"scene_path": edited_scene.scene_file_path}
 
-func _dump_node(node: Node, depth: int) -> String:
+func _dump_node(node: Node, depth: int, out: PackedStringArray) -> void:
 	var indent := "  ".repeat(depth)
 	var line := "%s%s (%s)" % [indent, node.name, node.get_class()]
 
@@ -420,11 +376,6 @@ func _dump_node(node: Node, depth: int) -> String:
 	if script:
 		line += " [%s]" % script.resource_path.get_file()
 
-	var children := node.get_children()
-	if children.is_empty():
-		return line
-
-	var parts: PackedStringArray = [line]
-	for child: Node in children:
-		parts.append(_dump_node(child, depth + 1))
-	return "\n".join(parts)
+	out.append(line)
+	for child: Node in node.get_children():
+		_dump_node(child, depth + 1, out)

@@ -150,6 +150,12 @@ func buildHTML(projectDataJSON []byte) (string, error) {
 	return html, nil
 }
 
+type wsMessage struct {
+	ID      int            `json:"id"`
+	Command string         `json:"command"`
+	Args    map[string]any `json:"args"`
+}
+
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -167,11 +173,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		var msg struct {
-			ID      string         `json:"id"`
-			Command string         `json:"command"`
-			Args    map[string]any `json:"args"`
-		}
+		var msg wsMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
 			conn.Write(ctx, websocket.MessageText, mustJSON(map[string]any{"error": "invalid JSON"}))
 			continue
@@ -196,15 +198,14 @@ func (s *Server) handleInternalCommand(ctx context.Context, command string, args
 
 	log.Printf("[visualizer] Internal command: %s", command)
 
-	toolName := "visualizer._internal_" + command
-	raw, err := s.bridge.InvokeTool(ctx, toolName, args)
+	raw, err := s.bridge.InvokeTool(ctx, command, args)
 	if err != nil {
 		return map[string]any{"ok": false, "error": err.Error()}
 	}
 
 	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return map[string]any{"ok": false, "error": "invalid response from Godot"}
+		return map[string]any{"ok": false, "error": "Invalid response from Godot"}
 	}
 	result["ok"] = true
 	return result

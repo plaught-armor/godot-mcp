@@ -1,23 +1,30 @@
 @tool
-extends Node
+extends RefCounted
 class_name ScriptTools
-## Script and file management tools for MCP.
-## Handles: edit_script, validate_script, list_scripts,
-##          create_folder, delete_file, rename_file
+## GDScript tools for MCP.
+## Handles: create_script, edit_script, validate_script, list_scripts
 
 var _editor_plugin: EditorPlugin = null
+
+# Cached RegEx patterns for script modification helpers
+var _re_helper_var: RegEx
+var _re_helper_func: RegEx
+var _re_helper_class: RegEx
+var _re_helper_signal: RegEx
+
+func _init() -> void:
+	_re_helper_var = RegEx.create_from_string("^(@export)?\\s*(@onready)?\\s*var\\s+")
+	_re_helper_func = RegEx.create_from_string("^func\\s+")
+	_re_helper_class = RegEx.create_from_string("^(class_name|extends)\\s+")
+	_re_helper_signal = RegEx.create_from_string("^signal\\s+")
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
-func _refresh_filesystem() -> void:
-	if _editor_plugin:
-		_editor_plugin.get_editor_interface().get_resource_filesystem().scan()
+var _utils: ToolUtils
 
-func _ensure_res_path(path: String) -> String:
-	if not path.begins_with("res://"):
-		return "res://" + path
-	return path
+func set_utils(utils: ToolUtils) -> void:
+	_utils = utils
 
 # =============================================================================
 # edit_script - Apply a small surgical code edit to a GDScript file
@@ -31,7 +38,7 @@ func edit_script(args: Dictionary) -> Dictionary:
 	if path.is_empty():
 		return {&"ok": false, &"error": "Missing 'file' in edit"}
 
-	path = _ensure_res_path(path)
+	path = _utils.ensure_res_path(path)
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -93,7 +100,7 @@ func edit_script(args: Dictionary) -> Dictionary:
 	var added := maxi(0, new_lines.size() - old_lines.size())
 	var removed := maxi(0, old_lines.size() - new_lines.size())
 
-	_refresh_filesystem()
+	_utils.refresh_filesystem()
 
 	return {
 		&"ok": true,
@@ -112,7 +119,7 @@ func validate_script(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path'"}
 
-	path = _ensure_res_path(path)
+	path = _utils.ensure_res_path(path)
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -169,10 +176,10 @@ func _collect_recent_script_errors(script_path: String) -> Array:
 
 	# Find the editor's Output panel RichTextLabel
 	var base := _editor_plugin.get_editor_interface().get_base_control()
-	var editor_log := _find_node_by_class(base, "EditorLog")
+	var editor_log := _utils.find_node_by_class(base, "EditorLog")
 	if not editor_log:
 		return errors
-	var rtl := _find_child_rtl(editor_log)
+	var rtl := _utils.find_child_rtl(editor_log)
 	if not rtl:
 		return errors
 
@@ -192,24 +199,6 @@ func _collect_recent_script_errors(script_path: String) -> Array:
 	if errors.size() > 10:
 		errors = errors.slice(errors.size() - 10)
 	return errors
-
-func _find_node_by_class(root: Node, cls_name: String) -> Node:
-	if root.get_class() == cls_name:
-		return root
-	for child: Node in root.get_children():
-		var found := _find_node_by_class(child, cls_name)
-		if found:
-			return found
-	return null
-
-func _find_child_rtl(node: Node) -> RichTextLabel:
-	for child: Node in node.get_children():
-		if child is RichTextLabel:
-			return child
-		var found := _find_child_rtl(child)
-		if found:
-			return found
-	return null
 
 # =============================================================================
 # list_scripts
@@ -250,71 +239,364 @@ func _collect_scripts(path: String, out: PackedStringArray, depth: int = 0) -> v
 	dir.list_dir_end()
 
 # =============================================================================
-# create_folder
+# create_script - Create a new GDScript file
 # =============================================================================
-func create_folder(args: Dictionary) -> Dictionary:
+func create_script(args: Dictionary) -> Dictionary:
 	var path: String = str(args.get(&"path", ""))
-	if path.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'path'"}
-
-	path = _ensure_res_path(path)
-
-	if DirAccess.dir_exists_absolute(path):
-		return {&"ok": true, &"path": path, &"message": "Directory already exists"}
-
-	var err := DirAccess.make_dir_recursive_absolute(path)
-	if err != OK:
-		return {&"ok": false, &"error": "Failed to create directory: " + str(err)}
-
-	_refresh_filesystem()
-
-	return {&"ok": true, &"path": path, &"message": "Directory created"}
-
-# =============================================================================
-# delete_file
-# =============================================================================
-func delete_file(args: Dictionary) -> Dictionary:
-	var path: String = str(args.get(&"path", ""))
-	var confirm: bool = bool(args.get(&"confirm", false))
-	var create_backup: bool = bool(args.get(&"create_backup", true))
+	var content: String = str(args.get(&"content", ""))
 
 	if path.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'path'"}
-	if not confirm:
-		return {&"ok": false, &"error": "Must set confirm=true to delete"}
+		return {&"ok": false, &"error": "Missing 'path' parameter"}
 
-	path = _ensure_res_path(path)
+	path = _utils.ensure_res_path(path)
+
+	# Add .gd extension if missing
+	if not "." in path.get_file():
+		path += ".gd"
+
+	if FileAccess.file_exists(path):
+		return {&"ok": false, &"error": "File already exists: " + path}
+
+	# Ensure parent directory exists
+	var dir_path := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		var err := DirAccess.make_dir_recursive_absolute(dir_path)
+		if err != OK:
+			return {&"ok": false, &"error": "Could not create directory: " + dir_path}
+
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return {&"ok": false, &"error": "Could not create file: " + path}
+
+	file.store_string(content)
+	file.close()
+
+	_utils.refresh_filesystem()
+
+	return {
+		&"ok": true,
+		&"path": path,
+		&"size_bytes": content.length(),
+		&"message": "Script created successfully"
+	}
+
+# =============================================================================
+# Visualizer script methods (called via WebSocket, not exposed as MCP tools)
+# =============================================================================
+
+func create_script_file(args: Dictionary) -> Dictionary:
+	"""Create a new script file with a basic template."""
+	var script_path: String = args.get(&"path", "")
+	var extends_type: String = args.get(&"extends", "Node")
+	var class_name_str: String = args.get(&"class_name", "")
+
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "No path provided"}
+
+	script_path = _utils.ensure_res_path(script_path)
+
+	if not script_path.ends_with(".gd"):
+		script_path += ".gd"
+
+	if FileAccess.file_exists(script_path):
+		return {&"ok": false, &"error": "File already exists: " + script_path}
+
+	# Create directory if needed
+	var dir_path: String = script_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		var err := DirAccess.make_dir_recursive_absolute(dir_path)
+		if err != OK:
+			return {&"ok": false, &"error": "Failed to create directory"}
+
+	# Build script content
+	var content := ""
+	if not class_name_str.is_empty():
+		content += "class_name " + class_name_str + "\n"
+	content += "extends " + extends_type + "\n"
+	content += "\n\n"
+	content += "func _ready() -> void:\n"
+	content += "\tpass\n"
+
+	var file := FileAccess.open(script_path, FileAccess.WRITE)
+	if file == null:
+		return {&"ok": false, &"error": "Cannot create file: " + script_path}
+
+	file.store_string(content)
+	file.close()
+
+	return {&"ok": true, &"path": script_path}
+
+
+func modify_variable(args: Dictionary) -> Dictionary:
+	"""Add, update, or delete a variable in a script file."""
+	var script_path: String = args.get(&"path", "")
+	var action: String = args.get(&"action", "")
+	var old_name: String = args.get(&"old_name", "")
+	var new_name: String = args.get(&"name", "")
+	var var_type: String = args.get(&"type", "")
+	var default_val: String = args.get(&"default", "")
+	var exported: bool = args.get(&"exported", false)
+	var onready: bool = args.get(&"onready", false)
+
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "No script path provided"}
+
+	var file := FileAccess.open(script_path, FileAccess.READ)
+	if file == null:
+		return {&"ok": false, &"error": "Cannot open file: " + script_path}
+
+	var content: String = file.get_as_text()
+	file.close()
+
+	var lines: Array = Array(content.split("\n"))
+	var modified := false
+
+	if action == "delete":
+		var pattern := RegEx.new()
+		pattern.compile("^(@export(?:\\([^)]*\\))?\\s+)?(?:@onready\\s+)?var\\s+" + old_name + "\\s*(?::|=|$)")
+		for i: int in range(lines.size() - 1, -1, -1):
+			if pattern.search(lines[i].strip_edges()):
+				lines.remove_at(i)
+				modified = true
+				break
+
+	elif action == "update":
+		var pattern := RegEx.new()
+		pattern.compile("^(@export(?:\\([^)]*\\))?\\s+)?(@onready\\s+)?var\\s+" + old_name + "\\s*(?::\\s*\\w+)?(?:\\s*=\\s*.+)?$")
+		for i: int in range(lines.size()):
+			var m := pattern.search(lines[i].strip_edges())
+			if m:
+				var new_line := _build_var_line(new_name, var_type, default_val, exported, onready)
+				lines[i] = new_line
+				modified = true
+				break
+
+	elif action == "add":
+		var insert_pos := _find_var_insert_position(lines, exported)
+		var new_line := _build_var_line(new_name, var_type, default_val, exported, false)
+		lines.insert(insert_pos, new_line)
+		modified = true
+
+	if modified:
+		var new_content := "\n".join(PackedStringArray(lines))
+		var write_file := FileAccess.open(script_path, FileAccess.WRITE)
+		if write_file == null:
+			return {&"ok": false, &"error": "Cannot write to file: " + script_path}
+		write_file.store_string(new_content)
+		write_file.close()
+		return {&"ok": true, &"action": action, &"variable": new_name}
+
+	return {&"ok": false, &"error": "Variable not found: " + old_name}
+
+
+func modify_signal(args: Dictionary) -> Dictionary:
+	"""Add, update, or delete a signal in a script file."""
+	var script_path: String = args.get(&"path", "")
+	var action: String = args.get(&"action", "")
+	var old_name: String = args.get(&"old_name", "")
+	var new_name: String = args.get(&"name", "")
+	var params: String = args.get(&"params", "")
+
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "No script path provided"}
+
+	var file := FileAccess.open(script_path, FileAccess.READ)
+	if file == null:
+		return {&"ok": false, &"error": "Cannot open file: " + script_path}
+
+	var content: String = file.get_as_text()
+	file.close()
+
+	var lines: Array = Array(content.split("\n"))
+	var modified := false
+
+	if action == "delete":
+		var pattern := RegEx.new()
+		pattern.compile("^signal\\s+" + old_name + "(?:\\s*\\(|$)")
+		for i: int in range(lines.size() - 1, -1, -1):
+			if pattern.search(lines[i].strip_edges()):
+				lines.remove_at(i)
+				modified = true
+				break
+
+	elif action == "update":
+		var pattern := RegEx.new()
+		pattern.compile("^signal\\s+" + old_name + "(?:\\s*\\([^)]*\\))?$")
+		for i: int in range(lines.size()):
+			if pattern.search(lines[i].strip_edges()):
+				var new_line := "signal " + new_name
+				if not params.is_empty():
+					new_line += "(" + params + ")"
+				lines[i] = new_line
+				modified = true
+				break
+
+	elif action == "add":
+		var insert_pos := _find_signal_insert_position(lines)
+		var new_line := "signal " + new_name
+		if not params.is_empty():
+			new_line += "(" + params + ")"
+		lines.insert(insert_pos, new_line)
+		modified = true
+
+	if modified:
+		var new_content := "\n".join(PackedStringArray(lines))
+		var write_file := FileAccess.open(script_path, FileAccess.WRITE)
+		if write_file == null:
+			return {&"ok": false, &"error": "Cannot write to file: " + script_path}
+		write_file.store_string(new_content)
+		write_file.close()
+		return {&"ok": true, &"action": action, &"signal": new_name}
+
+	return {&"ok": false, &"error": "Signal not found: " + old_name}
+
+
+func modify_function(args: Dictionary) -> Dictionary:
+	"""Update a function's body in a script file."""
+	var script_path: String = args.get(&"path", "")
+	var func_name: String = args.get(&"name", "")
+	var new_body: String = args.get(&"body", "")
+
+	if script_path.is_empty() or func_name.is_empty():
+		return {&"ok": false, &"error": "Missing path or function name"}
+
+	var file := FileAccess.open(script_path, FileAccess.READ)
+	if file == null:
+		return {&"ok": false, &"error": "Cannot open file: " + script_path}
+
+	var content: String = file.get_as_text()
+	file.close()
+
+	var lines: Array = Array(content.split("\n"))
+	var range_result := _find_function_range(lines, func_name)
+	if range_result.is_empty():
+		return {&"ok": false, &"error": "Function not found: " + func_name}
+
+	var func_start: int = range_result[0]
+	var func_end: int = range_result[1]
+
+	var new_lines := Array(new_body.split("\n"))
+
+	for i: int in range(func_end - 1, func_start - 1, -1):
+		lines.remove_at(i)
+
+	for i: int in range(new_lines.size()):
+		lines.insert(func_start + i, new_lines[i])
+
+	var new_content := "\n".join(PackedStringArray(lines))
+	var write_file := FileAccess.open(script_path, FileAccess.WRITE)
+	if write_file == null:
+		return {&"ok": false, &"error": "Cannot write to file: " + script_path}
+	write_file.store_string(new_content)
+	write_file.close()
+
+	return {&"ok": true, &"function": func_name}
+
+
+func modify_function_delete(args: Dictionary) -> Dictionary:
+	"""Delete a function from a script file."""
+	var script_path: String = args.get(&"path", "")
+	var func_name: String = args.get(&"name", "")
+
+	if script_path.is_empty() or func_name.is_empty():
+		return {&"ok": false, &"error": "Missing path or function name"}
+
+	var file := FileAccess.open(script_path, FileAccess.READ)
+	if file == null:
+		return {&"ok": false, &"error": "Cannot open file: " + script_path}
+
+	var content: String = file.get_as_text()
+	file.close()
+
+	var lines: Array = Array(content.split("\n"))
+	var range_result := _find_function_range(lines, func_name)
+	if range_result.is_empty():
+		return {&"ok": false, &"error": "Function not found: " + func_name}
+
+	var func_start: int = range_result[0]
+	var func_end: int = range_result[1]
+
+	for i: int in range(func_end - 1, func_start - 1, -1):
+		lines.remove_at(i)
+
+	var new_content := "\n".join(PackedStringArray(lines))
+	var write_file := FileAccess.open(script_path, FileAccess.WRITE)
+	if write_file == null:
+		return {&"ok": false, &"error": "Cannot write to file: " + script_path}
+	write_file.store_string(new_content)
+	write_file.close()
+
+	return {&"ok": true, &"deleted": func_name}
+
+
+func _find_function_range(lines: Array, func_name: String) -> Array:
+	"""Find the start and end line indices of a function. Returns [start, end] or [] if not found."""
+	var re_func := RegEx.new()
+	re_func.compile("^func\\s+" + func_name + "\\s*\\(")
+
+	var func_start := -1
+	var func_end := -1
+
+	for i: int in range(lines.size()):
+		if func_start == -1:
+			if re_func.search(lines[i].strip_edges()):
+				func_start = i
+		else:
+			var stripped: String = lines[i].strip_edges()
+			if not stripped.is_empty() and not lines[i].begins_with("\t") and not lines[i].begins_with(" ") and not stripped.begins_with("#"):
+				func_end = i
+				break
+
+	if func_start == -1:
+		return []
+
+	if func_end == -1:
+		func_end = lines.size()
+
+	while func_end > func_start + 1 and lines[func_end - 1].strip_edges().is_empty():
+		func_end -= 1
+
+	return [func_start, func_end]
+
+
+func delete_script(args: Dictionary) -> Dictionary:
+	"""Delete a script file from the project."""
+	var path: String = args.get(&"path", "")
+
+	if path.is_empty():
+		return {&"ok": false, &"error": "No path provided"}
+
+	path = _utils.ensure_res_path(path)
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
 
-	# Create backup
-	if create_backup:
-		var backup_path := path + ".bak"
-		DirAccess.copy_absolute(path, backup_path)
-
 	var err := DirAccess.remove_absolute(path)
 	if err != OK:
-		return {&"ok": false, &"error": "Failed to delete file: " + str(err)}
+		return {&"ok": false, &"error": "Failed to delete: " + str(err)}
 
-	_refresh_filesystem()
+	# Also remove .import file if it exists
+	var import_path := path + ".import"
+	if FileAccess.file_exists(import_path):
+		DirAccess.remove_absolute(import_path)
 
-	return {&"ok": true, &"path": path, &"message": "File deleted" + (" (backup created)" if create_backup else "")}
+	_utils.refresh_filesystem()
+	return {&"ok": true, &"path": path}
 
-# =============================================================================
-# rename_file
-# =============================================================================
-func rename_file(args: Dictionary) -> Dictionary:
-	var old_path: String = str(args.get(&"old_path", ""))
-	var new_path: String = str(args.get(&"new_path", ""))
 
-	if old_path.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'old_path'"}
-	if new_path.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'new_path'"}
+func rename_script(args: Dictionary) -> Dictionary:
+	"""Rename/move a script file, optionally updating references."""
+	var old_path: String = args.get(&"old_path", "")
+	var new_path: String = args.get(&"new_path", "")
+	var update_refs: bool = args.get(&"update_references", true)
 
-	old_path = _ensure_res_path(old_path)
-	new_path = _ensure_res_path(new_path)
+	if old_path.is_empty():
+		return {&"ok": false, &"error": "No old_path provided"}
+	if new_path.is_empty():
+		return {&"ok": false, &"error": "No new_path provided"}
+
+	old_path = _utils.ensure_res_path(old_path)
+	new_path = _utils.ensure_res_path(new_path)
 
 	if not FileAccess.file_exists(old_path):
 		return {&"ok": false, &"error": "File not found: " + old_path}
@@ -324,13 +606,126 @@ func rename_file(args: Dictionary) -> Dictionary:
 	# Ensure target directory exists
 	var dir_path := new_path.get_base_dir()
 	if not DirAccess.dir_exists_absolute(dir_path):
-		DirAccess.make_dir_recursive_absolute(dir_path)
+		var dir_err := DirAccess.make_dir_recursive_absolute(dir_path)
+		if dir_err != OK:
+			return {&"ok": false, &"error": "Failed to create directory: " + dir_path}
+
+	# Update references in other files first (before renaming)
+	var updated_files: Array = []
+	if update_refs:
+		updated_files = _update_script_references(old_path, new_path)
 
 	var err := DirAccess.rename_absolute(old_path, new_path)
 	if err != OK:
 		return {&"ok": false, &"error": "Failed to rename: " + str(err)}
 
-	_refresh_filesystem()
-
+	_utils.refresh_filesystem()
 	return {&"ok": true, &"old_path": old_path, &"new_path": new_path,
-		&"message": "Renamed %s to %s" % [old_path, new_path]}
+		&"updated_references": updated_files.size(), &"files": updated_files}
+
+
+# Helper functions for script modification
+
+func _build_var_line(var_name: String, type: String, default: String, exported: bool, onready: bool) -> String:
+	var line := ""
+	if exported:
+		line += "@export "
+	if onready:
+		line += "@onready "
+	line += "var " + var_name
+	if not type.is_empty():
+		line += ": " + type
+	if not default.is_empty():
+		line += " = " + default
+	return line
+
+
+func _find_var_insert_position(lines: Array, exported: bool) -> int:
+	"""Find the best position to insert a new variable."""
+	var last_var_line := -1
+	var first_func_line := -1
+	var after_class_decl := 0
+
+	for i: int in range(lines.size()):
+		var stripped: String = lines[i].strip_edges()
+		if _re_helper_class.search(stripped):
+			after_class_decl = i + 1
+		if _re_helper_var.search(stripped):
+			last_var_line = i
+		if _re_helper_func.search(stripped) and first_func_line == -1:
+			first_func_line = i
+			break
+
+	if last_var_line != -1:
+		return last_var_line + 1
+	if first_func_line != -1:
+		return first_func_line
+	return max(after_class_decl, 2)
+
+
+func _find_signal_insert_position(lines: Array) -> int:
+	"""Find the best position to insert a new signal."""
+	var last_signal_line := -1
+	var first_var_line := -1
+	var after_class_decl := 0
+
+	for i: int in range(lines.size()):
+		var stripped: String = lines[i].strip_edges()
+		if _re_helper_class.search(stripped):
+			after_class_decl = i + 1
+		if _re_helper_signal.search(stripped):
+			last_signal_line = i
+		if _re_helper_var.search(stripped) and first_var_line == -1:
+			first_var_line = i
+
+	if last_signal_line != -1:
+		return last_signal_line + 1
+	if first_var_line != -1:
+		return first_var_line
+	return max(after_class_decl, 2)
+
+
+func _update_script_references(old_path: String, new_path: String) -> Array:
+	"""Update all references to old_path in project files."""
+	var updated: Array = []
+	var files: Array = []
+	_collect_files_by_ext("res://", ["gd", "tscn", "tres"], files)
+
+	for file_path: String in files:
+		if file_path == old_path:
+			continue
+
+		var content := FileAccess.get_file_as_string(file_path)
+		if content.is_empty():
+			continue
+
+		if old_path not in content:
+			continue
+
+		var new_content := content.replace(old_path, new_path)
+		var file := FileAccess.open(file_path, FileAccess.WRITE)
+		if file:
+			file.store_string(new_content)
+			file.close()
+			updated.append(file_path)
+
+	return updated
+
+
+func _collect_files_by_ext(root: String, extensions: Array, out: Array) -> void:
+	"""Recursively collect files with the given extensions."""
+	var dir := DirAccess.open(root)
+	if dir == null:
+		return
+
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while not entry.is_empty():
+		if dir.current_is_dir():
+			if entry != "." and entry != ".." and entry != ".godot":
+				_collect_files_by_ext(root.path_join(entry), extensions, out)
+		else:
+			if entry.get_extension() in extensions:
+				out.append(root.path_join(entry))
+		entry = dir.get_next()
+	dir.list_dir_end()

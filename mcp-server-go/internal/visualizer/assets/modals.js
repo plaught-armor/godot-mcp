@@ -3,17 +3,18 @@
  */
 
 import {
-  nodes, edges, setCurrentView, setSceneData, getFolderColor,
+  nodes, edges, currentView, setCurrentView, setSceneData, getFolderColor,
   setExpandedScene, setExpandedSceneHierarchy, setSelectedSceneNode,
   setHoveredSceneNode, expandedScene
 } from './state.js';
 import { sendCommand } from './websocket.js';
-import { draw, getCanvas, roundRect, getContext, clearPositions, fitToView } from './canvas.js';
+import { draw, getCanvas, roundRect, getContext, clearPositions, fitToView, screenToWorld, hitTest } from './canvas.js';
 import { initLayout } from './layout.js';
 import { closePanel, closeSceneNodePanel } from './panel.js';
 import { updateStats } from './events.js';
 
 let contextMenu;
+let rightClickedNode = null; // Script node that was right-clicked
 
 export function initModals() {
   contextMenu = document.getElementById('context-menu');
@@ -27,6 +28,19 @@ function initContextMenu() {
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
 
+    // Only show scripts context menu in scripts view
+    if (currentView !== 'scripts') return;
+
+    // Detect if a script node is under the cursor
+    const w = screenToWorld(e.clientX, e.clientY);
+    rightClickedNode = hitTest(w.x, w.y);
+
+    // Show/hide script-specific actions
+    const nodeActions = document.getElementById('script-node-actions');
+    if (nodeActions) {
+      nodeActions.style.display = rightClickedNode ? '' : 'none';
+    }
+
     // Position menu at mouse
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
@@ -37,22 +51,58 @@ function initContextMenu() {
   document.addEventListener('click', (e) => {
     if (!contextMenu.contains(e.target)) {
       contextMenu.classList.remove('visible');
+      rightClickedNode = null;
     }
   });
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       contextMenu.classList.remove('visible');
+      rightClickedNode = null;
       closeNewScriptModal();
+      closeRenameScriptModal();
+      closeDeleteScriptModal();
     }
   });
 }
 
 // ---- New Script Creation ----
+let usingCustomFolder = false;
+
 window.createNewScript = function () {
   contextMenu.classList.remove('visible');
+
+  // Populate folder dropdown from project nodes
+  const folderSelect = document.getElementById('new-script-folder');
+  const folders = [...new Set(nodes.map(n => n.folder).filter(Boolean))].sort();
+
+  folderSelect.innerHTML = '';
+  for (const folder of folders) {
+    const opt = document.createElement('option');
+    opt.value = folder;
+    opt.textContent = folder.replace('res://', '');
+    folderSelect.appendChild(opt);
+  }
+
+  // Reset to dropdown mode
+  usingCustomFolder = false;
+  folderSelect.style.display = '';
+  document.getElementById('new-script-custom-folder').style.display = 'none';
+
   document.getElementById('new-script-modal').style.display = 'flex';
-  document.getElementById('new-script-path').focus();
+  document.getElementById('new-script-filename').focus();
+};
+
+window.toggleCustomFolder = function () {
+  usingCustomFolder = !usingCustomFolder;
+  const folderSelect = document.getElementById('new-script-folder');
+  const customInput = document.getElementById('new-script-custom-folder');
+  folderSelect.style.display = usingCustomFolder ? 'none' : '';
+  customInput.style.display = usingCustomFolder ? '' : 'none';
+  if (usingCustomFolder) {
+    customInput.value = folderSelect.value || 'res://';
+    customInput.focus();
+  }
 };
 
 window.closeNewScriptModal = function () {
@@ -64,22 +114,32 @@ function closeNewScriptModal() {
 }
 
 window.submitNewScript = async function () {
-  const path = document.getElementById('new-script-path').value.trim();
+  let folder = usingCustomFolder
+    ? document.getElementById('new-script-custom-folder').value.trim()
+    : document.getElementById('new-script-folder').value;
+  let filename = document.getElementById('new-script-filename').value.trim();
+
+  if (!folder) {
+    alert('Please select a folder');
+    return;
+  }
+  if (!filename) {
+    alert('Please enter a filename');
+    return;
+  }
+
+  // Ensure folder starts with res://
+  if (!folder.startsWith('res://')) folder = 'res://' + folder;
+  // Ensure folder ends with /
+  if (!folder.endsWith('/')) folder += '/';
+  // Ensure filename ends with .gd
+  if (!filename.endsWith('.gd')) filename += '.gd';
+
+  const path = folder + filename;
   const extendsType = document.getElementById('new-script-extends').value;
   const className = document.getElementById('new-script-classname').value.trim();
 
-  if (!path) {
-    alert('Please enter a script path');
-    return;
-  }
-
-  if (!path.startsWith('res://') || !path.endsWith('.gd')) {
-    alert('Path must start with res:// and end with .gd');
-    return;
-  }
-
   try {
-    // Use existing create_script tool via invokeTool (not internal)
     const result = await sendCommand('create_script_file', {
       path: path,
       extends: extendsType,
@@ -88,7 +148,6 @@ window.submitNewScript = async function () {
 
     if (result.ok) {
       closeNewScriptModal();
-      // Refresh the project map
       refreshProject();
     } else {
       alert('Failed to create script: ' + (result.error || 'Unknown error'));
@@ -101,7 +160,7 @@ window.submitNewScript = async function () {
 window.refreshProject = async function () {
   contextMenu.classList.remove('visible');
   try {
-    const result = await sendCommand('refresh_map', {});
+    const result = await sendCommand('map_project', {});
     if (result.ok && result.project_map) {
       // Update nodes and edges
       const newNodes = result.project_map.nodes.map((n, i) => ({
@@ -203,3 +262,170 @@ async function loadSceneView() {
     draw();
   }
 }
+
+// ---- Delete Script ----
+let deleteTarget = null;
+
+window.deleteScript = function () {
+  contextMenu.classList.remove('visible');
+  if (!rightClickedNode) return;
+
+  deleteTarget = rightClickedNode;
+  const scriptPath = deleteTarget.path;
+  const scriptName = deleteTarget.filename;
+
+  // Find references to this script in the project graph
+  const refs = edges.filter(e => e.to === scriptPath || e.from === scriptPath);
+
+  document.getElementById('delete-script-title').textContent = `Delete "${scriptName}"`;
+
+  const infoEl = document.getElementById('delete-script-info');
+  infoEl.innerHTML = `<div style="color:var(--text-muted);font-size:13px">${scriptPath}</div>`;
+
+  const refsEl = document.getElementById('delete-script-refs');
+  if (refs.length > 0) {
+    refsEl.innerHTML = `<div style="color:#fab387;margin-bottom:8px">This script has ${refs.length} connection(s):</div>` +
+      refs.map(e => {
+        const other = e.from === scriptPath ? e.to : e.from;
+        return `<div style="font-size:12px;color:var(--text-secondary);padding:2px 0">&bull; ${e.type}: ${other}</div>`;
+      }).join('');
+  } else {
+    refsEl.innerHTML = '';
+  }
+
+  document.getElementById('delete-script-modal').style.display = 'flex';
+};
+
+window.closeDeleteScriptModal = function () {
+  document.getElementById('delete-script-modal').style.display = 'none';
+  deleteTarget = null;
+};
+
+function closeDeleteScriptModal() {
+  document.getElementById('delete-script-modal').style.display = 'none';
+  deleteTarget = null;
+}
+
+window.confirmDeleteScript = async function () {
+  if (!deleteTarget) return;
+
+  try {
+    const result = await sendCommand('delete_script', { path: deleteTarget.path });
+    if (result.ok) {
+      closeDeleteScriptModal();
+      closePanel();
+      refreshProject();
+    } else {
+      alert('Failed to delete script: ' + (result.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Failed to delete script: ' + err.message);
+  }
+
+  deleteTarget = null;
+};
+
+// ---- Rename / Move Script ----
+let usingRenameCustomFolder = false;
+
+window.renameScript = function () {
+  contextMenu.classList.remove('visible');
+  if (!rightClickedNode) return;
+
+  // Populate folder dropdown
+  const folderSelect = document.getElementById('rename-script-folder');
+  const folders = [...new Set(nodes.map(n => n.folder).filter(Boolean))].sort();
+  const currentFolder = rightClickedNode.folder || rightClickedNode.path.substring(0, rightClickedNode.path.lastIndexOf('/') + 1);
+
+  folderSelect.innerHTML = '';
+  for (const folder of folders) {
+    const opt = document.createElement('option');
+    opt.value = folder;
+    opt.textContent = folder.replace('res://', '');
+    if (folder === currentFolder) opt.selected = true;
+    folderSelect.appendChild(opt);
+  }
+
+  // Reset to dropdown mode
+  usingRenameCustomFolder = false;
+  folderSelect.style.display = '';
+  document.getElementById('rename-script-custom-folder').style.display = 'none';
+
+  // Pre-fill filename
+  const filenameInput = document.getElementById('rename-script-filename');
+  filenameInput.value = rightClickedNode.filename;
+
+  document.getElementById('rename-script-modal').style.display = 'flex';
+  filenameInput.focus();
+  filenameInput.select();
+};
+
+window.toggleRenameCustomFolder = function () {
+  usingRenameCustomFolder = !usingRenameCustomFolder;
+  const folderSelect = document.getElementById('rename-script-folder');
+  const customInput = document.getElementById('rename-script-custom-folder');
+  folderSelect.style.display = usingRenameCustomFolder ? 'none' : '';
+  customInput.style.display = usingRenameCustomFolder ? '' : 'none';
+  if (usingRenameCustomFolder) {
+    customInput.value = folderSelect.value || 'res://';
+    customInput.focus();
+  }
+};
+
+window.closeRenameScriptModal = function () {
+  document.getElementById('rename-script-modal').style.display = 'none';
+};
+
+function closeRenameScriptModal() {
+  document.getElementById('rename-script-modal').style.display = 'none';
+}
+
+window.submitRenameScript = async function () {
+  if (!rightClickedNode) return;
+
+  const oldPath = rightClickedNode.path;
+  let folder = usingRenameCustomFolder
+    ? document.getElementById('rename-script-custom-folder').value.trim()
+    : document.getElementById('rename-script-folder').value;
+  let filename = document.getElementById('rename-script-filename').value.trim();
+  const updateRefs = document.getElementById('rename-update-refs').checked;
+
+  if (!folder) {
+    alert('Please select a folder');
+    return;
+  }
+  if (!filename) {
+    alert('Please enter a filename');
+    return;
+  }
+  if (!folder.startsWith('res://')) folder = 'res://' + folder;
+  if (!folder.endsWith('/')) folder += '/';
+  if (!filename.endsWith('.gd')) filename += '.gd';
+
+  const newPath = folder + filename;
+
+  if (newPath === oldPath) {
+    closeRenameScriptModal();
+    return;
+  }
+
+  try {
+    const result = await sendCommand('rename_script', {
+      old_path: oldPath,
+      new_path: newPath,
+      update_references: updateRefs
+    });
+
+    if (result.ok) {
+      closeRenameScriptModal();
+      closePanel();
+      refreshProject();
+    } else {
+      alert('Failed to rename script: ' + (result.error || 'Unknown error'));
+    }
+  } catch (err) {
+    alert('Failed to rename script: ' + err.message);
+  }
+
+  rightClickedNode = null;
+};

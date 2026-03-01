@@ -1,10 +1,10 @@
 @tool
-extends Node
+extends RefCounted
 class_name VisualizerTools
 ## Crawls a Godot project and parses all GDScript files to build a project map.
 
 var _editor_plugin: EditorPlugin = null
-var _scene_tools_ref: Node = null
+var _utils: ToolUtils
 
 # Cached RegEx patterns for _parse_script (compiled once, reused per file)
 var _re_desc: RegEx
@@ -24,12 +24,6 @@ var _re_node: RegEx
 var _re_node_instance: RegEx
 var _re_script_ref: RegEx
 
-# Cached RegEx patterns for helpers
-var _re_helper_var: RegEx
-var _re_helper_func: RegEx
-var _re_helper_class: RegEx
-var _re_helper_signal: RegEx
-
 func _init() -> void:
 	_re_desc = RegEx.create_from_string("^##\\s*@desc:\\s*(.+)")
 	_re_extends = RegEx.create_from_string("^extends\\s+(\\w+)")
@@ -47,24 +41,16 @@ func _init() -> void:
 	_re_node_instance = RegEx.create_from_string('\\[node name="([^"]+)".*instance=ExtResource\\("([^"]+)"\\)')
 	_re_script_ref = RegEx.create_from_string('script = ExtResource\\("([^"]+)"\\)')
 
-	_re_helper_var = RegEx.create_from_string("^(@export)?\\s*(@onready)?\\s*var\\s+")
-	_re_helper_func = RegEx.create_from_string("^func\\s+")
-	_re_helper_class = RegEx.create_from_string("^(class_name|extends)\\s+")
-	_re_helper_signal = RegEx.create_from_string("^signal\\s+")
-
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
-func set_scene_tools_ref(scene_tools: Node) -> void:
-	_scene_tools_ref = scene_tools
+func set_utils(utils: ToolUtils) -> void:
+	_utils = utils
 
 func map_project(args: Dictionary) -> Dictionary:
 	"""Crawl the entire project and build a structural map of all scripts."""
-	var root_path: String = str(args.get(&"root", "res://"))
+	var root_path: String = _utils.ensure_res_path(str(args.get(&"root", "res://")))
 	var include_addons: bool = bool(args.get(&"include_addons", false))
-
-	if not root_path.begins_with("res://"):
-		root_path = "res://" + root_path
 
 	# Collect all .gd files
 	var script_paths: PackedStringArray = []
@@ -80,7 +66,7 @@ func map_project(args: Dictionary) -> Dictionary:
 	for path: String in script_paths:
 		var info: Dictionary = _parse_script(path)
 		nodes.append(info)
-		if info.get(&"class_name", "") != "":
+		if info[&"class_name"] != "":
 			class_map[info[&"class_name"]] = path
 
 	# Build edges
@@ -89,20 +75,20 @@ func map_project(args: Dictionary) -> Dictionary:
 		var from_path: String = node[&"path"]
 
 		# extends relationship (resolve class_name to path)
-		var extends_class: String = node.get(&"extends", "")
+		var extends_class: String = node[&"extends"]
 		if extends_class in class_map:
 			edges.append({&"from": from_path, &"to": class_map[extends_class], &"type": "extends"})
 
 		# preload/load references
-		for ref: String in node.get(&"preloads", []):
+		for ref: String in node[&"preloads"]:
 			if ref.ends_with(".gd"):
 				edges.append({&"from": from_path, &"to": ref, &"type": "preload"})
 
 		# signal connections
-		for conn: Dictionary in node.get(&"connections", []):
-			var target: String = conn.get(&"target", "")
+		for conn: Dictionary in node[&"connections"]:
+			var target: String = conn[&"target"]
 			if target in class_map:
-				edges.append({&"from": from_path, &"to": class_map[target], &"type": "signal", &"signal_name": conn.get(&"signal", "")})
+				edges.append({&"from": from_path, &"to": class_map[target], &"type": "signal", &"signal_name": conn[&"signal"]})
 
 	return {
 		&"ok": true,
@@ -148,7 +134,8 @@ func _parse_script(path: String) -> Dictionary:
 	"""Parse a GDScript file and extract its structure."""
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return {&"path": path, &"error": "Cannot open file"}
+		return {&"path": path, &"error": "Cannot open file",
+			&"class_name": "", &"extends": "", &"preloads": [], &"connections": []}
 
 	var content: String = file.get_as_text()
 	file.close()
@@ -355,11 +342,8 @@ func _infer_type(default_val: String) -> String:
 
 func map_scenes(args: Dictionary) -> Dictionary:
 	"""Crawl the project and build a map of all scenes."""
-	var root_path: String = str(args.get(&"root", "res://"))
+	var root_path: String = _utils.ensure_res_path(str(args.get(&"root", "res://")))
 	var include_addons: bool = bool(args.get(&"include_addons", false))
-
-	if not root_path.begins_with("res://"):
-		root_path = "res://" + root_path
 
 	# Collect all .tscn files
 	var scene_paths: PackedStringArray = []
@@ -378,7 +362,7 @@ func map_scenes(args: Dictionary) -> Dictionary:
 	var edges: Array = []
 	for scene: Dictionary in scenes:
 		var from_path: String = scene[&"path"]
-		for instance: String in scene.get(&"instances", []):
+		for instance: String in scene[&"instances"]:
 			edges.append({&"from": from_path, &"to": instance, &"type": "instance"})
 
 	return {
@@ -400,23 +384,23 @@ func _collect_scenes(path: String, results: PackedStringArray, include_addons: b
 		return
 
 	dir.list_dir_begin()
-	var name := dir.get_next()
-	while name != "":
-		if name.begins_with("."):
-			name = dir.get_next()
+	var d_name := dir.get_next()
+	while d_name != "":
+		if d_name.begins_with("."):
+			d_name = dir.get_next()
 			continue
 
-		var full_path := path.path_join(name)
+		var full_path := path.path_join(d_name)
 
 		if dir.current_is_dir():
-			if name == "addons" and not include_addons:
-				name = dir.get_next()
+			if d_name == "addons" and not include_addons:
+				d_name = dir.get_next()
 				continue
 			_collect_scenes(full_path, results, include_addons, depth + 1)
-		elif name.ends_with(".tscn"):
+		elif d_name.ends_with(".tscn"):
 			results.append(full_path)
 
-		name = dir.get_next()
+		d_name = dir.get_next()
 	dir.list_dir_end()
 
 
@@ -424,7 +408,7 @@ func _parse_scene(path: String) -> Dictionary:
 	"""Parse a scene file and extract its structure."""
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return {&"path": path, &"error": "Cannot open file"}
+		return {&"path": path, &"error": "Cannot open file", &"instances": []}
 
 	var content: String = file.get_as_text()
 	file.close()
@@ -437,8 +421,6 @@ func _parse_scene(path: String) -> Dictionary:
 
 	# Parse .tscn format
 	var lines: PackedStringArray = content.split("\n")
-	var current_node: Dictionary = {}
-
 	var ext_resources: Dictionary = {}  # id -> {path, type}
 
 	for line: String in lines:
@@ -482,531 +464,3 @@ func _parse_scene(path: String) -> Dictionary:
 		&"scripts": scripts,
 		&"node_count": nodes.size()
 	}
-
-
-# ============================================================================
-# INTERNAL FILE MODIFICATION FUNCTIONS (not exposed as MCP tools)
-# These are called directly by the visualizer for inline editing
-# ============================================================================
-
-func _internal_map_scenes(args: Dictionary) -> Dictionary:
-	"""Internal wrapper for map_scenes."""
-	return map_scenes(args)
-
-
-func _internal_refresh_map(args: Dictionary) -> Dictionary:
-	"""Refresh the project map."""
-	return map_project(args)
-
-
-func _internal_create_script_file(args: Dictionary) -> Dictionary:
-	"""Create a new script file."""
-	var script_path: String = args.get(&"path", "")
-	var extends_type: String = args.get(&"extends", "Node")
-	var class_name_str: String = args.get(&"class_name", "")
-
-	if script_path.is_empty():
-		return {&"ok": false, &"error": "No path provided"}
-
-	if not script_path.begins_with("res://"):
-		script_path = "res://" + script_path
-
-	if not script_path.ends_with(".gd"):
-		script_path += ".gd"
-
-	# Check if file already exists
-	if FileAccess.file_exists(script_path):
-		return {&"ok": false, &"error": "File already exists: " + script_path}
-
-	# Create directory if needed
-	var dir_path: String = script_path.get_base_dir()
-	if not DirAccess.dir_exists_absolute(dir_path):
-		var err := DirAccess.make_dir_recursive_absolute(dir_path)
-		if err != OK:
-			return {&"ok": false, &"error": "Failed to create directory"}
-
-	# Build script content
-	var content := ""
-	if not class_name_str.is_empty():
-		content += "class_name " + class_name_str + "\n"
-	content += "extends " + extends_type + "\n"
-	content += "\n\n"
-	content += "func _ready() -> void:\n"
-	content += "\tpass\n"
-
-	# Write file
-	var file := FileAccess.open(script_path, FileAccess.WRITE)
-	if file == null:
-		return {&"ok": false, &"error": "Cannot create file: " + script_path}
-
-	file.store_string(content)
-	file.close()
-
-	return {&"ok": true, &"path": script_path}
-
-
-func _internal_modify_variable(args: Dictionary) -> Dictionary:
-	"""Add, update, or delete a variable in a script file."""
-	var script_path: String = args.get(&"path", "")
-	var action: String = args.get(&"action", "")  # "add", "update", "delete"
-	var old_name: String = args.get(&"old_name", "")
-	var new_name: String = args.get(&"name", "")
-	var var_type: String = args.get(&"type", "")
-	var default_val: String = args.get(&"default", "")
-	var exported: bool = args.get(&"exported", false)
-	var onready: bool = args.get(&"onready", false)
-
-	if script_path.is_empty():
-		return {&"ok": false, &"error": "No script path provided"}
-
-	var file := FileAccess.open(script_path, FileAccess.READ)
-	if file == null:
-		return {&"ok": false, &"error": "Cannot open file: " + script_path}
-
-	var content: String = file.get_as_text()
-	file.close()
-
-	var lines: Array = Array(content.split("\n"))
-	var modified := false
-
-	if action == "delete":
-		# Find and remove the variable declaration
-		var pattern := RegEx.new()
-		pattern.compile("^(@export(?:\\([^)]*\\))?\\s+)?(?:@onready\\s+)?var\\s+" + old_name + "\\s*(?::|=|$)")
-		for i: int in range(lines.size() - 1, -1, -1):
-			if pattern.search(lines[i].strip_edges()):
-				lines.remove_at(i)
-				modified = true
-				break
-
-	elif action == "update":
-		# Find and update the variable declaration
-		var pattern := RegEx.new()
-		pattern.compile("^(@export(?:\\([^)]*\\))?\\s+)?(@onready\\s+)?var\\s+" + old_name + "\\s*(?::\\s*\\w+)?(?:\\s*=\\s*.+)?$")
-		for i: int in range(lines.size()):
-			var m := pattern.search(lines[i].strip_edges())
-			if m:
-				# Use onready from args, not from matched pattern
-				var new_line := _build_var_line(new_name, var_type, default_val, exported, onready)
-				lines[i] = new_line
-				modified = true
-				break
-
-	elif action == "add":
-		# Find position to insert (after last variable, before first function)
-		var insert_pos := _find_var_insert_position(lines, exported)
-		var new_line := _build_var_line(new_name, var_type, default_val, exported, false)
-		lines.insert(insert_pos, new_line)
-		modified = true
-
-	if modified:
-		var new_content := "\n".join(PackedStringArray(lines))
-		var write_file := FileAccess.open(script_path, FileAccess.WRITE)
-		if write_file == null:
-			return {&"ok": false, &"error": "Cannot write to file: " + script_path}
-		write_file.store_string(new_content)
-		write_file.close()
-		return {&"ok": true, &"action": action, &"variable": new_name}
-
-	return {&"ok": false, &"error": "Variable not found: " + old_name}
-
-
-func _internal_modify_signal(args: Dictionary) -> Dictionary:
-	"""Add, update, or delete a signal in a script file."""
-	var script_path: String = args.get(&"path", "")
-	var action: String = args.get(&"action", "")
-	var old_name: String = args.get(&"old_name", "")
-	var new_name: String = args.get(&"name", "")
-	var params: String = args.get(&"params", "")
-
-	if script_path.is_empty():
-		return {&"ok": false, &"error": "No script path provided"}
-
-	var file := FileAccess.open(script_path, FileAccess.READ)
-	if file == null:
-		return {&"ok": false, &"error": "Cannot open file: " + script_path}
-
-	var content: String = file.get_as_text()
-	file.close()
-
-	var lines: Array = Array(content.split("\n"))
-	var modified := false
-
-	if action == "delete":
-		var pattern := RegEx.new()
-		pattern.compile("^signal\\s+" + old_name + "(?:\\s*\\(|$)")
-		for i: int in range(lines.size() - 1, -1, -1):
-			if pattern.search(lines[i].strip_edges()):
-				lines.remove_at(i)
-				modified = true
-				break
-
-	elif action == "update":
-		var pattern := RegEx.new()
-		pattern.compile("^signal\\s+" + old_name + "(?:\\s*\\([^)]*\\))?$")
-		for i: int in range(lines.size()):
-			if pattern.search(lines[i].strip_edges()):
-				var new_line := "signal " + new_name
-				if not params.is_empty():
-					new_line += "(" + params + ")"
-				lines[i] = new_line
-				modified = true
-				break
-
-	elif action == "add":
-		var insert_pos := _find_signal_insert_position(lines)
-		var new_line := "signal " + new_name
-		if not params.is_empty():
-			new_line += "(" + params + ")"
-		lines.insert(insert_pos, new_line)
-		modified = true
-
-	if modified:
-		var new_content := "\n".join(PackedStringArray(lines))
-		var write_file := FileAccess.open(script_path, FileAccess.WRITE)
-		if write_file == null:
-			return {&"ok": false, &"error": "Cannot write to file: " + script_path}
-		write_file.store_string(new_content)
-		write_file.close()
-		return {&"ok": true, &"action": action, &"signal": new_name}
-
-	return {&"ok": false, &"error": "Signal not found: " + old_name}
-
-
-func _internal_modify_function(args: Dictionary) -> Dictionary:
-	"""Update a function's body in a script file."""
-	var script_path: String = args.get(&"path", "")
-	var func_name: String = args.get(&"name", "")
-	var new_body: String = args.get(&"body", "")
-
-	if script_path.is_empty() or func_name.is_empty():
-		return {&"ok": false, &"error": "Missing path or function name"}
-
-	var file := FileAccess.open(script_path, FileAccess.READ)
-	if file == null:
-		return {&"ok": false, &"error": "Cannot open file: " + script_path}
-
-	var content: String = file.get_as_text()
-	file.close()
-
-	var lines: Array = Array(content.split("\n"))
-
-	# Find the function
-	var re_func := RegEx.new()
-	re_func.compile("^func\\s+" + func_name + "\\s*\\(")
-
-	var func_start := -1
-	var func_end := -1
-
-	for i: int in range(lines.size()):
-		if func_start == -1:
-			if re_func.search(lines[i].strip_edges()):
-				func_start = i
-		elif func_start != -1:
-			# Find end of function (next top-level declaration or end of file)
-			var stripped: String = lines[i].strip_edges()
-			if not stripped.is_empty() and not lines[i].begins_with("\t") and not lines[i].begins_with(" ") and not stripped.begins_with("#"):
-				func_end = i
-				break
-
-	if func_start == -1:
-		return {&"ok": false, &"error": "Function not found: " + func_name}
-
-	if func_end == -1:
-		func_end = lines.size()
-
-	# Remove trailing empty lines from function body
-	while func_end > func_start + 1 and lines[func_end - 1].strip_edges().is_empty():
-		func_end -= 1
-
-	# Replace function body
-	var new_lines := Array(new_body.split("\n"))
-
-	# Remove old function lines
-	for i: int in range(func_end - 1, func_start - 1, -1):
-		lines.remove_at(i)
-
-	# Insert new function lines
-	for i: int in range(new_lines.size()):
-		lines.insert(func_start + i, new_lines[i])
-
-	var new_content := "\n".join(PackedStringArray(lines))
-	var write_file := FileAccess.open(script_path, FileAccess.WRITE)
-	if write_file == null:
-		return {&"ok": false, &"error": "Cannot write to file: " + script_path}
-	write_file.store_string(new_content)
-	write_file.close()
-
-	return {&"ok": true, &"function": func_name}
-
-
-func _internal_modify_function_delete(args: Dictionary) -> Dictionary:
-	"""Delete a function from a script file."""
-	var script_path: String = args.get(&"path", "")
-	var func_name: String = args.get(&"name", "")
-
-	if script_path.is_empty() or func_name.is_empty():
-		return {&"ok": false, &"error": "Missing path or function name"}
-
-	var file := FileAccess.open(script_path, FileAccess.READ)
-	if file == null:
-		return {&"ok": false, &"error": "Cannot open file: " + script_path}
-
-	var content: String = file.get_as_text()
-	file.close()
-
-	var lines: Array = Array(content.split("\n"))
-
-	# Find the function
-	var re_func := RegEx.new()
-	re_func.compile("^func\\s+" + func_name + "\\s*\\(")
-
-	var func_start := -1
-	var func_end := -1
-
-	for i: int in range(lines.size()):
-		if func_start == -1:
-			if re_func.search(lines[i].strip_edges()):
-				func_start = i
-		elif func_start != -1:
-			# Find end of function (next top-level declaration or end of file)
-			var stripped: String = lines[i].strip_edges()
-			if not stripped.is_empty() and not lines[i].begins_with("\t") and not lines[i].begins_with(" ") and not stripped.begins_with("#"):
-				func_end = i
-				break
-
-	if func_start == -1:
-		return {&"ok": false, &"error": "Function not found: " + func_name}
-
-	if func_end == -1:
-		func_end = lines.size()
-
-	# Remove trailing empty lines before the function
-	while func_end > func_start + 1 and lines[func_end - 1].strip_edges().is_empty():
-		func_end -= 1
-
-	# Remove the function lines
-	for i: int in range(func_end - 1, func_start - 1, -1):
-		lines.remove_at(i)
-
-	# Remove extra blank lines that might be left
-	# (but keep at least one blank line between declarations)
-
-	var new_content := "\n".join(PackedStringArray(lines))
-	var write_file := FileAccess.open(script_path, FileAccess.WRITE)
-	if write_file == null:
-		return {&"ok": false, &"error": "Cannot write to file: " + script_path}
-	write_file.store_string(new_content)
-	write_file.close()
-
-	return {&"ok": true, &"deleted": func_name}
-
-
-func _internal_find_usages(args: Dictionary) -> Dictionary:
-	"""Find all usages of a variable, signal, or function across all scripts."""
-	var name: String = args.get(&"name", "")
-	var item_type: String = args.get(&"type", "")  # "variable", "signal", "function"
-	var root_path: String = args.get(&"root", "res://")
-
-	if name.is_empty():
-		return {&"ok": false, &"error": "No name provided"}
-
-	# Collect all scripts
-	var script_paths: PackedStringArray = []
-	_collect_scripts(root_path, script_paths, false)
-
-	var usages: Array = []
-
-	# Build regex patterns once before the loop
-	var pattern := RegEx.create_from_string("\\b" + name + "\\b")
-	var skip_pattern: RegEx = null
-	if item_type == "variable":
-		skip_pattern = RegEx.create_from_string("^\\s*(@export)?\\s*var\\s+" + name + "\\b")
-	elif item_type == "signal":
-		skip_pattern = RegEx.create_from_string("^\\s*signal\\s+" + name + "\\b")
-	elif item_type == "function":
-		skip_pattern = RegEx.create_from_string("^\\s*func\\s+" + name + "\\s*\\(")
-
-	for path: String in script_paths:
-		var file := FileAccess.open(path, FileAccess.READ)
-		if file == null:
-			continue
-
-		var content: String = file.get_as_text()
-		file.close()
-
-		var lines: PackedStringArray = content.split("\n")
-		for i: int in range(lines.size()):
-			var line: String = lines[i]
-			if pattern.search(line):
-				# Skip the declaration line itself
-				if skip_pattern and skip_pattern.search(line):
-					continue
-
-				usages.append({
-					&"file": path,
-					&"line": i + 1,
-					&"code": line.strip_edges()
-				})
-
-	return {&"ok": true, &"usages": usages, &"count": usages.size()}
-
-
-# Helper functions for file modification
-
-func _build_var_line(name: String, type: String, default: String, exported: bool, onready: bool) -> String:
-	var line := ""
-	if exported:
-		line += "@export "
-	if onready:
-		line += "@onready "
-	line += "var " + name
-	if not type.is_empty():
-		line += ": " + type
-	if not default.is_empty():
-		line += " = " + default
-	return line
-
-
-func _find_var_insert_position(lines: Array, exported: bool) -> int:
-	"""Find the best position to insert a new variable."""
-	var last_var_line := -1
-	var first_func_line := -1
-	var after_class_decl := 0
-
-	for i: int in range(lines.size()):
-		var stripped: String = lines[i].strip_edges()
-		if _re_helper_class.search(stripped):
-			after_class_decl = i + 1
-		if _re_helper_var.search(stripped):
-			last_var_line = i
-		if _re_helper_func.search(stripped) and first_func_line == -1:
-			first_func_line = i
-			break
-
-	# Insert after last variable, or before first function, or after class declarations
-	if last_var_line != -1:
-		return last_var_line + 1
-	if first_func_line != -1:
-		return first_func_line
-	return max(after_class_decl, 2)  # At least after extends/class_name
-
-
-func _find_signal_insert_position(lines: Array) -> int:
-	"""Find the best position to insert a new signal."""
-	var last_signal_line := -1
-	var first_var_line := -1
-	var after_class_decl := 0
-
-	for i: int in range(lines.size()):
-		var stripped: String = lines[i].strip_edges()
-		if _re_helper_class.search(stripped):
-			after_class_decl = i + 1
-		if _re_helper_signal.search(stripped):
-			last_signal_line = i
-		if _re_helper_var.search(stripped) and first_var_line == -1:
-			first_var_line = i
-
-	# Insert after last signal, or before first var, or after class declarations
-	if last_signal_line != -1:
-		return last_signal_line + 1
-	if first_var_line != -1:
-		return first_var_line
-	return max(after_class_decl, 2)
-
-
-# ============================================================================
-# SCENE VISUALIZER INTERNAL FUNCTIONS
-# These are called by the visualizer for scene view functionality
-# ============================================================================
-
-func _internal_get_scene_hierarchy(args: Dictionary) -> Dictionary:
-	"""Get scene hierarchy for visualizer."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("get_scene_hierarchy"):
-		return _scene_tools_ref.get_scene_hierarchy(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_get_scene_node_properties(args: Dictionary) -> Dictionary:
-	"""Get node properties for visualizer panel."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("get_scene_node_properties"):
-		return _scene_tools_ref.get_scene_node_properties(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_set_scene_node_property(args: Dictionary) -> Dictionary:
-	"""Set node property from visualizer panel."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("set_scene_node_property"):
-		return _scene_tools_ref.set_scene_node_property(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_add_scene_node(args: Dictionary) -> Dictionary:
-	"""Add a node to a scene from visualizer."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("add_node"):
-		return _scene_tools_ref.add_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_remove_scene_node(args: Dictionary) -> Dictionary:
-	"""Remove a node from a scene from visualizer."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("remove_node"):
-		return _scene_tools_ref.remove_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_rename_scene_node(args: Dictionary) -> Dictionary:
-	"""Rename a node in a scene from visualizer."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("rename_node"):
-		return _scene_tools_ref.rename_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_move_scene_node(args: Dictionary) -> Dictionary:
-	"""Move/reorder a node in a scene from visualizer."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("move_node"):
-		return _scene_tools_ref.move_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-# Simpler aliases for context menu actions
-func _internal_add_node(args: Dictionary) -> Dictionary:
-	"""Add a node to a scene."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("add_node"):
-		return _scene_tools_ref.add_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_remove_node(args: Dictionary) -> Dictionary:
-	"""Remove a node from a scene."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("remove_node"):
-		return _scene_tools_ref.remove_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_rename_node(args: Dictionary) -> Dictionary:
-	"""Rename a node in a scene."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("rename_node"):
-		return _scene_tools_ref.rename_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_move_node(args: Dictionary) -> Dictionary:
-	"""Move/reorder a node in a scene."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("move_node"):
-		return _scene_tools_ref.move_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_duplicate_node(args: Dictionary) -> Dictionary:
-	"""Duplicate a node in a scene."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("duplicate_node"):
-		return _scene_tools_ref.duplicate_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}
-
-
-func _internal_reorder_node(args: Dictionary) -> Dictionary:
-	"""Reorder a node within its parent (change sibling index)."""
-	if _scene_tools_ref and _scene_tools_ref.has_method("reorder_node"):
-		return _scene_tools_ref.reorder_node(args)
-	return {&"ok": false, &"error": "Scene tools not available"}

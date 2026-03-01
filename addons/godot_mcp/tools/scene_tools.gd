@@ -1,31 +1,26 @@
 @tool
-extends Node
+extends RefCounted
 class_name SceneTools
 ## Scene operation tools for MCP.
 ## Handles: create_scene, read_scene, add_node, remove_node, modify_node_property,
 ##          rename_node, move_node, attach_script, detach_script, set_collision_shape,
 ##          set_sprite_texture
 
-const _SKIP_PROPS: Dictionary[String, bool] = {
-	"script": true, "owner": true, "scene_file_path": true,
-	"unique_name_in_owner": true, "editor_description": true,
-}
-
 var _editor_plugin: EditorPlugin = null
+var _utils: ToolUtils
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
+
+func set_utils(utils: ToolUtils) -> void:
+	_utils = utils
 
 # =============================================================================
 # Shared helpers
 # =============================================================================
 func _refresh_and_reload(scene_path: String) -> void:
-	_refresh_filesystem()
+	_utils.refresh_filesystem()
 	_reload_scene_in_editor(scene_path)
-
-func _refresh_filesystem() -> void:
-	if _editor_plugin:
-		_editor_plugin.get_editor_interface().get_resource_filesystem().scan()
 
 func _reload_scene_in_editor(scene_path: String) -> void:
 	if not _editor_plugin:
@@ -34,11 +29,6 @@ func _reload_scene_in_editor(scene_path: String) -> void:
 	var edited = ei.get_edited_scene_root()
 	if edited and edited.scene_file_path == scene_path:
 		ei.reload_scene_from_path(scene_path)
-
-func _ensure_res_path(path: String) -> String:
-	if not path.begins_with("res://"):
-		return "res://" + path
-	return path
 
 func _load_scene(scene_path: String) -> Array:
 	"""Returns [scene_root, error_dict]. If error_dict is not empty, scene_root is null."""
@@ -95,25 +85,11 @@ func _set_node_properties(node: Node, properties: Dictionary) -> void:
 		var prop_value = _parse_value(properties[prop_name])
 		node.set(prop_name, prop_value)
 
-func _serialize_value(value: Variant) -> Variant:
-	match typeof(value):
-		TYPE_VECTOR2: return {&"type": &"Vector2", &"x": value.x, &"y": value.y}
-		TYPE_VECTOR3: return {&"type": &"Vector3", &"x": value.x, &"y": value.y, &"z": value.z}
-		TYPE_COLOR: return {&"type": &"Color", &"r": value.r, &"g": value.g, &"b": value.b, &"a": value.a}
-		TYPE_VECTOR2I: return {&"type": &"Vector2i", &"x": value.x, &"y": value.y}
-		TYPE_VECTOR3I: return {&"type": &"Vector3i", &"x": value.x, &"y": value.y, &"z": value.z}
-		TYPE_RECT2: return {&"type": &"Rect2", &"x": value.position.x, &"y": value.position.y, &"width": value.size.x, &"height": value.size.y}
-		TYPE_OBJECT:
-			if value and value is Resource and value.resource_path:
-				return {&"type": &"Resource", &"path": value.resource_path}
-			return null
-		_: return value
-
 # =============================================================================
 # create_scene
 # =============================================================================
 func create_scene(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var root_node_name: String = str(args.get(&"root_node_name", "Node"))
 	var root_node_type: String = str(args.get(&"root_node_type", ""))
 	var nodes: Array = args.get(&"nodes", [])
@@ -198,7 +174,7 @@ func _count_nodes(node: Node) -> int:
 # read_scene
 # =============================================================================
 func read_scene(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var include_properties: bool = args.get(&"include_properties", false)
 
 	if scene_path.strip_edges() == "res://":
@@ -228,7 +204,7 @@ func _build_node_structure(node: Node, include_props: bool, path: String = ".") 
 		for prop_name: String in PROPERTIES:
 			var val = node.get(prop_name)
 			if val != null:
-				props[prop_name] = _serialize_value(val)
+				props[prop_name] = _utils.serialize_value(val)
 		if not props.is_empty():
 			data[&"properties"] = props
 
@@ -241,7 +217,7 @@ func _build_node_structure(node: Node, include_props: bool, path: String = ".") 
 # add_node
 # =============================================================================
 func add_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_name: String = str(args.get(&"node_name", ""))
 	var node_type: String = str(args.get(&"node_type", "Node"))
 	var parent_path: String = str(args.get(&"parent_path", "."))
@@ -285,7 +261,7 @@ func add_node(args: Dictionary) -> Dictionary:
 # remove_node
 # =============================================================================
 func remove_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", ""))
 
 	if scene_path.strip_edges() == "res://":
@@ -319,7 +295,7 @@ func remove_node(args: Dictionary) -> Dictionary:
 # modify_node_property
 # =============================================================================
 func modify_node_property(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 	var property_name: String = str(args.get(&"property_name", ""))
 	var value = args.get(&"value")
@@ -374,7 +350,7 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 # rename_node
 # =============================================================================
 func rename_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", ""))
 	var new_name: String = str(args.get(&"new_name", ""))
 
@@ -409,7 +385,7 @@ func rename_node(args: Dictionary) -> Dictionary:
 # move_node
 # =============================================================================
 func move_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", ""))
 	var new_parent_path: String = str(args.get(&"new_parent_path", "."))
 	var sibling_index: int = int(args.get(&"sibling_index", -1))
@@ -451,7 +427,7 @@ func move_node(args: Dictionary) -> Dictionary:
 # duplicate_node
 # =============================================================================
 func duplicate_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", ""))
 	var new_name: String = str(args.get(&"new_name", ""))
 
@@ -515,7 +491,7 @@ func _set_owner_recursive(node: Node, owner: Node) -> void:
 # reorder_node - simpler function just for changing sibling order
 # =============================================================================
 func reorder_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", ""))
 	var new_index: int = int(args.get(&"new_index", -1))
 
@@ -561,7 +537,7 @@ func reorder_node(args: Dictionary) -> Dictionary:
 # attach_script
 # =============================================================================
 func attach_script(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 	var script_path: String = str(args.get(&"script_path", ""))
 
@@ -597,7 +573,7 @@ func attach_script(args: Dictionary) -> Dictionary:
 # detach_script
 # =============================================================================
 func detach_script(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 
 	if scene_path.strip_edges() == "res://":
@@ -625,7 +601,7 @@ func detach_script(args: Dictionary) -> Dictionary:
 # set_collision_shape
 # =============================================================================
 func set_collision_shape(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 	var shape_type: String = str(args.get(&"shape_type", ""))
 	var shape_params: Dictionary = args.get(&"shape_params", {})
@@ -678,7 +654,7 @@ func set_collision_shape(args: Dictionary) -> Dictionary:
 # set_sprite_texture
 # =============================================================================
 func set_sprite_texture(args: Dictionary) -> Dictionary:
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 	var texture_type: String = str(args.get(&"texture_type", ""))
 	var texture_params: Dictionary = args.get(&"texture_params", {})
@@ -744,7 +720,7 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 # =============================================================================
 func get_scene_hierarchy(args: Dictionary) -> Dictionary:
 	"""Get the full scene hierarchy with node information for the visualizer."""
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 
 	if scene_path.strip_edges() == "res://":
 		return {&"ok": false, &"error": "Missing 'scene_path'"}
@@ -792,7 +768,7 @@ func _build_hierarchy_recursive(node: Node, path: String) -> Dictionary:
 # =============================================================================
 func get_scene_node_properties(args: Dictionary) -> Dictionary:
 	"""Get all properties of a specific node in a scene with their current values."""
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 
 	if scene_path.strip_edges() == "res://":
@@ -819,12 +795,11 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 		# Skip internal/private properties
 		if prop_name.begins_with("_"):
 			continue
-		if _SKIP_PROPS.has(prop_name):
+		if _utils.SKIP_PROPS.has(prop_name):
 			continue
 
 		# Only include editor-visible properties
-		var usage = prop.get(&"usage", 0)
-		if not (usage & PROPERTY_USAGE_EDITOR):
+		if not (prop[&"usage"] & PROPERTY_USAGE_EDITOR):
 			continue
 
 		# Get current value
@@ -833,11 +808,11 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 		var prop_info := {
 			&"name": prop_name,
 			&"type": prop[&"type"],
-			&"type_name": _type_id_to_name(prop[&"type"]),
-			&"hint": prop.get(&"hint", 0),
-			&"hint_string": prop.get(&"hint_string", ""),
-			&"value": _serialize_value(current_value),
-			&"usage": usage
+			&"type_name": _utils.type_id_to_name(prop[&"type"]),
+			&"hint": prop[&"hint"],
+			&"hint_string": prop[&"hint_string"],
+			&"value": _utils.serialize_value(current_value),
+			&"usage": prop[&"usage"]
 		}
 
 		# Determine category from class hierarchy
@@ -870,49 +845,6 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 		&"property_count": properties.size()
 	}
 
-func _type_id_to_name(type_id: int) -> String:
-	"""Convert Godot type ID to human-readable name."""
-	match type_id:
-		TYPE_NIL: return "null"
-		TYPE_BOOL: return "bool"
-		TYPE_INT: return "int"
-		TYPE_FLOAT: return "float"
-		TYPE_STRING: return "String"
-		TYPE_VECTOR2: return "Vector2"
-		TYPE_VECTOR2I: return "Vector2i"
-		TYPE_RECT2: return "Rect2"
-		TYPE_RECT2I: return "Rect2i"
-		TYPE_VECTOR3: return "Vector3"
-		TYPE_VECTOR3I: return "Vector3i"
-		TYPE_TRANSFORM2D: return "Transform2D"
-		TYPE_VECTOR4: return "Vector4"
-		TYPE_VECTOR4I: return "Vector4i"
-		TYPE_PLANE: return "Plane"
-		TYPE_QUATERNION: return "Quaternion"
-		TYPE_AABB: return "AABB"
-		TYPE_BASIS: return "Basis"
-		TYPE_TRANSFORM3D: return "Transform3D"
-		TYPE_PROJECTION: return "Projection"
-		TYPE_COLOR: return "Color"
-		TYPE_STRING_NAME: return "StringName"
-		TYPE_NODE_PATH: return "NodePath"
-		TYPE_RID: return "RID"
-		TYPE_OBJECT: return "Object"
-		TYPE_CALLABLE: return "Callable"
-		TYPE_SIGNAL: return "Signal"
-		TYPE_DICTIONARY: return "Dictionary"
-		TYPE_ARRAY: return "Array"
-		TYPE_PACKED_BYTE_ARRAY: return "PackedByteArray"
-		TYPE_PACKED_INT32_ARRAY: return "PackedInt32Array"
-		TYPE_PACKED_INT64_ARRAY: return "PackedInt64Array"
-		TYPE_PACKED_FLOAT32_ARRAY: return "PackedFloat32Array"
-		TYPE_PACKED_FLOAT64_ARRAY: return "PackedFloat64Array"
-		TYPE_PACKED_STRING_ARRAY: return "PackedStringArray"
-		TYPE_PACKED_VECTOR2_ARRAY: return "PackedVector2Array"
-		TYPE_PACKED_VECTOR3_ARRAY: return "PackedVector3Array"
-		TYPE_PACKED_COLOR_ARRAY: return "PackedColorArray"
-		_: return "Variant"
-
 func _get_property_category(node: Node, prop_name: String) -> String:
 	"""Determine which class in the hierarchy defines this property."""
 	var cls: String = node.get_class()
@@ -930,7 +862,7 @@ func _get_property_category(node: Node, prop_name: String) -> String:
 # =============================================================================
 func set_scene_node_property(args: Dictionary) -> Dictionary:
 	"""Set a property on a node in a scene (supports complex types)."""
-	var scene_path: String = _ensure_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.ensure_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 	var property_name: String = str(args.get(&"property_name", ""))
 	var value = args.get(&"value")
@@ -967,8 +899,8 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 		&"scene_path": scene_path,
 		&"node_path": node_path,
 		&"property_name": property_name,
-		&"old_value": _serialize_value(old_value),
-		&"new_value": _serialize_value(parsed_value),
+		&"old_value": _utils.serialize_value(old_value),
+		&"new_value": _utils.serialize_value(parsed_value),
 		&"message": "Set %s.%s" % [node_path, property_name]
 	}
 

@@ -1,18 +1,18 @@
 @tool
-extends Node
+extends RefCounted
 class_name AssetTools
 ## Asset generation tools for MCP.
 ## Handles: generate_2d_asset, search_comfyui_nodes,
 ##          inspect_runninghub_workflow, customize_and_run_workflow
 
 var _editor_plugin: EditorPlugin = null
+var _utils: ToolUtils
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
-func _refresh_filesystem() -> void:
-	if _editor_plugin:
-		_editor_plugin.get_editor_interface().get_resource_filesystem().scan()
+func set_utils(utils: ToolUtils) -> void:
+	_utils = utils
 
 # =============================================================================
 # generate_2d_asset - Generate PNG from SVG code
@@ -32,8 +32,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 		filename += ".png"
 
 	# Ensure save path
-	if not save_path.begins_with("res://"):
-		save_path = "res://" + save_path
+	save_path = _utils.ensure_res_path(save_path)
 	if not save_path.ends_with("/"):
 		save_path += "/"
 
@@ -89,7 +88,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	if err != OK:
 		return {&"ok": false, &"error": "Failed to save PNG: " + str(err)}
 
-	_refresh_filesystem()
+	_utils.refresh_filesystem()
 
 	return {
 		&"ok": true,

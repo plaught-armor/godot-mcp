@@ -1,33 +1,29 @@
 @tool
-extends Node
+extends RefCounted
 class_name FileTools
 ## File operation tools for MCP.
-## Handles: list_dir, read_file, search_project, create_script
+## Handles: list_dir, read_file, search_project,
+##          create_folder, delete_file, rename_file
 
 const DEFAULT_MAX_BYTES := 200_000
 const DEFAULT_MAX_RESULTS := 200
 const MAX_TRAVERSAL_DEPTH := 20
-const _SKIP_EXTENSIONS: Dictionary = {
-	".import": true, ".png": true, ".jpg": true, ".jpeg": true,
-	".webp": true, ".svg": true, ".ogg": true, ".wav": true,
-	".mp3": true, ".escn": true, ".glb": true, ".gltf": true,
-	".uid": true,
-}
 
 var _editor_plugin: EditorPlugin = null
+var _utils: ToolUtils
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
+
+func set_utils(utils: ToolUtils) -> void:
+	_utils = utils
 
 # =============================================================================
 # list_dir - List files and folders in a directory
 # =============================================================================
 func list_dir(args: Dictionary) -> Dictionary:
-	var root: String = str(args.get(&"root", "res://"))
+	var root: String = _utils.ensure_res_path(str(args.get(&"root", "res://")))
 	var include_hidden: bool = bool(args.get(&"include_hidden", false))
-
-	if not root.begins_with("res://"):
-		root = "res://" + root
 
 	var dir := DirAccess.open(root)
 	if dir == null:
@@ -81,8 +77,7 @@ func read_file(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path' parameter"}
 
-	if not path.begins_with("res://"):
-		path = "res://" + path
+	path = _utils.ensure_res_path(path)
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -155,14 +150,13 @@ func search_project(args: Dictionary) -> Dictionary:
 
 		# Only split files that actually contain the query
 		var lines := content.split("\n")
+		var search_lines := lines if case_sensitive else search_content.split("\n")
 		for i: int in range(lines.size()):
-			var line := lines[i]
-			var search_line := line if case_sensitive else line.to_lower()
-			if search_line.find(search_query) != -1:
+			if search_lines[i].find(search_query) != -1:
 				matches.append({
 					&"file": file_path,
 					&"line": i + 1,
-					&"content": line.strip_edges()
+					&"content": lines[i].strip_edges()
 				})
 				if matches.size() >= max_results:
 					break
@@ -201,9 +195,7 @@ func _collect_files_recursive(path: String, glob_filter: String, out: PackedStri
 		if dir.current_is_dir():
 			_collect_files_recursive(full_path, glob_filter, out, depth + 1)
 		else:
-			# Skip binary files — O(1) Dictionary lookup on the extension
-			var ext := "." + file_name.get_extension().to_lower()
-			if not _SKIP_EXTENSIONS.has(ext):
+			if not _is_binary_ext(file_name.get_extension()):
 				if glob_filter.is_empty() or _matches_glob(full_path, glob_filter):
 					out.append(full_path)
 
@@ -224,58 +216,96 @@ func _matches_glob(path: String, pattern: String) -> bool:
 	# Simple contains check
 	return path.find(pattern) != -1
 
+static func _is_binary_ext(ext: String) -> bool:
+	match ext:
+		"import", "png", "jpg", "jpeg", "webp", "svg", \
+		"ogg", "wav", "mp3", "escn", "glb", "gltf", "uid":
+			return true
+	return false
+
 # =============================================================================
-# create_script - Create a new GDScript file
+# create_folder - Create a directory
 # =============================================================================
-func create_script(args: Dictionary) -> Dictionary:
+func create_folder(args: Dictionary) -> Dictionary:
 	var path: String = str(args.get(&"path", ""))
-	var content: String = str(args.get(&"content", ""))
+	if path.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'path'"}
+
+	path = _utils.ensure_res_path(path)
+
+	if DirAccess.dir_exists_absolute(path):
+		return {&"ok": true, &"path": path, &"message": "Directory already exists"}
+
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err != OK:
+		return {&"ok": false, &"error": "Failed to create directory: " + str(err)}
+
+	_utils.refresh_filesystem()
+
+	return {&"ok": true, &"path": path, &"message": "Directory created"}
+
+# =============================================================================
+# delete_file - Delete a file with optional backup
+# =============================================================================
+func delete_file(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get(&"path", ""))
+	var confirm: bool = bool(args.get(&"confirm", false))
+	var create_backup: bool = bool(args.get(&"create_backup", true))
 
 	if path.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'path' parameter"}
+		return {&"ok": false, &"error": "Missing 'path'"}
+	if not confirm:
+		return {&"ok": false, &"error": "Must set confirm=true to delete"}
 
-	if not path.begins_with("res://"):
-		path = "res://" + path
+	path = _utils.ensure_res_path(path)
 
-	# Add .gd extension if missing
-	if not "." in path.get_file():
-		path += ".gd"
+	if not FileAccess.file_exists(path):
+		return {&"ok": false, &"error": "File not found: " + path}
 
-	# Check if file already exists
-	if FileAccess.file_exists(path):
-		return {&"ok": false, &"error": "File already exists: " + path}
+	# Create backup
+	if create_backup:
+		var backup_path := path + ".bak"
+		DirAccess.copy_absolute(path, backup_path)
 
-	# Ensure parent directory exists
-	var dir_path := path.get_base_dir()
+	var err := DirAccess.remove_absolute(path)
+	if err != OK:
+		return {&"ok": false, &"error": "Failed to delete file: " + str(err)}
+
+	_utils.refresh_filesystem()
+
+	return {&"ok": true, &"path": path, &"message": "File deleted" + (" (backup created)" if create_backup else "")}
+
+# =============================================================================
+# rename_file - Rename or move a file
+# =============================================================================
+func rename_file(args: Dictionary) -> Dictionary:
+	var old_path: String = str(args.get(&"old_path", ""))
+	var new_path: String = str(args.get(&"new_path", ""))
+
+	if old_path.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'old_path'"}
+	if new_path.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'new_path'"}
+
+	old_path = _utils.ensure_res_path(old_path)
+	new_path = _utils.ensure_res_path(new_path)
+
+	if not FileAccess.file_exists(old_path):
+		return {&"ok": false, &"error": "File not found: " + old_path}
+	if FileAccess.file_exists(new_path):
+		return {&"ok": false, &"error": "Target already exists: " + new_path}
+
+	# Ensure target directory exists
+	var dir_path := new_path.get_base_dir()
 	if not DirAccess.dir_exists_absolute(dir_path):
-		var err := DirAccess.make_dir_recursive_absolute(dir_path)
-		if err != OK:
-			return {&"ok": false, &"error": "Could not create directory: " + dir_path}
+		DirAccess.make_dir_recursive_absolute(dir_path)
 
-	# Write file
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		return {&"ok": false, &"error": "Could not create file: " + path}
+	var err := DirAccess.rename_absolute(old_path, new_path)
+	if err != OK:
+		return {&"ok": false, &"error": "Failed to rename: " + str(err)}
 
-	file.store_string(content)
-	file.close()
+	_utils.refresh_filesystem()
 
-	# Refresh filesystem so Godot sees the new file
-	_refresh_filesystem()
+	return {&"ok": true, &"old_path": old_path, &"new_path": new_path,
+		&"message": "Renamed %s to %s" % [old_path, new_path]}
 
-	return {
-		&"ok": true,
-		&"path": path,
-		&"size_bytes": content.length(),
-		&"message": "Script created successfully"
-	}
-
-func _refresh_filesystem() -> void:
-	"""Tell Godot to rescan the filesystem."""
-	if _editor_plugin != null:
-		_editor_plugin.get_editor_interface().get_resource_filesystem().scan()
-	elif Engine.is_editor_hint():
-		# Fallback if no plugin reference
-		var editor_interface = Engine.get_singleton("EditorInterface")
-		if editor_interface:
-			editor_interface.get_resource_filesystem().scan()

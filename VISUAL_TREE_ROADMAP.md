@@ -9,6 +9,7 @@
 - [x] Right-click context menu
 - [x] New script creation
 - [x] Draggable/resizable panels
+- [x] Function deletion with usage check
 - [x] Scene View tab (Phase 4 - Core)
   - Scene overview with cards showing scene info
   - Click scene → expand to full node hierarchy tree
@@ -18,9 +19,11 @@
   - Inline editing of all node properties
   - Property controls: toggles, sliders, vectors, colors, enums
   - Back navigation to scene overview
+- [x] Right-click context menu on scene nodes (add child, delete, rename, duplicate, reorder)
+- [x] Visualizer launched from editor (Project → Tools → MCP: Map Project)
 
 ## In Progress
-- [ ] Function deletion with usage check
+- [ ] Delete/rename scripts from visualizer
 
 ## Planned
 
@@ -29,13 +32,10 @@
 - Visual ports on node edges when hovering
 
 ### Phase 3: Script Management
-- Right click to add a new node (script)
 - Script templates (Node2D, State Machine, Singleton, etc.)
-- Delete/rename scripts
 
 ### Phase 4: Scene View (Enhancements)
 - Drag to reorder siblings (change draw order)
-- Right-click context menu on scene nodes (add child, delete, rename)
 - Drag scripts onto scene nodes to attach
 - Cross-scene signal visualization
 
