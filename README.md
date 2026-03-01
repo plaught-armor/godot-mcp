@@ -106,12 +106,28 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ### Interactive Visualizer
 
-Open the visualizer from the Godot editor: **Project → Tools → MCP: Map Project**. A browser-based explorer opens at `localhost:6510`:
+Open the visualizer from the Godot editor: **Project → Tools → MCP: Map Project**. A browser-based explorer opens at `localhost:6510`.
+
+**Script Map**
 - Force-directed graph of all scripts and their relationships
+- Folder grouping with drag-to-move folders and position persistence
+- Git status indicators (green/yellow/red/blue dots) and dependency analysis (circular deps, orphaned scripts)
 - Click any script to see variables, functions, signals, and connections
-- Edit code directly in the visualizer — changes sync to Godot in real time
-- Scene view with node property editing
-- Find usages before refactoring
+- Minimap with click-to-pan navigation
+
+**Inline Editing**
+- Edit variables, signals, and function code directly — changes sync to Godot in real time
+- Searchable type combobox with project types and all built-in Godot types
+- Structured signal parameter editor (name + type per param, Tab to add more)
+- Undo/redo (Ctrl+Z / Ctrl+Shift+Z) across all edit operations
+- Usage detection before deleting or renaming scripts/functions
+- Create, delete, and rename scripts from the visualizer
+
+**Scene View**
+- Browse all scenes, click to expand full node hierarchy tree
+- Inline editing of node properties (toggles, sliders, vectors, colors, enums)
+- Right-click context menu on nodes (add child, delete, rename, duplicate, reorder)
+
 <img width="1710" height="1107" alt="image" src="https://github.com/user-attachments/assets/a9faf163-8b8b-43da-93ec-c7a651e8ac60" />
 
 ### Limitations
@@ -143,7 +159,7 @@ AI cannot create 100% of a game by itself — it struggles with complex UI layou
 
 - **Local only** — runs on localhost, no remote connections
 - **Single connection** — one Godot instance at a time
-- **No undo** — changes save directly (use version control)
+- **Limited undo** — the visualizer has undo/redo, but MCP tool changes from AI clients save directly (use version control)
 - **No runtime control** — can't press play or simulate input
 - **AI is still limited in Godot knowledge** — it can't create 100% of the game alone, but it can help debug, write scripts, and tag along for the journey
 

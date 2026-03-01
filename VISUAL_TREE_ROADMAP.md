@@ -53,6 +53,18 @@
   - Ctrl+Z undo, Ctrl+Shift+Z / Ctrl+Y redo (skipped in text inputs)
   - Toast notifications (bottom-center) showing action/undo/redo/error
   - Covers: variable/signal/function edits, script create/delete/rename, scene node operations, scene property changes
+- [x] Searchable type combobox
+  - Replaces raw text input for variable types and signal param types
+  - Combines project types (classes, enums, resources) with built-in Godot types
+  - Filterable search input with keyboard navigation (arrow keys, Enter, Escape)
+  - Auto-fills default values when type changes (e.g. int → 0, bool → false, String → "")
+- [x] Structured signal parameter editor
+  - Each param has a name text input + type combobox + delete button
+  - Tab from last param's type adds a new param automatically
+  - Click `+` to add params, `×` to remove
+  - Serializes to/from raw `"name: Type, name2: Type2"` format for backend
+- [x] Unified toolbar
+  - Single toolbar row with view tabs (Scripts/Scenes), layout/zoom controls, search
 
 ## Planned
 
@@ -70,7 +82,6 @@
 
 ### Phase 5: Advanced
 - Full-text search in function bodies
-- Refactoring (rename across files)
 
 ### Phase 6: Polish
 - Documentation generation
