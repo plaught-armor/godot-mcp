@@ -8,10 +8,11 @@ import {
   setHoveredSceneNode, expandedScene
 } from './state.js';
 import { sendCommand } from './websocket.js';
-import { draw, getCanvas, roundRect, getContext, clearPositions, fitToView, screenToWorld, hitTest } from './canvas.js';
+import { draw, getCanvas, clearPositions, fitToView, screenToWorld, hitTest } from './canvas.js';
 import { initLayout } from './layout.js';
 import { closePanel, closeSceneNodePanel } from './panel.js';
 import { updateStats } from './events.js';
+import { undoManager, createCommand } from './undo.js';
 
 let contextMenu;
 let rightClickedNode = null; // Script node that was right-clicked
@@ -105,13 +106,10 @@ window.toggleCustomFolder = function () {
   }
 };
 
-window.closeNewScriptModal = function () {
-  document.getElementById('new-script-modal').style.display = 'none';
-};
-
 function closeNewScriptModal() {
   document.getElementById('new-script-modal').style.display = 'none';
 }
+window.closeNewScriptModal = closeNewScriptModal;
 
 window.submitNewScript = async function () {
   let folder = usingCustomFolder
@@ -139,25 +137,31 @@ window.submitNewScript = async function () {
   const extendsType = document.getElementById('new-script-extends').value;
   const className = document.getElementById('new-script-classname').value.trim();
 
-  try {
-    const result = await sendCommand('create_script_file', {
-      path: path,
-      extends: extendsType,
-      class_name: className || ''
-    });
-
-    if (result.ok) {
-      closeNewScriptModal();
-      refreshProject();
-    } else {
-      alert('Failed to create script: ' + (result.error || 'Unknown error'));
+  const command = createCommand(
+    `Create script '${filename}'`,
+    async () => {
+      const result = await sendCommand('create_script_file', {
+        path, extends: extendsType, class_name: className || ''
+      });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      await refreshProject();
+    },
+    async () => {
+      const result = await sendCommand('delete_script', { path });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      await refreshProject();
     }
+  );
+
+  try {
+    await undoManager.execute(command);
+    closeNewScriptModal();
   } catch (err) {
     alert('Failed to create script: ' + err.message);
   }
 };
 
-window.refreshProject = async function () {
+async function refreshProject() {
   contextMenu.classList.remove('visible');
   try {
     const result = await sendCommand('map_project', {});
@@ -181,11 +185,8 @@ window.refreshProject = async function () {
   } catch (err) {
     console.error('Failed to refresh:', err);
   }
-};
-
-function refreshProject() {
-  window.refreshProject();
 }
+window.refreshProject = refreshProject;
 
 // ---- Reset Layout ----
 window.resetLayout = function () {
@@ -296,28 +297,41 @@ window.deleteScript = function () {
   document.getElementById('delete-script-modal').style.display = 'flex';
 };
 
-window.closeDeleteScriptModal = function () {
-  document.getElementById('delete-script-modal').style.display = 'none';
-  deleteTarget = null;
-};
-
 function closeDeleteScriptModal() {
   document.getElementById('delete-script-modal').style.display = 'none';
   deleteTarget = null;
 }
+window.closeDeleteScriptModal = closeDeleteScriptModal;
 
 window.confirmDeleteScript = async function () {
   if (!deleteTarget) return;
 
-  try {
-    const result = await sendCommand('delete_script', { path: deleteTarget.path });
-    if (result.ok) {
-      closeDeleteScriptModal();
+  const target = deleteTarget;
+  const scriptPath = target.path;
+  const scriptExtends = target.extends || 'Node';
+  const scriptClassName = target.class_name || '';
+  const scriptFilename = target.filename;
+
+  const command = createCommand(
+    `Delete script '${scriptFilename}'`,
+    async () => {
+      const result = await sendCommand('delete_script', { path: scriptPath });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
       closePanel();
-      refreshProject();
-    } else {
-      alert('Failed to delete script: ' + (result.error || 'Unknown error'));
+      await refreshProject();
+    },
+    async () => {
+      const result = await sendCommand('create_script_file', {
+        path: scriptPath, extends: scriptExtends, class_name: scriptClassName
+      });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      await refreshProject();
     }
+  );
+
+  try {
+    await undoManager.execute(command);
+    closeDeleteScriptModal();
   } catch (err) {
     alert('Failed to delete script: ' + err.message);
   }
@@ -372,13 +386,10 @@ window.toggleRenameCustomFolder = function () {
   }
 };
 
-window.closeRenameScriptModal = function () {
-  document.getElementById('rename-script-modal').style.display = 'none';
-};
-
 function closeRenameScriptModal() {
   document.getElementById('rename-script-modal').style.display = 'none';
 }
+window.closeRenameScriptModal = closeRenameScriptModal;
 
 window.submitRenameScript = async function () {
   if (!rightClickedNode) return;
@@ -409,20 +420,28 @@ window.submitRenameScript = async function () {
     return;
   }
 
-  try {
-    const result = await sendCommand('rename_script', {
-      old_path: oldPath,
-      new_path: newPath,
-      update_references: updateRefs
-    });
-
-    if (result.ok) {
-      closeRenameScriptModal();
+  const command = createCommand(
+    `Rename script to '${filename}'`,
+    async () => {
+      const result = await sendCommand('rename_script', {
+        old_path: oldPath, new_path: newPath, update_references: updateRefs
+      });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
       closePanel();
-      refreshProject();
-    } else {
-      alert('Failed to rename script: ' + (result.error || 'Unknown error'));
+      await refreshProject();
+    },
+    async () => {
+      const result = await sendCommand('rename_script', {
+        old_path: newPath, new_path: oldPath, update_references: updateRefs
+      });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      await refreshProject();
     }
+  );
+
+  try {
+    await undoManager.execute(command);
+    closeRenameScriptModal();
   } catch (err) {
     alert('Failed to rename script: ' + err.message);
   }

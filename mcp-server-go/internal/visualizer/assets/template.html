@@ -9,21 +9,31 @@
 </style>
 </head>
 <body>
-<div id="search-bar">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-  <input type="text" id="search" placeholder="Search scripts..." />
-  <span class="stats" id="stats"></span>
+<div id="toolbar">
+  <div id="view-tabs">
+    <button class="active" onclick="switchView('scripts')">Scripts</button>
+    <button onclick="switchView('scenes')">Scenes</button>
+  </div>
+  <div id="search-bar">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" id="search" placeholder="Search scripts..." />
+  </div>
+  <div id="toolbar-indicators">
+    <span id="scripts-indicator" class="indicator"></span>
+    <span id="connections-indicator" class="indicator"></span>
+    <span id="git-indicator" class="indicator" style="display:none"></span>
+    <span id="dep-indicator" class="indicator" style="display:none"></span>
+  </div>
+  <div id="zoom-indicator" title="Click to reset, or type custom zoom">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" onclick="resetZoom()" style="cursor:pointer"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M8 11h6"/><path d="M11 8v6"/></svg>
+    <input type="text" class="zoom-input" id="zoom-text" value="100%" onchange="setCustomZoom(this.value)" onkeydown="if(event.key==='Enter'){this.blur()}" onclick="this.select()">
+  </div>
 </div>
 
 <div id="legend">
   <div class="item"><div class="line" style="background:var(--edge-extends)"></div> extends</div>
   <div class="item"><div class="line" style="background:var(--edge-preload)"></div> preload</div>
   <div class="item"><div class="line" style="background:var(--edge-signal);height:0;border-top:2px dotted var(--edge-signal)"></div> signal</div>
-</div>
-
-<div id="zoom-indicator" title="Click to reset, or type custom zoom">
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" onclick="resetZoom()" style="cursor:pointer"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M8 11h6"/><path d="M11 8v6"/></svg>
-  <input type="text" class="zoom-input" id="zoom-text" value="100%" onchange="setCustomZoom(this.value)" onkeydown="if(event.key==='Enter'){this.blur()}" onclick="this.select()">
 </div>
 
 <div id="detail-panel">
@@ -34,12 +44,6 @@
     <div class="path" id="panel-path"></div>
   </div>
   <div class="panel-body" id="panel-body"></div>
-</div>
-
-<!-- View Tabs -->
-<div id="view-tabs">
-  <button class="active" onclick="switchView('scripts')">Scripts</button>
-  <button onclick="switchView('scenes')">Scenes</button>
 </div>
 
 <!-- Scene Back Button (shown when scene is expanded) -->
@@ -261,6 +265,9 @@
     </div>
   </div>
 </div>
+
+<!-- Undo/Redo Toast -->
+<div id="undo-toast" class="undo-toast"></div>
 
 <canvas id="canvas"></canvas>
 

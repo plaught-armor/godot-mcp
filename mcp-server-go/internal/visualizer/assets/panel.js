@@ -11,9 +11,469 @@ import {
 import { sendCommand } from './websocket.js';
 import { highlightGDScript } from './syntax.js';
 import { draw } from './canvas.js';
+import { undoManager, createCommand } from './undo.js';
 
 let detailPanel;
 let currentPanelMode = 'script'; // 'script' or 'sceneNode'
+
+// ---- Godot Type List for Combobox ----
+const GODOT_TYPES = [
+  // Primitives
+  'bool', 'int', 'float', 'String', 'StringName', 'NodePath',
+  // Math
+  'Vector2', 'Vector2i', 'Vector3', 'Vector3i', 'Vector4', 'Vector4i',
+  'Rect2', 'Rect2i', 'AABB',
+  'Transform2D', 'Transform3D', 'Basis', 'Projection', 'Quaternion', 'Plane',
+  // Color
+  'Color',
+  // Collections
+  'Array', 'Dictionary',
+  // Packed arrays
+  'PackedByteArray', 'PackedInt32Array', 'PackedInt64Array',
+  'PackedFloat32Array', 'PackedFloat64Array',
+  'PackedStringArray', 'PackedVector2Array', 'PackedVector3Array',
+  'PackedVector4Array', 'PackedColorArray',
+  // Resources
+  'Resource', 'Texture2D', 'Texture3D', 'Material', 'Mesh', 'Font',
+  'AudioStream', 'PackedScene', 'Script', 'Shader', 'Theme',
+  'StyleBox', 'SpriteFrames', 'TileSet', 'Curve', 'Gradient',
+  'Image', 'BitMap', 'Animation', 'AnimationLibrary',
+  // Common nodes
+  'Node', 'Node2D', 'Node3D', 'Control',
+  'CharacterBody2D', 'CharacterBody3D',
+  'RigidBody2D', 'RigidBody3D',
+  'StaticBody2D', 'StaticBody3D',
+  'Area2D', 'Area3D',
+  'Sprite2D', 'Sprite3D', 'AnimatedSprite2D', 'AnimatedSprite3D',
+  'Camera2D', 'Camera3D',
+  'CollisionShape2D', 'CollisionShape3D',
+  'RayCast2D', 'RayCast3D',
+  'Timer', 'AudioStreamPlayer', 'AudioStreamPlayer2D', 'AudioStreamPlayer3D',
+  'Label', 'Button', 'TextureRect', 'LineEdit', 'TextEdit',
+  'Panel', 'HBoxContainer', 'VBoxContainer', 'GridContainer', 'MarginContainer',
+  'TileMapLayer', 'NavigationAgent2D', 'NavigationAgent3D',
+  'GPUParticles2D', 'GPUParticles3D', 'CPUParticles2D', 'CPUParticles3D',
+  // Other
+  'Object', 'RefCounted', 'Callable', 'Signal', 'RID',
+  'Tween', 'InputEvent', 'InputEventKey', 'InputEventMouseButton',
+];
+
+const TYPE_DEFAULTS = {
+  'bool': 'false', 'int': '0', 'float': '0.0',
+  'String': '""', 'StringName': '&""', 'NodePath': '@""',
+  'Vector2': 'Vector2.ZERO', 'Vector2i': 'Vector2i.ZERO',
+  'Vector3': 'Vector3.ZERO', 'Vector3i': 'Vector3i.ZERO',
+  'Vector4': 'Vector4.ZERO', 'Vector4i': 'Vector4i.ZERO',
+  'Rect2': 'Rect2()', 'Rect2i': 'Rect2i()', 'AABB': 'AABB()',
+  'Transform2D': 'Transform2D.IDENTITY', 'Transform3D': 'Transform3D.IDENTITY',
+  'Basis': 'Basis.IDENTITY', 'Projection': 'Projection()',
+  'Quaternion': 'Quaternion.IDENTITY', 'Plane': 'Plane()',
+  'Color': 'Color.WHITE',
+  'Array': '[]', 'Dictionary': '{}',
+  'PackedByteArray': 'PackedByteArray()', 'PackedInt32Array': 'PackedInt32Array()',
+  'PackedInt64Array': 'PackedInt64Array()', 'PackedFloat32Array': 'PackedFloat32Array()',
+  'PackedFloat64Array': 'PackedFloat64Array()', 'PackedStringArray': 'PackedStringArray()',
+  'PackedVector2Array': 'PackedVector2Array()', 'PackedVector3Array': 'PackedVector3Array()',
+  'PackedVector4Array': 'PackedVector4Array()', 'PackedColorArray': 'PackedColorArray()',
+  'Callable': 'Callable()', 'Signal': 'Signal()', 'RID': 'RID()',
+};
+
+// ---- Searchable Type Combobox ----
+let comboboxEl = null;
+let comboboxInput = null;
+let comboboxList = null;
+let comboboxTrigger = null;
+let comboboxHighlightIdx = 0;
+let comboboxItems = []; // currently displayed items (flat array of type strings)
+
+function ensureCombobox() {
+  if (comboboxEl) return;
+  comboboxEl = document.createElement('div');
+  comboboxEl.id = 'type-combobox';
+  comboboxEl.style.display = 'none';
+  comboboxEl.innerHTML = `<input type="text" id="type-combobox-input" placeholder="Search types..." autocomplete="off" /><ul id="type-combobox-list"></ul>`;
+  document.body.appendChild(comboboxEl);
+  comboboxInput = comboboxEl.querySelector('input');
+  comboboxList = comboboxEl.querySelector('ul');
+
+  comboboxInput.addEventListener('input', () => filterCombobox(comboboxInput.value));
+  comboboxInput.addEventListener('keydown', handleComboboxKey);
+  // Close on outside click
+  document.addEventListener('mousedown', (e) => {
+    if (comboboxEl.style.display !== 'none' && !comboboxEl.contains(e.target) && e.target !== comboboxTrigger) {
+      closeCombobox(false);
+    }
+  });
+}
+
+function openTypeCombobox(triggerEl) {
+  ensureCombobox();
+  comboboxTrigger = triggerEl;
+
+  // Collect project types from nodes
+  const projectTypes = [...new Set(nodes.filter(n => n.class_name).map(n => n.class_name))].sort();
+  const builtinSet = new Set(GODOT_TYPES);
+  // Remove project types that duplicate built-ins
+  const uniqueProjectTypes = projectTypes.filter(t => !builtinSet.has(t));
+
+  const currentType = triggerEl.textContent.trim();
+  comboboxInput.value = currentType;
+
+  // Position below the trigger
+  const rect = triggerEl.getBoundingClientRect();
+  comboboxEl.style.display = 'flex';
+  comboboxEl.style.left = rect.left + 'px';
+  comboboxEl.style.top = (rect.bottom + 4) + 'px';
+
+  // Ensure it doesn't go off-screen right
+  requestAnimationFrame(() => {
+    const cbRect = comboboxEl.getBoundingClientRect();
+    if (cbRect.right > window.innerWidth - 8) {
+      comboboxEl.style.left = Math.max(8, window.innerWidth - cbRect.width - 8) + 'px';
+    }
+    if (cbRect.bottom > window.innerHeight - 8) {
+      comboboxEl.style.top = (rect.top - cbRect.height - 4) + 'px';
+    }
+  });
+
+  // Store section data for rendering
+  comboboxEl._projectTypes = uniqueProjectTypes;
+  comboboxEl._builtinTypes = GODOT_TYPES;
+  comboboxEl._currentType = currentType;
+
+  filterCombobox(currentType);
+  comboboxInput.focus();
+  comboboxInput.select();
+}
+
+function filterCombobox(query) {
+  const q = query.toLowerCase();
+  const projectTypes = comboboxEl._projectTypes || [];
+  const builtinTypes = comboboxEl._builtinTypes || GODOT_TYPES;
+  const currentType = comboboxEl._currentType || '';
+
+  const filteredProject = q ? projectTypes.filter(t => t.toLowerCase().includes(q)) : projectTypes;
+  const filteredBuiltin = q ? builtinTypes.filter(t => t.toLowerCase().includes(q)) : builtinTypes;
+
+  let html = '';
+  comboboxItems = [];
+
+  if (filteredProject.length > 0) {
+    html += `<li class="section-header">Project</li>`;
+    for (const t of filteredProject) {
+      const isCurrent = t === currentType;
+      comboboxItems.push(t);
+      html += `<li class="type-item${isCurrent ? ' current' : ''}" data-type="${esc(t)}">${esc(t)}</li>`;
+    }
+  }
+
+  if (filteredBuiltin.length > 0) {
+    html += `<li class="section-header">Built-in</li>`;
+    for (const t of filteredBuiltin) {
+      const isCurrent = t === currentType;
+      comboboxItems.push(t);
+      html += `<li class="type-item${isCurrent ? ' current' : ''}" data-type="${esc(t)}">${esc(t)}</li>`;
+    }
+  }
+
+  // Custom type option if query doesn't match anything exactly
+  if (q && !comboboxItems.some(t => t.toLowerCase() === q)) {
+    html += `<li class="type-item custom-type" data-type="${esc(query)}">Use: <strong>${esc(query)}</strong></li>`;
+    comboboxItems.push(query);
+  }
+
+  comboboxList.innerHTML = html;
+  comboboxHighlightIdx = 0;
+  updateComboboxHighlight();
+
+  // Click handlers
+  comboboxList.querySelectorAll('.type-item').forEach(li => {
+    li.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      selectComboboxType(li.dataset.type);
+    });
+  });
+}
+
+function updateComboboxHighlight() {
+  comboboxList.querySelectorAll('.type-item').forEach((li, i) => {
+    li.classList.toggle('highlighted', i === comboboxHighlightIdx);
+  });
+  // Scroll highlighted into view
+  const highlighted = comboboxList.querySelector('.type-item.highlighted');
+  if (highlighted) highlighted.scrollIntoView({ block: 'nearest' });
+}
+
+function handleComboboxKey(e) {
+  const itemCount = comboboxItems.length;
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    comboboxHighlightIdx = (comboboxHighlightIdx + 1) % itemCount;
+    updateComboboxHighlight();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    comboboxHighlightIdx = (comboboxHighlightIdx - 1 + itemCount) % itemCount;
+    updateComboboxHighlight();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (comboboxItems.length > 0) {
+      selectComboboxType(comboboxItems[comboboxHighlightIdx]);
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeCombobox(false);
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    if (comboboxItems.length > 0) {
+      selectComboboxType(comboboxItems[comboboxHighlightIdx]);
+    } else {
+      closeCombobox(false);
+    }
+  }
+}
+
+function selectComboboxType(type) {
+  if (!comboboxTrigger) return;
+
+  // Fork: param-type triggers save signal params instead of variable type
+  if (comboboxTrigger.classList.contains('param-type')) {
+    comboboxTrigger.textContent = type;
+    const editor = comboboxTrigger.closest('.signal-params-editor');
+    const trigger = comboboxTrigger;
+    closeCombobox(false);
+    if (editor) saveSignalParamsFromEditor(editor);
+    // If this is the last param, Tab-like behavior: add a new param
+    const rows = editor ? editor.querySelectorAll('.param-row') : [];
+    const thisRow = trigger.closest('.param-row');
+    if (editor && thisRow === rows[rows.length - 1]) {
+      addParam(editor, true);
+    }
+    return;
+  }
+
+  const oldValue = comboboxTrigger.dataset.original || '';
+  if (type === oldValue) {
+    closeCombobox(false);
+    return;
+  }
+
+  comboboxTrigger.textContent = type;
+
+  // Trigger save through the same undo-wrapped flow as handleInlineEdit
+  const li = comboboxTrigger.closest('li');
+  if (!li) { closeCombobox(false); return; }
+
+  const isExport = li.dataset.exported === 'true';
+  const index = parseInt(li.dataset.varIndex);
+  const nodePath = selectedNode.path;
+
+  const vars = selectedNode.variables.filter(v => v.exported === isExport);
+  const v = vars[index];
+  if (!v) { closeCombobox(false); return; }
+
+  const actualIndex = selectedNode.variables.findIndex(vr => vr.name === v.name);
+  if (actualIndex === -1) { closeCombobox(false); return; }
+
+  const oldVar = { ...selectedNode.variables[actualIndex] };
+  const newVar = { ...oldVar, type: type };
+
+  // Auto-fill default if empty or was previous type's zero-value
+  const oldTypeDefault = TYPE_DEFAULTS[oldVar.type] || '';
+  const currentDefault = oldVar.default || '';
+  if (!currentDefault || currentDefault === oldTypeDefault) {
+    const newDefault = TYPE_DEFAULTS[type] || '';
+    newVar.default = newDefault;
+  }
+
+  const command = createCommand(
+    `Set type '${type}' on '${v.name}'`,
+    async () => {
+      await sendCommand('modify_variable', {
+        path: nodePath, action: 'update', old_name: oldVar.name,
+        name: newVar.name, type: newVar.type, default: newVar.default, exported: isExport
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      const ai = node.variables.findIndex(vr => vr.name === oldVar.name);
+      if (ai !== -1) node.variables[ai] = { ...newVar };
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    },
+    async () => {
+      await sendCommand('modify_variable', {
+        path: nodePath, action: 'update', old_name: newVar.name,
+        name: oldVar.name, type: oldVar.type, default: oldVar.default, exported: isExport
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      const ai = node.variables.findIndex(vr => vr.name === newVar.name);
+      if (ai !== -1) node.variables[ai] = { ...oldVar };
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    }
+  );
+
+  undoManager.execute(command).then(() => {
+    if (comboboxTrigger) comboboxTrigger.dataset.original = type;
+  }).catch(err => {
+    if (comboboxTrigger) comboboxTrigger.textContent = oldValue;
+    console.error('Failed to set type:', err);
+  });
+
+  closeCombobox(false);
+}
+
+function closeCombobox(save) {
+  if (!comboboxEl) return;
+  comboboxEl.style.display = 'none';
+  comboboxTrigger = null;
+  comboboxItems = [];
+}
+
+// ---- Signal Param Helpers ----
+function parseParams(paramStr) {
+  if (!paramStr || !paramStr.trim()) return [];
+  return paramStr.split(',').map(p => {
+    const parts = p.trim().split(':').map(s => s.trim());
+    return { name: parts[0] || '', type: parts[1] || '' };
+  }).filter(p => p.name);
+}
+
+function serializeParams(params) {
+  return params.map(p => p.type ? `${p.name}: ${p.type}` : p.name).join(', ');
+}
+
+function renderParamEditor(sigParams, signalIndex) {
+  const params = parseParams(sigParams);
+  let html = `<span class="signal-params-editor" data-signal-index="${signalIndex}" data-original="${esc(sigParams)}">`;
+  for (let pi = 0; pi < params.length; pi++) {
+    html += `<span class="param-row">`;
+    html += `<input class="param-name" value="${esc(params[pi].name)}" placeholder="name" spellcheck="false" />`;
+    html += `<span class="param-colon">:</span>`;
+    html += `<span class="tp param-type combobox-trigger" data-placeholder="Type">${esc(params[pi].type)}</span>`;
+    html += `<button class="param-delete" title="Remove">×</button>`;
+    html += `</span>`;
+  }
+  html += `<button class="param-add" title="Add parameter">+</button>`;
+  html += `</span>`;
+  return html;
+}
+
+function initParamEditors() {
+  document.querySelectorAll('.signal-params-editor').forEach(editor => {
+    // Add param button
+    editor.querySelector('.param-add').addEventListener('click', () => addParam(editor));
+
+    // Delete buttons
+    editor.querySelectorAll('.param-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.param-row').remove();
+        saveSignalParamsFromEditor(editor);
+      });
+    });
+
+    // Name input blur → save
+    editor.querySelectorAll('.param-name').forEach(input => {
+      input.addEventListener('blur', () => saveSignalParamsFromEditor(editor));
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault();
+          // Focus the type trigger next to this name
+          const row = input.closest('.param-row');
+          const typeTrigger = row.querySelector('.param-type');
+          if (typeTrigger) openTypeCombobox(typeTrigger);
+        }
+        if (e.key === 'Escape') {
+          input.blur();
+        }
+      });
+    });
+
+    // Type combobox triggers
+    editor.querySelectorAll('.param-type').forEach(el => {
+      el.addEventListener('click', () => openTypeCombobox(el));
+    });
+  });
+}
+
+function addParam(editor, focus = true) {
+  const addBtn = editor.querySelector('.param-add');
+  const row = document.createElement('span');
+  row.className = 'param-row';
+  row.innerHTML = `<input class="param-name" value="" placeholder="name" spellcheck="false" /><span class="param-colon">:</span><span class="tp param-type combobox-trigger" data-placeholder="Type"></span><button class="param-delete" title="Remove">×</button>`;
+  editor.insertBefore(row, addBtn);
+
+  // Wire events
+  const input = row.querySelector('.param-name');
+  const deleteBtn = row.querySelector('.param-delete');
+  const typeTrigger = row.querySelector('.param-type');
+
+  deleteBtn.addEventListener('click', () => {
+    row.remove();
+    saveSignalParamsFromEditor(editor);
+  });
+
+  input.addEventListener('blur', () => saveSignalParamsFromEditor(editor));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      if (typeTrigger) openTypeCombobox(typeTrigger);
+    }
+    if (e.key === 'Escape') input.blur();
+  });
+
+  typeTrigger.addEventListener('click', () => openTypeCombobox(typeTrigger));
+
+  if (focus) {
+    input.focus();
+  }
+}
+
+function collectParamsFromEditor(editor) {
+  const params = [];
+  editor.querySelectorAll('.param-row').forEach(row => {
+    const name = row.querySelector('.param-name').value.trim();
+    const type = row.querySelector('.param-type').textContent.trim();
+    if (name) params.push({ name, type });
+  });
+  return params;
+}
+
+function saveSignalParamsFromEditor(editor) {
+  const signalIndex = parseInt(editor.dataset.signalIndex);
+  const oldParamsStr = editor.dataset.original || '';
+  const newParams = collectParamsFromEditor(editor);
+  const newParamsStr = serializeParams(newParams);
+
+  if (newParamsStr === oldParamsStr) return;
+
+  const sig = selectedNode.signals[signalIndex];
+  const sigName = typeof sig === 'string' ? sig : sig.name;
+  const nodePath = selectedNode.path;
+
+  const command = createCommand(
+    `Update params on '${sigName}'`,
+    async () => {
+      await sendCommand('modify_signal', {
+        path: nodePath, action: 'update',
+        old_name: sigName, name: sigName, params: newParamsStr
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      node.signals[signalIndex] = { name: sigName, params: newParamsStr };
+    },
+    async () => {
+      await sendCommand('modify_signal', {
+        path: nodePath, action: 'update',
+        old_name: sigName, name: sigName, params: oldParamsStr
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      node.signals[signalIndex] = { name: sigName, params: oldParamsStr };
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    }
+  );
+
+  undoManager.execute(command).then(() => {
+    editor.dataset.original = newParamsStr;
+  }).catch(err => {
+    console.error('Failed to update signal params:', err);
+  });
+}
 
 export function initPanel() {
   detailPanel = document.getElementById('detail-panel');
@@ -71,7 +531,7 @@ export function openPanel(node) {
     html += `<span class="kw">var</span> `;
     html += `<span class="editable var-name" contenteditable="true" data-field="name" data-original="${esc(v.name)}">${esc(v.name)}</span>`;
     html += `<span class="ret">:</span> `;
-    html += `<span class="tp editable var-type" contenteditable="true" data-field="type" data-placeholder="Type" data-original="${esc(v.type || '')}">${esc(v.type || '')}</span>`;
+    html += `<span class="tp var-type combobox-trigger" data-field="type" data-placeholder="Type" data-original="${esc(v.type || '')}">${esc(v.type || '')}</span>`;
     html += ` <span class="ret">=</span> `;
     html += `<span class="num editable var-default" contenteditable="true" data-field="default" data-placeholder="value" data-original="${esc(v.default || '')}">${esc(v.default || '')}</span>`;
     html += `<span class="item-actions">`;
@@ -98,7 +558,7 @@ export function openPanel(node) {
     html += `<span class="kw">var</span> `;
     html += `<span class="editable var-name" contenteditable="true" data-field="name" data-original="${esc(v.name)}">${esc(v.name)}</span>`;
     html += `<span class="ret">:</span> `;
-    html += `<span class="tp editable var-type" contenteditable="true" data-field="type" data-placeholder="Type" data-original="${esc(v.type || '')}">${esc(v.type || '')}</span>`;
+    html += `<span class="tp var-type combobox-trigger" data-field="type" data-placeholder="Type" data-original="${esc(v.type || '')}">${esc(v.type || '')}</span>`;
     html += ` <span class="ret">=</span> `;
     html += `<span class="num editable var-default" contenteditable="true" data-field="default" data-placeholder="value" data-original="${esc(v.default || '')}">${esc(v.default || '')}</span>`;
     html += `<span class="item-actions">`;
@@ -149,7 +609,7 @@ export function openPanel(node) {
     html += `<span class="kw">signal</span> `;
     html += `<span class="sig editable signal-name" contenteditable="true" data-field="name" data-original="${esc(sigName)}">${esc(sigName)}</span>`;
     html += `<span class="param">(</span>`;
-    html += `<span class="editable signal-params" contenteditable="true" data-field="params" data-placeholder="params" data-original="${esc(sigParams)}">${esc(sigParams)}</span>`;
+    html += renderParamEditor(sigParams, si);
     html += `<span class="param">)</span>`;
     html += `<span class="item-actions">`;
     html += `<button class="delete" onclick="showDeleteUsages(${si}, false, 'signal')" title="Delete">×</button>`;
@@ -217,6 +677,7 @@ export function openPanel(node) {
   detailPanel.classList.add('open');
   initSectionResizing();
   initInlineEditing();
+  initParamEditors();
   draw();
 }
 
@@ -347,33 +808,37 @@ window.saveFunction = async function (fi) {
 
   const scriptPath = textarea.dataset.scriptPath;
   const funcName = textarea.dataset.funcName;
+  const funcIndex = parseInt(textarea.dataset.funcIndex);
+  const oldBody = textarea.dataset.original;
   const newCode = textarea.value;
+  const nodePath = selectedNode.path;
 
   statusEl.textContent = 'Saving...';
   statusEl.classList.add('visible');
 
+  const command = createCommand(
+    `Edit function '${funcName}'`,
+    async () => {
+      await sendCommand('modify_function', { path: scriptPath, name: funcName, body: newCode });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      node.functions[funcIndex].body = newCode;
+      node.functions[funcIndex].body_lines = newCode.split('\n').length;
+    },
+    async () => {
+      await sendCommand('modify_function', { path: scriptPath, name: funcName, body: oldBody });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      node.functions[funcIndex].body = oldBody;
+      node.functions[funcIndex].body_lines = oldBody.split('\n').length;
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    }
+  );
+
   try {
-    // Send to Godot
-    await sendCommand('modify_function', {
-      path: scriptPath,
-      name: funcName,
-      body: newCode
-    });
-
-    // Update local state
-    const funcIndex = parseInt(textarea.dataset.funcIndex);
-    selectedNode.functions[funcIndex].body = newCode;
-    selectedNode.functions[funcIndex].body_lines = newCode.split('\n').length;
-
+    await undoManager.execute(command);
     textarea.dataset.original = newCode;
     statusEl.textContent = 'Saved!';
     saveBtn.classList.remove('active');
-
-    setTimeout(() => {
-      statusEl.classList.remove('visible');
-    }, 2000);
-
-    console.log(`Saved function "${funcName}" in ${scriptPath}`);
+    setTimeout(() => { statusEl.classList.remove('visible'); }, 2000);
   } catch (err) {
     statusEl.textContent = 'Error: ' + err.message;
     console.error('Failed to save:', err);
@@ -396,6 +861,11 @@ function initInlineEditing() {
       }
     });
   });
+
+  // Type combobox triggers
+  document.querySelectorAll('.combobox-trigger').forEach(el => {
+    el.addEventListener('click', () => openTypeCombobox(el));
+  });
 }
 
 async function handleInlineEdit(e) {
@@ -409,69 +879,85 @@ async function handleInlineEdit(e) {
 
   if (newValue === original) return; // No change
 
-  // Determine what type of item this is
   const isSignal = li.dataset.signalIndex !== undefined;
   const isExport = li.dataset.exported === 'true';
   const index = parseInt(isSignal ? li.dataset.signalIndex : li.dataset.varIndex);
+  const nodePath = selectedNode.path;
 
   try {
     if (isSignal) {
-      // Update signal
       const sig = selectedNode.signals[index];
       const oldName = typeof sig === 'string' ? sig : sig.name;
       const oldParams = typeof sig === 'object' ? sig.params : '';
-
       const newSig = {
         name: field === 'name' ? newValue : oldName,
         params: field === 'params' ? newValue : oldParams
       };
 
-      // Send to Godot
-      await sendCommand('modify_signal', {
-        path: selectedNode.path,
-        action: 'update',
-        old_name: oldName,
-        name: newSig.name,
-        params: newSig.params
-      });
-
-      // Update local state
-      selectedNode.signals[index] = newSig;
-      console.log(`Updated signal in ${selectedNode.path}:`, newSig);
+      const command = createCommand(
+        `Update signal '${oldName}'`,
+        async () => {
+          await sendCommand('modify_signal', {
+            path: nodePath, action: 'update',
+            old_name: oldName, name: newSig.name, params: newSig.params
+          });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          node.signals[index] = { ...newSig };
+        },
+        async () => {
+          await sendCommand('modify_signal', {
+            path: nodePath, action: 'update',
+            old_name: newSig.name, name: oldName, params: oldParams
+          });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          node.signals[index] = typeof sig === 'string' ? sig : { name: oldName, params: oldParams };
+          if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+        }
+      );
+      await undoManager.execute(command);
     } else {
-      // Update variable
       const vars = selectedNode.variables.filter(v => v.exported === isExport);
       const v = vars[index];
       const actualIndex = selectedNode.variables.findIndex(vr => vr.name === v.name);
 
       if (actualIndex !== -1) {
-        const newVar = { ...selectedNode.variables[actualIndex] };
+        const oldVar = { ...selectedNode.variables[actualIndex] };
+        const newVar = { ...oldVar };
         if (field === 'name') newVar.name = newValue;
         if (field === 'type') newVar.type = newValue;
         if (field === 'default') newVar.default = newValue;
 
-        // Send to Godot
-        await sendCommand('modify_variable', {
-          path: selectedNode.path,
-          action: 'update',
-          old_name: v.name,
-          name: newVar.name,
-          type: newVar.type,
-          default: newVar.default,
-          exported: isExport
-        });
-
-        // Update local state
-        selectedNode.variables[actualIndex] = newVar;
-        console.log(`Updated variable in ${selectedNode.path}:`, newVar);
+        const command = createCommand(
+          `Update variable '${oldVar.name}'`,
+          async () => {
+            await sendCommand('modify_variable', {
+              path: nodePath, action: 'update',
+              old_name: oldVar.name, name: newVar.name,
+              type: newVar.type, default: newVar.default, exported: isExport
+            });
+            const node = nodes.find(n => n.path === nodePath) || selectedNode;
+            const ai = node.variables.findIndex(vr => vr.name === oldVar.name);
+            if (ai !== -1) node.variables[ai] = { ...newVar };
+          },
+          async () => {
+            await sendCommand('modify_variable', {
+              path: nodePath, action: 'update',
+              old_name: newVar.name, name: oldVar.name,
+              type: oldVar.type, default: oldVar.default, exported: isExport
+            });
+            const node = nodes.find(n => n.path === nodePath) || selectedNode;
+            const ai = node.variables.findIndex(vr => vr.name === newVar.name);
+            if (ai !== -1) node.variables[ai] = { ...oldVar };
+            if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+          }
+        );
+        await undoManager.execute(command);
       }
     }
 
-    // Update the original value
     el.dataset.original = newValue;
   } catch (err) {
     console.error('Failed to update:', err);
-    // Revert on error
     el.textContent = original;
     alert('Failed to save: ' + err.message);
   }
@@ -485,22 +971,37 @@ window.toggleOnready = async function (index, isExport) {
 
   if (actualIndex === -1) return;
 
-  const newOnready = !v.onready;
+  const oldOnready = !!v.onready;
+  const nodePath = selectedNode.path;
+
+  const command = createCommand(
+    `Toggle @onready on '${v.name}'`,
+    async () => {
+      await sendCommand('modify_variable', {
+        path: nodePath, action: 'update', old_name: v.name,
+        name: v.name, type: v.type || '', default: v.default || '',
+        exported: isExport, onready: !oldOnready
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      const ai = node.variables.findIndex(vr => vr.name === v.name);
+      if (ai !== -1) node.variables[ai].onready = !oldOnready;
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    },
+    async () => {
+      await sendCommand('modify_variable', {
+        path: nodePath, action: 'update', old_name: v.name,
+        name: v.name, type: v.type || '', default: v.default || '',
+        exported: isExport, onready: oldOnready
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      const ai = node.variables.findIndex(vr => vr.name === v.name);
+      if (ai !== -1) node.variables[ai].onready = oldOnready;
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    }
+  );
 
   try {
-    await sendCommand('modify_variable', {
-      path: selectedNode.path,
-      action: 'update',
-      old_name: v.name,
-      name: v.name,
-      type: v.type || '',
-      default: v.default || '',
-      exported: isExport,
-      onready: newOnready
-    });
-
-    selectedNode.variables[actualIndex].onready = newOnready;
-    openPanel(selectedNode);
+    await undoManager.execute(command);
   } catch (err) {
     console.error('Failed to toggle @onready:', err);
     alert('Failed to update: ' + err.message);
@@ -510,23 +1011,32 @@ window.toggleOnready = async function (index, isExport) {
 // ---- Add New Items ----
 window.addNewVariable = async function (isExport) {
   const newVar = { name: 'new_var', type: '', default: '', exported: isExport };
+  const nodePath = selectedNode.path;
+
+  const command = createCommand(
+    `Add ${isExport ? 'export' : 'variable'} 'new_var'`,
+    async () => {
+      await sendCommand('modify_variable', {
+        path: nodePath, action: 'add',
+        name: newVar.name, type: newVar.type, default: newVar.default, exported: isExport
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      node.variables.push({ ...newVar });
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    },
+    async () => {
+      await sendCommand('modify_variable', {
+        path: nodePath, action: 'delete', old_name: newVar.name
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      const idx = node.variables.findIndex(v => v.name === newVar.name && v.exported === isExport);
+      if (idx !== -1) node.variables.splice(idx, 1);
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    }
+  );
 
   try {
-    // Send to Godot first
-    await sendCommand('modify_variable', {
-      path: selectedNode.path,
-      action: 'add',
-      name: newVar.name,
-      type: newVar.type,
-      default: newVar.default,
-      exported: isExport
-    });
-
-    // Update local state
-    selectedNode.variables.push(newVar);
-    openPanel(selectedNode);
-
-    // Focus the new variable name after panel refresh
+    await undoManager.execute(command);
     setTimeout(() => {
       const list = document.getElementById(isExport ? 'exports-list' : 'vars-list');
       const lastItem = list?.querySelector('li:last-of-type .var-name');
@@ -547,21 +1057,32 @@ window.addNewVariable = async function (isExport) {
 
 window.addNewSignal = async function () {
   const newSig = { name: 'new_signal', params: '' };
+  const nodePath = selectedNode.path;
+
+  const command = createCommand(
+    `Add signal 'new_signal'`,
+    async () => {
+      await sendCommand('modify_signal', {
+        path: nodePath, action: 'add', name: newSig.name, params: newSig.params
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      if (!node.signals) node.signals = [];
+      node.signals.push({ ...newSig });
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    },
+    async () => {
+      await sendCommand('modify_signal', {
+        path: nodePath, action: 'delete', old_name: newSig.name
+      });
+      const node = nodes.find(n => n.path === nodePath) || selectedNode;
+      const idx = node.signals.findIndex(s => (typeof s === 'string' ? s : s.name) === newSig.name);
+      if (idx !== -1) node.signals.splice(idx, 1);
+      if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+    }
+  );
 
   try {
-    // Send to Godot first
-    await sendCommand('modify_signal', {
-      path: selectedNode.path,
-      action: 'add',
-      name: newSig.name,
-      params: newSig.params
-    });
-
-    // Update local state
-    if (!selectedNode.signals) selectedNode.signals = [];
-    selectedNode.signals.push(newSig);
-    openPanel(selectedNode);
-
+    await undoManager.execute(command);
     setTimeout(() => {
       const list = document.getElementById('signals-list');
       const lastItem = list?.querySelector('li:last-of-type .signal-name');
@@ -673,19 +1194,11 @@ export function expandAndHighlightFunction(funcName, targetLine, nodeData) {
 
   // Find the function index
   const funcIndex = node.functions.findIndex(f => f.name === funcName);
-  if (funcIndex === -1) {
-    console.log('Function not found:', funcName);
-    return;
-  }
-
-  console.log(`Expanding function ${funcName} (index ${funcIndex}) to line ${targetLine}`);
+  if (funcIndex === -1) return;
 
   // Get the function viewer element
   const viewer = document.getElementById(`func-viewer-${funcIndex}`);
-  if (!viewer) {
-    console.log('Viewer element not found for index:', funcIndex);
-    return;
-  }
+  if (!viewer) return;
 
   // Check if already expanded
   const isExpanded = viewer.style.display !== 'none';
@@ -707,22 +1220,14 @@ function highlightLineInViewer(viewer, funcName, targetLine, nodeData) {
   // Find the function to get its start line
   const node = nodeData || selectedNode;
   const func = node.functions.find(f => f.name === funcName);
-  if (!func) {
-    console.log('Function not found for highlighting:', funcName);
-    return;
-  }
+  if (!func) return;
 
   const funcStartLine = func.line || 1;
   const relativeLineIndex = targetLine - funcStartLine;
 
-  console.log(`Highlighting line ${targetLine} in ${funcName} (start: ${funcStartLine}, relative: ${relativeLineIndex})`);
-
   // Find the highlight overlay within the viewer
   const highlightDiv = viewer.querySelector('.code-editor-highlight');
-  if (!highlightDiv) {
-    console.log('Highlight div not found in viewer');
-    return;
-  }
+  if (!highlightDiv) return;
 
   // Clear all previous highlights
   document.querySelectorAll('.code-line-highlight').forEach(el => {
@@ -731,7 +1236,6 @@ function highlightLineInViewer(viewer, funcName, targetLine, nodeData) {
 
   // Get all lines and highlight the target
   const lines = highlightDiv.querySelectorAll('.code-line');
-  console.log(`Found ${lines.length} lines in viewer`);
 
   if (relativeLineIndex >= 0 && relativeLineIndex < lines.length) {
     const targetLineEl = lines[relativeLineIndex];
@@ -741,8 +1245,6 @@ function highlightLineInViewer(viewer, funcName, targetLine, nodeData) {
     setTimeout(() => {
       targetLineEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 50);
-  } else {
-    console.log(`Line index ${relativeLineIndex} out of range (0-${lines.length - 1})`);
   }
 }
 
@@ -983,28 +1485,34 @@ function initPropertyEditing(scenePath, nodePath) {
   document.querySelectorAll('.property-row input[type="checkbox"]').forEach(el => {
     el.addEventListener('change', () => {
       const propName = el.dataset.prop;
-      const value = el.checked;
-      saveSceneNodeProperty(scenePath, nodePath, propName, value, parseInt(el.dataset.type));
+      const oldValue = !el.checked; // Before toggle
+      saveSceneNodeProperty(scenePath, nodePath, propName, el.checked, parseInt(el.dataset.type), oldValue);
     });
   });
 
-  // Number and text inputs
+  // Number and text inputs — capture old value on focus
   document.querySelectorAll('.property-row input.property-input:not(.vec-x):not(.vec-y):not(.vec-z):not(.color-alpha):not(.range-number)').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
       const propName = el.dataset.prop;
       const type = parseInt(el.dataset.type);
       let value = el.value;
-      if (type === 2 || type === 3) value = parseFloat(value);
-      saveSceneNodeProperty(scenePath, nodePath, propName, value, type);
+      let oldValue = el.dataset.prev || '';
+      if (type === 2 || type === 3) { value = parseFloat(value); oldValue = parseFloat(oldValue); }
+      saveSceneNodeProperty(scenePath, nodePath, propName, value, type, oldValue);
+      el.dataset.prev = el.value;
     });
   });
 
   // Select dropdowns
   document.querySelectorAll('.property-row select.property-select').forEach(el => {
+    el.addEventListener('focus', () => { el.dataset.prev = el.value; });
     el.addEventListener('change', () => {
       const propName = el.dataset.prop;
       const type = parseInt(el.dataset.type);
-      saveSceneNodeProperty(scenePath, nodePath, propName, parseInt(el.value), type);
+      const oldValue = parseInt(el.dataset.prev || el.value);
+      saveSceneNodeProperty(scenePath, nodePath, propName, parseInt(el.value), type, oldValue);
+      el.dataset.prev = el.value;
     });
   });
 
@@ -1012,54 +1520,75 @@ function initPropertyEditing(scenePath, nodePath) {
   document.querySelectorAll('.range-input-group').forEach(group => {
     const range = group.querySelector('input[type="range"]');
     const number = group.querySelector('input[type="number"]');
+    let prevRangeVal = parseFloat(range.value);
 
-    range.addEventListener('input', () => {
-      number.value = range.value;
-    });
+    range.addEventListener('input', () => { number.value = range.value; });
+    range.addEventListener('mousedown', () => { prevRangeVal = parseFloat(range.value); });
     range.addEventListener('change', () => {
       const propName = range.dataset.prop;
       const type = parseInt(range.dataset.type);
-      saveSceneNodeProperty(scenePath, nodePath, propName, parseFloat(range.value), type);
+      saveSceneNodeProperty(scenePath, nodePath, propName, parseFloat(range.value), type, prevRangeVal);
+      prevRangeVal = parseFloat(range.value);
     });
+    number.addEventListener('focus', () => { number.dataset.prev = number.value; });
     number.addEventListener('change', () => {
       range.value = number.value;
       const propName = number.dataset.prop;
       const type = parseInt(number.dataset.type);
-      saveSceneNodeProperty(scenePath, nodePath, propName, parseFloat(number.value), type);
+      const oldValue = parseFloat(number.dataset.prev || number.value);
+      saveSceneNodeProperty(scenePath, nodePath, propName, parseFloat(number.value), type, oldValue);
+      number.dataset.prev = number.value;
     });
   });
 
-  // Vector inputs
+  // Vector inputs — capture old vector on focus
   document.querySelectorAll('.vector-input-group').forEach(group => {
     const propName = group.dataset.prop;
     const type = parseInt(group.dataset.type);
     const inputs = group.querySelectorAll('input');
+    let prevVec = null;
+
+    const getVec = () => {
+      const x = parseFloat(group.querySelector('.vec-x').value);
+      const y = parseFloat(group.querySelector('.vec-y').value);
+      const zInput = group.querySelector('.vec-z');
+      return zInput ? { x, y, z: parseFloat(zInput.value) } : { x, y };
+    };
 
     inputs.forEach(input => {
+      input.addEventListener('focus', () => { prevVec = getVec(); });
       input.addEventListener('change', () => {
-        const x = parseFloat(group.querySelector('.vec-x').value);
-        const y = parseFloat(group.querySelector('.vec-y').value);
-        const zInput = group.querySelector('.vec-z');
-        const value = zInput ? { x, y, z: parseFloat(zInput.value) } : { x, y };
-        saveSceneNodeProperty(scenePath, nodePath, propName, value, type);
+        const value = getVec();
+        saveSceneNodeProperty(scenePath, nodePath, propName, value, type, prevVec);
+        prevVec = { ...value };
       });
     });
   });
 
-  // Color inputs
+  // Color inputs — capture old color on focus
   document.querySelectorAll('.color-input-group').forEach(group => {
     const propName = group.dataset.prop;
     const type = parseInt(group.dataset.type);
     const colorInput = group.querySelector('input[type="color"]');
     const alphaInput = group.querySelector('.color-alpha');
+    let prevColor = null;
 
-    const saveColor = () => {
+    const getColor = () => {
       const hex = colorInput.value;
-      const r = parseInt(hex.substr(1, 2), 16) / 255;
-      const g = parseInt(hex.substr(3, 2), 16) / 255;
-      const b = parseInt(hex.substr(5, 2), 16) / 255;
-      const a = parseFloat(alphaInput.value);
-      saveSceneNodeProperty(scenePath, nodePath, propName, { r, g, b, a }, type);
+      return {
+        r: parseInt(hex.substr(1, 2), 16) / 255,
+        g: parseInt(hex.substr(3, 2), 16) / 255,
+        b: parseInt(hex.substr(5, 2), 16) / 255,
+        a: parseFloat(alphaInput.value)
+      };
+    };
+
+    colorInput.addEventListener('focus', () => { prevColor = getColor(); });
+    alphaInput.addEventListener('focus', () => { prevColor = getColor(); });
+    const saveColor = () => {
+      const value = getColor();
+      saveSceneNodeProperty(scenePath, nodePath, propName, value, type, prevColor);
+      prevColor = { ...value };
     };
 
     colorInput.addEventListener('change', saveColor);
@@ -1067,24 +1596,32 @@ function initPropertyEditing(scenePath, nodePath) {
   });
 }
 
-async function saveSceneNodeProperty(scenePath, nodePath, propName, value, valueType) {
-  console.log(`Saving property: ${propName} =`, value);
+async function saveSceneNodeProperty(scenePath, nodePath, propName, value, valueType, oldValue) {
+  const command = createCommand(
+    `Set '${propName}'`,
+    async () => {
+      const result = await sendCommand('set_scene_node_property', {
+        scene_path: scenePath, node_path: nodePath,
+        property_name: propName, value: value, value_type: valueType
+      });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+    },
+    async () => {
+      if (oldValue === undefined) return; // Can't undo without old value
+      const result = await sendCommand('set_scene_node_property', {
+        scene_path: scenePath, node_path: nodePath,
+        property_name: propName, value: oldValue, value_type: valueType
+      });
+      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      // Re-open the panel to reflect restored value
+      if (selectedSceneNode) {
+        await openSceneNodePanel(scenePath, selectedSceneNode);
+      }
+    }
+  );
 
   try {
-    const result = await sendCommand('set_scene_node_property', {
-      scene_path: scenePath,
-      node_path: nodePath,
-      property_name: propName,
-      value: value,
-      value_type: valueType
-    });
-
-    if (result.ok) {
-      console.log(`Property ${propName} saved successfully`);
-    } else {
-      console.error('Failed to save property:', result.error);
-      alert('Failed to save: ' + (result.error || 'Unknown error'));
-    }
+    await undoManager.execute(command);
   } catch (err) {
     console.error('Failed to save property:', err);
     alert('Failed to save: ' + err.message);

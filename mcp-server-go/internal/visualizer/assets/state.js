@@ -9,6 +9,12 @@ export const PROJECT_DATA = window.__PROJECT_DATA__;
 export const NODE_W = 200;
 export const NODE_H = 54;
 
+// Minimap config
+export const MINIMAP_W = 200;
+export const MINIMAP_H = 150;
+export const MINIMAP_MARGIN = 16;
+export const MINIMAP_PADDING = 10;
+
 // Camera state
 export const camera = { x: 0, y: 0, zoom: 1 };
 export let defaultZoom = 1;
@@ -66,6 +72,9 @@ export function getFolderColor(folder) {
   return folderColorMap[folder];
 }
 
+// Git status lookup (injected by Go server)
+const _gitStatus = PROJECT_DATA.git_status || {};
+
 // Initialize nodes from project data
 export const nodes = PROJECT_DATA.nodes.map((n, i) => ({
   ...n,
@@ -73,10 +82,20 @@ export const nodes = PROJECT_DATA.nodes.map((n, i) => ({
   y: 0,
   color: getFolderColor(n.folder),
   highlighted: true,
-  visible: true
+  visible: true,
+  gitStatus: _gitStatus[n.path] || null // 'added', 'modified', 'deleted', 'renamed', or null
 }));
 
 export const edges = PROJECT_DATA.edges;
+
+// Git status: path → status (added, modified, deleted, renamed)
+export const gitStatus = PROJECT_DATA.git_status || {};
+
+// Dependency analysis (computed at init)
+export let circularDeps = [];  // Array of [path1, path2, ...] cycles
+export let orphanedScripts = []; // Array of paths with no connections
+export function setCircularDeps(value) { circularDeps = value; }
+export function setOrphanedScripts(value) { orphanedScripts = value; }
 
 // View state
 export let currentView = 'scripts';
@@ -174,6 +193,24 @@ export function setPendingDelete(value) {
 
 export function setCurrentUsages(value) {
   currentUsages = value;
+}
+
+// Root folder groups: rootFolder → { nodes, bounds, color, label }
+export let rootFolderGroups = {};
+export function setRootFolderGroups(value) { rootFolderGroups = value; }
+
+// Folder groups: folder → { nodes, bounds, color, label }
+export let folderGroups = {};
+export function setFolderGroups(value) { folderGroups = value; }
+
+// Extract root folder from full path: "res://scripts/player/" → "res://scripts/"
+export function getRootFolder(folder) {
+  if (!folder) return null;
+  // Remove res:// prefix, split by /, take first segment
+  const stripped = folder.replace(/^res:\/\//, '');
+  const firstSeg = stripped.split('/').filter(Boolean)[0];
+  if (!firstSeg) return null;
+  return 'res://' + firstSeg + '/';
 }
 
 // Utility function

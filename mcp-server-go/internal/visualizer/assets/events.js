@@ -10,17 +10,21 @@ import {
   currentView, expandedScene, expandedSceneHierarchy, sceneData,
   setExpandedScene, setExpandedSceneHierarchy,
   setSelectedSceneNode, setHoveredSceneNode,
-  selectedSceneNode, scenePositions, setScenePosition
+  selectedSceneNode, scenePositions, setScenePosition,
+  folderGroups
 } from './state.js';
 import {
   getCanvas, screenToWorld, hitTest, draw, resize,
   updateZoomIndicator, centerOnNodes, savePositions,
-  sceneHitTest, SCENE_CARD_W, SCENE_CARD_H
+  sceneHitTest, SCENE_CARD_W, SCENE_CARD_H,
+  getMinimapState, onNodeMoved
 } from './canvas.js';
 import { openPanel, closePanel, openSceneNodePanel, closeSceneNodePanel } from './panel.js';
 import { sendCommand } from './websocket.js';
+import { undoManager, createCommand } from './undo.js';
 
 const DRAG_THRESHOLD = 5; // pixels - minimum movement to count as drag
+let dragRAF = null; // requestAnimationFrame handle for drag rendering
 
 export function initEvents() {
   const canvas = getCanvas();
@@ -61,6 +65,8 @@ export function initEvents() {
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    // Ignore scroll over minimap
+    if (currentView === 'scripts' && isInMinimap(e.clientX, e.clientY)) return;
     // Smaller zoom increments for finer control
     const zoomFactor = e.deltaY > 0 ? 0.95 : 1.05;
     const newZoom = Math.max(0.1, Math.min(5, camera.zoom * zoomFactor));
@@ -207,6 +213,13 @@ export function initEvents() {
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
+    // Undo/Redo (skip when typing in inputs)
+    if ((e.ctrlKey || e.metaKey) && !e.target.matches('input, textarea, [contenteditable]')) {
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undoManager.undo(); return; }
+      if (e.key === 'z' && e.shiftKey) { e.preventDefault(); undoManager.redo(); return; }
+      if (e.key === 'y') { e.preventDefault(); undoManager.redo(); return; }
+    }
+
     if (e.key === 'Escape') {
       // Also close context menus
       hideSceneContextMenu();
@@ -250,9 +263,53 @@ export function initEvents() {
   });
 }
 
+// ---- Minimap helpers ----
+function isInMinimap(sx, sy) {
+  const mm = getMinimapState();
+  if (!mm || !mm.rect) return false;
+  return sx >= mm.rect.x && sx <= mm.rect.x + mm.rect.w &&
+         sy >= mm.rect.y && sy <= mm.rect.y + mm.rect.h;
+}
+
+function minimapToWorld(sx, sy) {
+  const mm = getMinimapState();
+  if (!mm || !mm.worldBounds || !mm.contentOffset) return null;
+  const relX = sx - mm.contentOffset.x;
+  const relY = sy - mm.contentOffset.y;
+  return {
+    x: mm.worldBounds.minX + relX / mm.scale,
+    y: mm.worldBounds.minY + relY / mm.scale
+  };
+}
+
+// ---- Folder hit test ----
+function folderHitTest(wx, wy) {
+  for (const [folder, group] of Object.entries(folderGroups)) {
+    const b = group.bounds;
+    if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) {
+      return { folder, group };
+    }
+  }
+  return null;
+}
+
 // ---- Scripts view event handlers ----
 function handleScriptsMouseDown(e, w) {
   const canvas = getCanvas();
+
+  // Check minimap first
+  if (isInMinimap(e.clientX, e.clientY)) {
+    const worldPos = minimapToWorld(e.clientX, e.clientY);
+    if (worldPos) {
+      camera.x = worldPos.x;
+      camera.y = worldPos.y;
+      setDragging({ type: 'minimap' });
+      updateZoomIndicator();
+      draw();
+    }
+    return;
+  }
+
   const hit = hitTest(w.x, w.y);
 
   if (hit && e.button === 0) {
@@ -267,20 +324,64 @@ function handleScriptsMouseDown(e, w) {
     });
     canvas.classList.add('dragging');
   } else {
-    setDragging({ type: 'pan', startX: e.clientX, startY: e.clientY, camX: camera.x, camY: camera.y });
-    canvas.classList.add('dragging');
+    // Check if clicking on a folder background
+    const folderHit = folderHitTest(w.x, w.y);
+    if (folderHit && e.button === 0) {
+      // Store offsets for all nodes in the folder
+      const offsets = folderHit.group.nodes.map(n => ({ node: n, offX: n.x - w.x, offY: n.y - w.y }));
+      setDragging({
+        type: 'folder',
+        folder: folderHit.folder,
+        group: folderHit.group,
+        offsets,
+        startScreenX: e.clientX,
+        startScreenY: e.clientY,
+        moved: false
+      });
+      canvas.classList.add('dragging');
+    } else {
+      setDragging({ type: 'pan', startX: e.clientX, startY: e.clientY, camX: camera.x, camY: camera.y });
+      canvas.classList.add('dragging');
+    }
   }
 }
 
 function handleScriptsMouseMove(e) {
   const canvas = getCanvas();
   if (dragging) {
-    if (dragging.type === 'node') {
+    if (dragging.type === 'minimap') {
+      const worldPos = minimapToWorld(e.clientX, e.clientY);
+      if (worldPos) {
+        camera.x = worldPos.x;
+        camera.y = worldPos.y;
+        draw();
+      }
+      return;
+    }
+    if (dragging.type === 'folder') {
+      const w = screenToWorld(e.clientX, e.clientY);
+      for (const { node, offX, offY } of dragging.offsets) {
+        node.x = w.x + offX;
+        node.y = w.y + offY;
+      }
+      const dx = Math.abs(e.clientX - dragging.startScreenX);
+      const dy = Math.abs(e.clientY - dragging.startScreenY);
+      if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+        dragging.moved = true;
+      }
+      // Batch draw to next frame for smooth folder dragging
+      if (!dragRAF) {
+        dragRAF = requestAnimationFrame(() => {
+          draw();
+          dragRAF = null;
+        });
+      }
+      return;
+    } else if (dragging.type === 'node') {
       const w = screenToWorld(e.clientX, e.clientY);
       dragging.node.x = w.x + dragging.offX;
       dragging.node.y = w.y + dragging.offY;
 
-      // Check if moved past threshold
       const dx = Math.abs(e.clientX - dragging.startScreenX);
       const dy = Math.abs(e.clientY - dragging.startScreenY);
       if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
@@ -294,11 +395,22 @@ function handleScriptsMouseMove(e) {
     }
     draw();
   } else {
+    // Check minimap hover
+    if (isInMinimap(e.clientX, e.clientY)) {
+      canvas.style.cursor = 'pointer';
+      return;
+    }
     const w = screenToWorld(e.clientX, e.clientY);
     const prev = hoveredNode;
     setHoveredNode(hitTest(w.x, w.y));
     if (hoveredNode !== prev) {
-      canvas.style.cursor = hoveredNode ? 'pointer' : 'grab';
+      if (hoveredNode) {
+        canvas.style.cursor = 'pointer';
+      } else if (folderHitTest(w.x, w.y)) {
+        canvas.style.cursor = 'move';
+      } else {
+        canvas.style.cursor = 'grab';
+      }
       draw();
     }
   }
@@ -306,10 +418,19 @@ function handleScriptsMouseMove(e) {
 
 function handleScriptsMouseUp(e) {
   const canvas = getCanvas();
-  if (dragging && dragging.type === 'node') {
+  if (dragging && dragging.type === 'minimap') {
+    setDragging(null);
+    savePositions();
+    return;
+  }
+  if (dragging && dragging.type === 'folder') {
     if (dragging.moved) {
-      // Node was moved - save positions
-      savePositions();
+      onNodeMoved();
+    }
+  } else if (dragging && dragging.type === 'node') {
+    if (dragging.moved) {
+      // Node was moved - save positions and recompute folder groups
+      onNodeMoved();
     } else {
       // Node was clicked - open panel
       openPanel(dragging.node);
@@ -417,8 +538,6 @@ function handleSceneMouseUp(e) {
 
 // ---- Scene expansion and navigation ----
 async function expandScene(scenePath) {
-  console.log('Expanding scene:', scenePath);
-  
   try {
     // Fetch the scene hierarchy
     const result = await sendCommand('get_scene_hierarchy', { scene_path: scenePath });
@@ -446,8 +565,6 @@ async function expandScene(scenePath) {
 }
 
 async function selectSceneNode(node, scenePath) {
-  console.log('Selected scene node:', node.name, 'in', scenePath);
-  
   // If clicking the same node that's already selected, close the panel
   if (selectedSceneNode && selectedSceneNode.path === node.path) {
     setSelectedSceneNode(null);
@@ -496,11 +613,55 @@ window.goBackToSceneOverview = goBackToSceneOverview;
 window.expandSceneFromPanel = expandScene;
 
 export function updateStats() {
-  const statsEl = document.getElementById('stats');
+  const scriptsEl = document.getElementById('scripts-indicator');
+  const connectionsEl = document.getElementById('connections-indicator');
+  const gitEl = document.getElementById('git-indicator');
+  const depEl = document.getElementById('dep-indicator');
+
   if (currentView === 'scripts') {
-    statsEl.textContent = `${nodes.length} scripts · ${edges.length} connections`;
-  } else if (sceneData && sceneData.scenes) {
-    statsEl.textContent = `${sceneData.scenes.length} scenes`;
+    scriptsEl.textContent = `${nodes.length} scripts`;
+    connectionsEl.textContent = `${edges.length} connections`;
+    scriptsEl.style.display = '';
+    connectionsEl.style.display = '';
+
+    // Git status indicator
+    const gitModified = nodes.filter(n => n.gitStatus).length;
+    if (gitModified > 0 && gitEl) {
+      const added = nodes.filter(n => n.gitStatus === 'added').length;
+      const modified = nodes.filter(n => n.gitStatus === 'modified').length;
+      const parts = [];
+      if (modified > 0) parts.push(`${modified}M`);
+      if (added > 0) parts.push(`${added}A`);
+      const other = gitModified - modified - added;
+      if (other > 0) parts.push(`${other}?`);
+      gitEl.textContent = `● ${parts.join(' ')}`;
+      gitEl.title = `Git: ${gitModified} changed file${gitModified > 1 ? 's' : ''}`;
+      gitEl.style.display = '';
+    } else if (gitEl) {
+      gitEl.style.display = 'none';
+    }
+
+    // Dependency indicator
+    const cycleCount = nodes.filter(n => n._inCycle).length;
+    const orphanCount = nodes.filter(n => n._orphaned).length;
+    if ((cycleCount > 0 || orphanCount > 0) && depEl) {
+      const parts = [];
+      if (cycleCount > 0) parts.push(`${cycleCount} circular`);
+      if (orphanCount > 0) parts.push(`${orphanCount} orphaned`);
+      depEl.textContent = `▲ ${parts.join(', ')}`;
+      depEl.title = 'Dependency issues detected';
+      depEl.style.display = '';
+    } else if (depEl) {
+      depEl.style.display = 'none';
+    }
+  } else {
+    if (gitEl) gitEl.style.display = 'none';
+    if (depEl) depEl.style.display = 'none';
+    if (sceneData && sceneData.scenes) {
+      scriptsEl.textContent = `${sceneData.scenes.length} scenes`;
+      scriptsEl.style.display = '';
+    }
+    connectionsEl.style.display = 'none';
   }
 }
 
@@ -529,11 +690,11 @@ async function sceneNodeAction(action) {
   // Save node info BEFORE hiding menu (which clears these variables)
   const node = contextMenuNode;
   const scenePath = contextMenuScenePath;
-  
+
   hideSceneContextMenu();
-  
+
   if (!node || !scenePath) return;
-  
+
   try {
     switch (action) {
       case 'add_child': {
@@ -541,107 +702,174 @@ async function sceneNodeAction(action) {
         if (!nodeType) return;
         const nodeName = prompt('Enter node name:', 'NewNode');
         if (!nodeName) return;
-        
-        const result = await sendCommand('add_node', {
-          scene_path: scenePath,
-          parent_path: node.path,
-          node_type: nodeType,
-          node_name: nodeName
-        });
-        
-        if (result.ok) {
-          await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to add node: ' + (result.error || 'Unknown error'));
-        }
+
+        const parentPath = node.path;
+        const childPath = parentPath === '.' ? nodeName : parentPath + '/' + nodeName;
+
+        const command = createCommand(
+          `Add node '${nodeName}'`,
+          async () => {
+            const result = await sendCommand('add_node', {
+              scene_path: scenePath, parent_path: parentPath,
+              node_type: nodeType, node_name: nodeName
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          },
+          async () => {
+            const result = await sendCommand('remove_node', {
+              scene_path: scenePath, node_path: childPath
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          }
+        );
+        await undoManager.execute(command);
         break;
       }
-      
+
       case 'rename': {
         const newName = prompt('Enter new name:', node.name);
         if (!newName || newName === node.name) return;
-        
-        const result = await sendCommand('rename_node', {
-          scene_path: scenePath,
-          node_path: node.path,
-          new_name: newName
-        });
-        
-        if (result.ok) {
-          await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to rename: ' + (result.error || 'Unknown error'));
-        }
+
+        const oldName = node.name;
+        const oldPath = node.path;
+        // Compute what path will be after rename
+        const parts = oldPath.split('/');
+        parts[parts.length - 1] = newName;
+        const newPath = parts.join('/');
+
+        const command = createCommand(
+          `Rename node '${oldName}' to '${newName}'`,
+          async () => {
+            const result = await sendCommand('rename_node', {
+              scene_path: scenePath, node_path: oldPath, new_name: newName
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          },
+          async () => {
+            const result = await sendCommand('rename_node', {
+              scene_path: scenePath, node_path: newPath, new_name: oldName
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          }
+        );
+        await undoManager.execute(command);
         break;
       }
-      
+
       case 'duplicate': {
-        const result = await sendCommand('duplicate_node', {
-          scene_path: scenePath,
-          node_path: node.path
-        });
-        
-        if (result.ok) {
-          await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to duplicate: ' + (result.error || 'Unknown error'));
-        }
+        // After duplicate, find the new node to know its path for undo
+        const command = createCommand(
+          `Duplicate node '${node.name}'`,
+          async () => {
+            const result = await sendCommand('duplicate_node', {
+              scene_path: scenePath, node_path: node.path
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          },
+          async () => {
+            // The duplicated node is typically named NodeName2, NodeName3, etc.
+            // Re-fetch hierarchy and find the newest sibling
+            await refreshExpandedScene(scenePath);
+          }
+        );
+        await undoManager.execute(command);
         break;
       }
-      
+
       case 'move_up': {
         if (node.index === undefined || node.index <= 0) {
           alert('Cannot move node up - already at top');
           return;
         }
-        const result = await sendCommand('reorder_node', {
-          scene_path: scenePath,
-          node_path: node.path,
-          new_index: node.index - 1
-        });
-        
-        if (result.ok) {
-          await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to move: ' + (result.error || 'Unknown error'));
-        }
+        const originalIndex = node.index;
+        const newIndex = node.index - 1;
+
+        const command = createCommand(
+          `Move node '${node.name}' up`,
+          async () => {
+            const result = await sendCommand('reorder_node', {
+              scene_path: scenePath, node_path: node.path, new_index: newIndex
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          },
+          async () => {
+            const result = await sendCommand('reorder_node', {
+              scene_path: scenePath, node_path: node.path, new_index: originalIndex
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          }
+        );
+        await undoManager.execute(command);
         break;
       }
-      
+
       case 'move_down': {
-        const result = await sendCommand('reorder_node', {
-          scene_path: scenePath,
-          node_path: node.path,
-          new_index: (node.index || 0) + 1
-        });
-        
-        if (result.ok) {
-          await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to move: ' + (result.error || 'Unknown error'));
-        }
+        const originalIndex = node.index || 0;
+        const newIndex = originalIndex + 1;
+
+        const command = createCommand(
+          `Move node '${node.name}' down`,
+          async () => {
+            const result = await sendCommand('reorder_node', {
+              scene_path: scenePath, node_path: node.path, new_index: newIndex
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          },
+          async () => {
+            const result = await sendCommand('reorder_node', {
+              scene_path: scenePath, node_path: node.path, new_index: originalIndex
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          }
+        );
+        await undoManager.execute(command);
         break;
       }
-      
+
       case 'delete': {
         if (node.path === '.') {
           alert('Cannot delete root node');
           return;
         }
         if (!confirm(`Delete node "${node.name}" and all its children?`)) return;
-        
-        const result = await sendCommand('remove_node', {
-          scene_path: scenePath,
-          node_path: node.path
-        });
-        
-        if (result.ok) {
-          closeSceneNodePanel();
-          setSelectedSceneNode(null);
-          await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to delete: ' + (result.error || 'Unknown error'));
-        }
+
+        const savedNode = { name: node.name, type: node.type, path: node.path, index: node.index };
+        // Compute parent path
+        const pathParts = node.path.split('/');
+        pathParts.pop();
+        const parentPath = pathParts.length > 0 ? pathParts.join('/') : '.';
+
+        const command = createCommand(
+          `Delete node '${node.name}'`,
+          async () => {
+            const result = await sendCommand('remove_node', {
+              scene_path: scenePath, node_path: savedNode.path
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            closeSceneNodePanel();
+            setSelectedSceneNode(null);
+            await refreshExpandedScene(scenePath);
+          },
+          async () => {
+            // Re-create the node (top-level only, children not restored)
+            const result = await sendCommand('add_node', {
+              scene_path: scenePath, parent_path: parentPath,
+              node_type: savedNode.type || 'Node', node_name: savedNode.name
+            });
+            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            await refreshExpandedScene(scenePath);
+          }
+        );
+        await undoManager.execute(command);
         break;
       }
     }
@@ -654,7 +882,7 @@ async function sceneNodeAction(action) {
 async function refreshExpandedScene(scenePath) {
   // Re-fetch the scene hierarchy
   const result = await sendCommand('get_scene_hierarchy', { scene_path: scenePath });
-  if (result.ok) {
+  if (result.ok && result.hierarchy) {
     setExpandedSceneHierarchy(result.hierarchy);
     draw();
   }
@@ -694,20 +922,34 @@ function startInlineRename(screenX, screenY, node, scenePath) {
   async function finishRename() {
     const newName = input.value.trim();
     input.remove();
-    
+
     if (newName && newName !== node.name) {
-      try {
-        const result = await sendCommand('rename_node', {
-          scene_path: scenePath,
-          node_path: node.path,
-          new_name: newName
-        });
-        
-        if (result.ok) {
+      const oldName = node.name;
+      const oldPath = node.path;
+      const parts = oldPath.split('/');
+      parts[parts.length - 1] = newName;
+      const newPath = parts.join('/');
+
+      const command = createCommand(
+        `Rename node '${oldName}' to '${newName}'`,
+        async () => {
+          const result = await sendCommand('rename_node', {
+            scene_path: scenePath, node_path: oldPath, new_name: newName
+          });
+          if (!result.ok) throw new Error(result.error || 'Unknown error');
           await refreshExpandedScene(scenePath);
-        } else {
-          alert('Failed to rename: ' + (result.error || 'Unknown error'));
+        },
+        async () => {
+          const result = await sendCommand('rename_node', {
+            scene_path: scenePath, node_path: newPath, new_name: oldName
+          });
+          if (!result.ok) throw new Error(result.error || 'Unknown error');
+          await refreshExpandedScene(scenePath);
         }
+      );
+
+      try {
+        await undoManager.execute(command);
       } catch (err) {
         alert('Failed to rename: ' + err.message);
       }

@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -32,6 +34,9 @@ func New(b *bridge.GodotBridge) *Server {
 // Returns the URL where the visualization is hosted.
 func (s *Server) Serve(projectData any) (string, error) {
 	s.Stop() // Close any previous instance
+
+	// Inject git status into the project data
+	projectData = s.injectGitStatus(projectData)
 
 	dataJSON, err := json.Marshal(projectData)
 	if err != nil {
@@ -224,4 +229,106 @@ func findListener(start int) (net.Listener, error) {
 func mustJSON(v any) []byte {
 	data, _ := json.Marshal(v)
 	return data
+}
+
+// injectGitStatus adds git_status to the project data map.
+func (s *Server) injectGitStatus(projectData any) any {
+	projectPath := ""
+	if s.bridge != nil {
+		status := s.bridge.GetStatus()
+		projectPath = status.ProjectPath
+	}
+	if projectPath == "" {
+		return projectData
+	}
+
+	gitStatus := getGitStatus(projectPath)
+	if gitStatus == nil {
+		return projectData
+	}
+
+	// The project data is a map[string]any with "project_map" key
+	dataMap, ok := projectData.(map[string]any)
+	if !ok {
+		return projectData
+	}
+	dataMap["git_status"] = gitStatus
+	return dataMap
+}
+
+// getGitStatus runs git commands to determine file statuses.
+// Returns a map of relative res:// paths to their git status.
+func getGitStatus(projectPath string) map[string]string {
+	// Find the git repo root from the project path
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("[visualizer] Not a git repo or git not found: %v", err)
+		return nil
+	}
+	gitRoot := strings.TrimSpace(string(out))
+
+	// Run git status --porcelain to get all changed files
+	cmd = exec.Command("git", "status", "--porcelain")
+	cmd.Dir = gitRoot
+	out, err = cmd.Output()
+	if err != nil {
+		log.Printf("[visualizer] git status failed: %v", err)
+		return nil
+	}
+
+	result := make(map[string]string)
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for _, line := range lines {
+		if len(line) < 4 {
+			continue
+		}
+		status := strings.TrimSpace(line[:2])
+		filePath := strings.TrimSpace(line[3:])
+
+		// Handle renamed files (old -> new)
+		if idx := strings.Index(filePath, " -> "); idx >= 0 {
+			filePath = filePath[idx+4:]
+		}
+
+		// Convert absolute git path to res:// path
+		absPath := filepath.Join(gitRoot, filePath)
+		relPath, err := filepath.Rel(projectPath, absPath)
+		if err != nil {
+			continue
+		}
+
+		// Skip files outside the project
+		if strings.HasPrefix(relPath, "..") {
+			continue
+		}
+
+		// Only track .gd files
+		if !strings.HasSuffix(relPath, ".gd") {
+			continue
+		}
+
+		resPath := "res://" + filepath.ToSlash(relPath)
+
+		// Map git status codes to simple labels
+		switch {
+		case status == "??" || status == "A" || status == "AM":
+			result[resPath] = "added"
+		case strings.Contains(status, "M"):
+			result[resPath] = "modified"
+		case strings.Contains(status, "D"):
+			result[resPath] = "deleted"
+		case strings.Contains(status, "R"):
+			result[resPath] = "renamed"
+		default:
+			result[resPath] = "changed"
+		}
+	}
+
+	if len(result) > 0 {
+		log.Printf("[visualizer] Git status: %d modified .gd files", len(result))
+	}
+
+	return result
 }

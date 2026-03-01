@@ -21,9 +21,38 @@
   - Back navigation to scene overview
 - [x] Right-click context menu on scene nodes (add child, delete, rename, duplicate, reorder)
 - [x] Visualizer launched from editor (Project → Tools → MCP: Map Project)
-
-## In Progress
-- [ ] Delete/rename scripts from visualizer
+- [x] Minimap with viewport rect, click-to-pan, drag-to-pan
+- [x] Folder grouping — scripts cluster by folder with background rects and labels
+  - Force-directed layout with folder cohesion/repulsion forces
+  - Bounding-box based folder separation (80px gap)
+  - Column-major grid snapping within folders (max 4 rows)
+  - Cross-folder edge dampening to prevent folder stretching
+- [x] Folder dragging — click and drag a folder background to move all its scripts together
+- [x] Position persistence — node and camera positions saved to localStorage across sessions
+- [x] Delete/rename scripts from visualizer
+  - Delete with usage detection and reference listing
+  - Rename/move with optional reference updates across files
+  - Confirmation modals to prevent accidents
+- [x] Root folder grouping — subfolders with same root directory cluster together
+  - Root-folder cohesion force in layout
+  - Subfolder grid snapping within root folders
+  - Grey root folder backgrounds behind colored subfolder groups
+- [x] Git integration — modified files indicator
+  - Go server runs `git status` and injects per-file status into project data
+  - Colored dots on nodes: green (added), yellow (modified), red (deleted), blue (renamed)
+  - Stats bar shows count of modified files
+- [x] Dependency analysis — circular deps and orphaned scripts
+  - DFS cycle detection on extends/preload graph
+  - Orphaned script detection (no incoming or outgoing structural edges)
+  - Circular dep warning icon on affected nodes
+  - Dashed border on orphaned scripts
+  - Stats bar shows counts
+- [x] Undo/redo system
+  - Command pattern with execute/undo closures for all 20 mutation call sites
+  - 50-entry history stack with cursor-based navigation
+  - Ctrl+Z undo, Ctrl+Shift+Z / Ctrl+Y redo (skipped in text inputs)
+  - Toast notifications (bottom-center) showing action/undo/redo/error
+  - Covers: variable/signal/function edits, script create/delete/rename, scene node operations, scene property changes
 
 ## Planned
 
@@ -40,14 +69,9 @@
 - Cross-scene signal visualization
 
 ### Phase 5: Advanced
-- Minimap
-- Node grouping
 - Full-text search in function bodies
 - Refactoring (rename across files)
-- Undo/redo
-- Git integration (modified files indicator)
 
 ### Phase 6: Polish
 - Documentation generation
-- Dependency analysis (circular deps, unused scripts)
 - Code snippets library

@@ -9,6 +9,7 @@ import {
 import { sendCommand } from './websocket.js';
 import { highlightGDScript } from './syntax.js';
 import { openPanel, expandAndHighlightFunction } from './panel.js';
+import { undoManager, createCommand } from './undo.js';
 
 // ---- Delete with Floating Usage Panel ----
 window.showDeleteUsages = async function (index, isExport, type) {
@@ -241,7 +242,6 @@ window.navigateToUsage = function (el) {
   // Find the node for this file
   const targetNode = nodes.find(n => n.path === file);
   if (!targetNode) {
-    console.log('Node not found for file:', file);
     return;
   }
 
@@ -263,31 +263,86 @@ window.navigateToUsage = function (el) {
 };
 
 async function performDelete(index, isExport, type, itemName) {
+  const nodePath = selectedNode.path;
+
   try {
     if (type === 'signal') {
-      await sendCommand('modify_signal', {
-        path: selectedNode.path,
-        action: 'delete',
-        old_name: itemName
-      });
-      selectedNode.signals.splice(index, 1);
+      const sig = selectedNode.signals[index];
+      const savedSig = typeof sig === 'string' ? { name: sig, params: '' } : { ...sig };
+
+      const command = createCommand(
+        `Delete signal '${itemName}'`,
+        async () => {
+          await sendCommand('modify_signal', { path: nodePath, action: 'delete', old_name: itemName });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          const idx = node.signals.findIndex(s => (typeof s === 'string' ? s : s.name) === itemName);
+          if (idx !== -1) node.signals.splice(idx, 1);
+        },
+        async () => {
+          await sendCommand('modify_signal', {
+            path: nodePath, action: 'add', name: savedSig.name, params: savedSig.params || ''
+          });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          if (!node.signals) node.signals = [];
+          node.signals.push({ ...savedSig });
+          if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+        }
+      );
+      await undoManager.execute(command);
+
     } else if (type === 'function') {
-      await sendCommand('modify_function_delete', {
-        path: selectedNode.path,
-        name: itemName
-      });
-      selectedNode.functions.splice(index, 1);
+      const func = selectedNode.functions[index];
+      const savedFunc = { ...func };
+
+      const command = createCommand(
+        `Delete function '${itemName}'`,
+        async () => {
+          await sendCommand('modify_function_delete', { path: nodePath, name: itemName });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          const idx = node.functions.findIndex(f => f.name === itemName);
+          if (idx !== -1) node.functions.splice(idx, 1);
+        },
+        async () => {
+          // Re-create function with saved body
+          await sendCommand('modify_function', {
+            path: nodePath, name: savedFunc.name, body: savedFunc.body || 'pass'
+          });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          node.functions.push({ ...savedFunc });
+          if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+        }
+      );
+      await undoManager.execute(command);
+
     } else {
-      await sendCommand('modify_variable', {
-        path: selectedNode.path,
-        action: 'delete',
-        old_name: itemName
-      });
       const vars = selectedNode.variables.filter(v => v.exported === isExport);
-      const actualIndex = selectedNode.variables.findIndex(v => v.name === vars[index].name);
-      if (actualIndex !== -1) selectedNode.variables.splice(actualIndex, 1);
+      const v = vars[index];
+      const savedVar = { ...v };
+      const actualIndex = selectedNode.variables.findIndex(vr => vr.name === v.name);
+
+      const command = createCommand(
+        `Delete variable '${itemName}'`,
+        async () => {
+          await sendCommand('modify_variable', { path: nodePath, action: 'delete', old_name: itemName });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          const ai = node.variables.findIndex(vr => vr.name === itemName);
+          if (ai !== -1) node.variables.splice(ai, 1);
+        },
+        async () => {
+          await sendCommand('modify_variable', {
+            path: nodePath, action: 'add',
+            name: savedVar.name, type: savedVar.type || '',
+            default: savedVar.default || '', exported: !!savedVar.exported,
+            onready: !!savedVar.onready
+          });
+          const node = nodes.find(n => n.path === nodePath) || selectedNode;
+          node.variables.push({ ...savedVar });
+          if (selectedNode && selectedNode.path === nodePath) openPanel(selectedNode);
+        }
+      );
+      await undoManager.execute(command);
     }
-    console.log(`Deleted ${type} "${itemName}" from ${selectedNode.path}`);
+
     window.closeUsagePanel();
     openPanel(selectedNode);
   } catch (err) {

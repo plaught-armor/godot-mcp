@@ -8,7 +8,10 @@ import {
   currentView, sceneData, expandedScene, expandedSceneHierarchy,
   selectedSceneNode, hoveredSceneNode, scenePositions,
   setExpandedScene, setSelectedSceneNode, setHoveredSceneNode,
-  setScenePosition, scriptToScenes
+  setScenePosition, scriptToScenes,
+  MINIMAP_W, MINIMAP_H, MINIMAP_MARGIN, MINIMAP_PADDING,
+  folderGroups, setFolderGroups,
+  rootFolderGroups, setRootFolderGroups, getRootFolder
 } from './state.js';
 
 let canvas, ctx;
@@ -32,16 +35,8 @@ export function initCanvas() {
   return { canvas, ctx, positionsRestored };
 }
 
-export function getDpr() {
-  return dpr;
-}
-
 export function getCanvas() {
   return canvas;
-}
-
-export function getContext() {
-  return ctx;
 }
 
 export function resize() {
@@ -163,6 +158,76 @@ export function clearPositions() {
 // Save positions when node is moved
 export function onNodeMoved() {
   savePositions();
+  draw();
+}
+
+// ---- Folder Groups ----
+export function computeFolderGroups() {
+  // Subfolder groups (colored)
+  const groups = {};
+  for (const n of nodes) {
+    if (!n.folder) continue;
+    if (!groups[n.folder]) groups[n.folder] = { nodes: [], color: n.color };
+    groups[n.folder].nodes.push(n);
+  }
+  for (const folder of Object.keys(groups)) {
+    if (groups[folder].nodes.length < 2) {
+      delete groups[folder];
+      continue;
+    }
+    const group = groups[folder];
+    const pad = 30, labelH = 24;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of group.nodes) {
+      minX = Math.min(minX, n.x - NODE_W / 2);
+      maxX = Math.max(maxX, n.x + NODE_W / 2);
+      minY = Math.min(minY, n.y - NODE_H / 2);
+      maxY = Math.max(maxY, n.y + NODE_H / 2);
+    }
+    group.bounds = {
+      x: minX - pad,
+      y: minY - pad - labelH,
+      w: (maxX - minX) + pad * 2,
+      h: (maxY - minY) + pad * 2 + labelH
+    };
+    group.label = folder;
+  }
+  setFolderGroups(groups);
+
+  // Root folder groups (grey) — encompass all subfolders sharing the same root
+  const rootGroups = {};
+  for (const n of nodes) {
+    const root = getRootFolder(n.folder);
+    if (!root) continue;
+    if (!rootGroups[root]) rootGroups[root] = { nodes: [] };
+    rootGroups[root].nodes.push(n);
+  }
+  for (const root of Object.keys(rootGroups)) {
+    // Only show root group if it contains nodes from 2+ different subfolders
+    const subfolders = new Set(rootGroups[root].nodes.map(n => n.folder));
+    if (subfolders.size < 2) {
+      delete rootGroups[root];
+      continue;
+    }
+    const group = rootGroups[root];
+    const pad = 50, labelH = 28;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of group.nodes) {
+      minX = Math.min(minX, n.x - NODE_W / 2);
+      maxX = Math.max(maxX, n.x + NODE_W / 2);
+      minY = Math.min(minY, n.y - NODE_H / 2);
+      maxY = Math.max(maxY, n.y + NODE_H / 2);
+    }
+    group.bounds = {
+      x: minX - pad,
+      y: minY - pad - labelH,
+      w: (maxX - minX) + pad * 2,
+      h: (maxY - minY) + pad * 2 + labelH
+    };
+    group.label = root;
+    group.color = '#888888'; // Grey for root folders
+  }
+  setRootFolderGroups(rootGroups);
 }
 
 // ---- Drawing ----
@@ -171,6 +236,9 @@ export function draw() {
     drawSceneView();
     return;
   }
+
+  // Recompute folder groups every draw (cheap single pass over nodes)
+  computeFolderGroups();
 
   // Ensure DPR transform is set for crisp rendering on high-DPI displays
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -187,6 +255,9 @@ export function draw() {
   ctx.translate(Math.round(W / 2), Math.round(H / 2));
   ctx.scale(camera.zoom, camera.zoom);
   ctx.translate(-camera.x, -camera.y);
+
+  // Draw folder group backgrounds (behind everything)
+  drawFolderGroups();
 
   // Build path index for quick lookup
   const pathIdx = {};
@@ -385,21 +456,232 @@ export function draw() {
     if (usedInScenes && usedInScenes.length > 0) {
       const badgeX = x + NODE_W - 8;
       const badgeY = y + 8;
-      
+
       ctx.fillStyle = 'rgba(166, 227, 161, 0.2)';
       ctx.beginPath();
       ctx.roundRect(badgeX - 20, badgeY - 4, 24, 14, 3);
       ctx.fill();
-      
+
       ctx.fillStyle = '#a6e3a1';
       ctx.font = `600 9px -apple-system, system-ui, sans-serif`;
       ctx.textAlign = 'right';
       ctx.fillText('📦' + usedInScenes.length, badgeX, badgeY + 4);
       ctx.textAlign = 'left';
     }
+
+    // Git status indicator (top-left corner, outside the node)
+    if (n.gitStatus) {
+      const gitColor = n.gitStatus === 'added' ? '#a6e3a1' :
+                        n.gitStatus === 'modified' ? '#f9e2af' :
+                        n.gitStatus === 'deleted' ? '#f38ba8' :
+                        '#89dceb'; // renamed/other
+      const dotR = 5;
+      const dotX = x + dotR + 2;
+      const dotY = y - dotR - 2;
+
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = gitColor;
+      ctx.fill();
+
+      // Letter inside dot
+      ctx.fillStyle = '#1a1a1e';
+      ctx.font = `bold 7px -apple-system, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.gitStatus[0].toUpperCase(), dotX, dotY);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    // Dependency analysis: circular dep warning (bottom-right)
+    if (n._inCycle) {
+      const warnX = x + NODE_W - 6;
+      const warnY = y + NODE_H - 6;
+      ctx.fillStyle = '#f38ba8';
+      ctx.font = `bold 10px -apple-system, system-ui, sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.fillText('⟳', warnX, warnY);
+      ctx.textAlign = 'left';
+    }
+
+    // Dependency analysis: orphaned script (dimmed border)
+    if (n._orphaned) {
+      ctx.strokeStyle = '#f9e2af44';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      roundRect(ctx, x, y, NODE_W, NODE_H, 10);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // Draw minimap (in screen space, after restore)
+  drawMinimap();
+}
+
+// ---- Folder Group Drawing ----
+function drawFolderGroups() {
+  // Draw root folder backgrounds first (grey, behind everything)
+  if (rootFolderGroups && Object.keys(rootFolderGroups).length > 0) {
+    for (const group of Object.values(rootFolderGroups)) {
+      if (!group.bounds) continue;
+      const { x, y, w, h } = group.bounds;
+
+      // Grey background fill (very subtle)
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 16);
+      ctx.fillStyle = 'rgba(136, 136, 136, 0.04)';
+      ctx.fill();
+
+      // Grey border
+      ctx.strokeStyle = 'rgba(136, 136, 136, 0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Root folder label
+      ctx.font = '600 13px -apple-system, system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(136, 136, 136, 0.5)';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(group.label, x + 14, y + 8);
+    }
+  }
+
+  // Draw subfolder backgrounds on top (colored)
+  if (folderGroups && Object.keys(folderGroups).length > 0) {
+    for (const group of Object.values(folderGroups)) {
+      if (!group.bounds) continue;
+      const { x, y, w, h } = group.bounds;
+      const color = group.color;
+
+      // Background fill (very low opacity)
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 12);
+      ctx.fillStyle = color + '0D'; // ~5% opacity
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = color + '33'; // ~20% opacity
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Folder label
+      ctx.font = '600 12px -apple-system, system-ui, sans-serif';
+      ctx.fillStyle = color + '99'; // ~60% opacity
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(group.label, x + 10, y + 6);
+    }
+  }
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+}
+
+// ---- Minimap ----
+let mmRect = null;       // { x, y, w, h } screen coords
+let mmWorldBounds = null; // { minX, minY, w, h }
+let mmScale = 0;
+let mmContentOffset = null; // { x, y }
+
+export function getMinimapState() {
+  return { rect: mmRect, worldBounds: mmWorldBounds, scale: mmScale, contentOffset: mmContentOffset };
+}
+
+function drawMinimap() {
+  if (nodes.length === 0 || currentView !== 'scripts') return;
+
+  // Compute world bounding box
+  let wMinX = Infinity, wMaxX = -Infinity, wMinY = Infinity, wMaxY = -Infinity;
+  for (const n of nodes) {
+    wMinX = Math.min(wMinX, n.x - NODE_W / 2);
+    wMaxX = Math.max(wMaxX, n.x + NODE_W / 2);
+    wMinY = Math.min(wMinY, n.y - NODE_H / 2);
+    wMaxY = Math.max(wMaxY, n.y + NODE_H / 2);
+  }
+  const worldPad = 50;
+  wMinX -= worldPad; wMaxX += worldPad;
+  wMinY -= worldPad; wMaxY += worldPad;
+  const worldW = wMaxX - wMinX;
+  const worldH = wMaxY - wMinY;
+
+  // Minimap position (bottom-right)
+  const mmX = W - MINIMAP_W - MINIMAP_MARGIN;
+  const mmY = H - MINIMAP_H - MINIMAP_MARGIN;
+
+  // Scale factor (fit world into minimap with padding)
+  const scaleX = (MINIMAP_W - 2 * MINIMAP_PADDING) / worldW;
+  const scaleY = (MINIMAP_H - 2 * MINIMAP_PADDING) / worldH;
+  const scale = Math.min(scaleX, scaleY);
+
+  // Center content within minimap
+  const contentW = worldW * scale;
+  const contentH = worldH * scale;
+  const offX = mmX + (MINIMAP_W - contentW) / 2;
+  const offY = mmY + (MINIMAP_H - contentH) / 2;
+
+  // Store for event hit testing
+  mmRect = { x: mmX, y: mmY, w: MINIMAP_W, h: MINIMAP_H };
+  mmWorldBounds = { minX: wMinX, minY: wMinY, w: worldW, h: worldH };
+  mmScale = scale;
+  mmContentOffset = { x: offX, y: offY };
+
+  // Re-apply DPR transform (we're in screen space after ctx.restore())
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.save();
+
+  // Background
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = '#1a1a1e';
+  ctx.beginPath();
+  ctx.roundRect(mmX, mmY, MINIMAP_W, MINIMAP_H, 8);
+  ctx.fill();
+  ctx.strokeStyle = '#3a3a40';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Clip to minimap
+  ctx.beginPath();
+  ctx.roundRect(mmX + 1, mmY + 1, MINIMAP_W - 2, MINIMAP_H - 2, 7);
+  ctx.clip();
+
+  // Draw nodes as small colored rects
+  for (const n of nodes) {
+    if (searchTerm && n.visible === false) continue;
+    const dotX = offX + (n.x - wMinX) * scale;
+    const dotY = offY + (n.y - wMinY) * scale;
+    const dotW = Math.max(3, NODE_W * scale);
+    const dotH = Math.max(2, NODE_H * scale);
+    ctx.fillStyle = n.color;
+    ctx.globalAlpha = n.highlighted ? 0.8 : 0.2;
+    ctx.fillRect(dotX - dotW / 2, dotY - dotH / 2, dotW, dotH);
+  }
+
+  // Viewport rectangle
+  const viewLeft = camera.x - (W / 2) / camera.zoom;
+  const viewTop = camera.y - (H / 2) / camera.zoom;
+  const viewW = W / camera.zoom;
+  const viewH = H / camera.zoom;
+
+  const vpX = offX + (viewLeft - wMinX) * scale;
+  const vpY = offY + (viewTop - wMinY) * scale;
+  const vpW = viewW * scale;
+  const vpH = viewH * scale;
+
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = '#d4a27f';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(vpX, vpY, vpW, vpH);
+  ctx.fillStyle = '#d4a27f11';
+  ctx.fillRect(vpX, vpY, vpW, vpH);
+
   ctx.restore();
 }
 
@@ -709,7 +991,7 @@ function drawSceneNode(node) {
   }
 
   // Sibling index indicator (for node order)
-  if (node.index !== undefined && node.index > 0) {
+  if (node.index !== undefined && node.index >= 0) {
     ctx.fillStyle = '#4a5568';
     ctx.font = `9px -apple-system, system-ui, sans-serif`;
     ctx.textAlign = 'right';
