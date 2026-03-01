@@ -86,3 +86,9 @@
 ### Phase 6: Polish
 - Documentation generation
 - Code snippets library
+
+### Phase 7: Native Editor Integration
+- Main screen plugin (`_has_main_screen()`) — visualizer as a tab alongside 2D/3D/Script/AssetLib
+- Graph rendering via `Control._draw()` (force-directed layout, folder grouping, edges, minimap)
+- Panel UI with Godot Control nodes (LineEdit, OptionButton, PopupMenu, etc.)
+- Start read-only (graph + inspect), keep browser version for editing initially
