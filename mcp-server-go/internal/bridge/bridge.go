@@ -58,6 +58,7 @@ type GodotBridge struct {
 	timeout time.Duration
 
 	mu         sync.Mutex
+	writeMu    sync.Mutex // serializes concurrent WebSocket writes
 	conn       *websocket.Conn
 	info       *GodotInfo
 	pending    map[string]*pendingRequest
@@ -181,7 +182,10 @@ func (b *GodotBridge) SendNotification(msgType string, fields map[string]any) er
 	if err != nil {
 		return err
 	}
-	return conn.Write(context.Background(), websocket.MessageText, data)
+	b.writeMu.Lock()
+	err = conn.Write(context.Background(), websocket.MessageText, data)
+	b.writeMu.Unlock()
+	return err
 }
 
 // InvokeTool sends a tool invocation to Godot and waits for the result.
@@ -216,11 +220,14 @@ func (b *GodotBridge) InvokeTool(ctx context.Context, toolName string, args map[
 	timeoutCtx, cancel := context.WithTimeout(ctx, b.timeout)
 	defer cancel()
 
-	if err := conn.Write(timeoutCtx, websocket.MessageText, data); err != nil {
+	b.writeMu.Lock()
+	writeErr := conn.Write(timeoutCtx, websocket.MessageText, data)
+	b.writeMu.Unlock()
+	if writeErr != nil {
 		b.mu.Lock()
 		delete(b.pending, id)
 		b.mu.Unlock()
-		return nil, fmt.Errorf("send to Godot: %w", err)
+		return nil, fmt.Errorf("send to Godot: %w", writeErr)
 	}
 
 	log.Printf("[GodotBridge] Invoking tool: %s (%s)", toolName, id)
@@ -389,7 +396,10 @@ func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := conn.Write(ctx, websocket.MessageText, ping); err != nil {
+			b.writeMu.Lock()
+			err := conn.Write(ctx, websocket.MessageText, ping)
+			b.writeMu.Unlock()
+			if err != nil {
 				return
 			}
 		}

@@ -28,7 +28,16 @@ func refresh_filesystem() -> void:
 
 func ensure_res_path(path: String) -> String:
 	if not path.begins_with("res://"):
-		return "res://" + path
+		path = "res://" + path
+	return path
+
+func validate_res_path(path: String) -> String:
+	"""Return a safe res:// path, or empty string if it escapes the project root."""
+	path = ensure_res_path(path)
+	var abs := ProjectSettings.globalize_path(path)
+	var root := ProjectSettings.globalize_path("res://")
+	if not abs.begins_with(root):
+		return ""
 	return path
 
 # =============================================================================

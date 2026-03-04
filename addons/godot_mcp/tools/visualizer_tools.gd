@@ -49,8 +49,11 @@ func set_utils(utils: ToolUtils) -> void:
 
 func map_project(args: Dictionary) -> Dictionary:
 	"""Crawl the entire project and build a structural map of all scripts."""
-	var root_path: String = _utils.ensure_res_path(str(args.get(&"root", "res://")))
+	var root_path: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
 	var include_addons: bool = bool(args.get(&"include_addons", false))
+
+	if root_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	# Collect all .gd files
 	var script_paths: PackedStringArray = []
@@ -342,8 +345,11 @@ func _infer_type(default_val: String) -> String:
 
 func map_scenes(args: Dictionary) -> Dictionary:
 	"""Crawl the project and build a map of all scenes."""
-	var root_path: String = _utils.ensure_res_path(str(args.get(&"root", "res://")))
+	var root_path: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
 	var include_addons: bool = bool(args.get(&"include_addons", false))
+
+	if root_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	# Collect all .tscn files
 	var scene_paths: PackedStringArray = []

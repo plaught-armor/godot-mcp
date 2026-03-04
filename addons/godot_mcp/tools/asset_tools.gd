@@ -2,8 +2,7 @@
 extends RefCounted
 class_name AssetTools
 ## Asset generation tools for MCP.
-## Handles: generate_2d_asset, search_comfyui_nodes,
-##          inspect_runninghub_workflow, customize_and_run_workflow
+## Handles: generate_2d_asset
 
 var _editor_plugin: EditorPlugin = null
 var _utils: ToolUtils
@@ -32,7 +31,9 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 		filename += ".png"
 
 	# Ensure save path
-	save_path = _utils.ensure_res_path(save_path)
+	save_path = _utils.validate_res_path(save_path)
+	if save_path.is_empty():
+		return {&"ok": false, &"error": "Save path escapes project root"}
 	if not save_path.ends_with("/"):
 		save_path += "/"
 
@@ -95,40 +96,4 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 		&"resource_path": full_path,
 		&"dimensions": {&"width": width, &"height": height},
 		&"message": "Generated %s (%dx%d)" % [full_path, width, height]
-	}
-
-# =============================================================================
-# search_comfyui_nodes - Stub (requires external database)
-# =============================================================================
-func search_comfyui_nodes(args: Dictionary) -> Dictionary:
-	# This tool requires the ComfyUI node database which was bundled with the old plugin
-	# For now, return a message indicating it needs setup
-	return {
-		&"ok": true,
-		&"results": [],
-		&"count": 0,
-		&"message": "ComfyUI node search requires the node database. This feature will be available in a future update."
-	}
-
-# =============================================================================
-# inspect_runninghub_workflow - Stub (requires API key)
-# =============================================================================
-func inspect_runninghub_workflow(args: Dictionary) -> Dictionary:
-	var workflow_id: String = str(args.get(&"workflow_id", ""))
-	if workflow_id.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'workflow_id'"}
-
-	return {
-		&"ok": true,
-		&"workflow_id": workflow_id,
-		&"message": "RunningHub workflow inspection requires API configuration. This feature will be available in a future update."
-	}
-
-# =============================================================================
-# customize_and_run_workflow - Stub (requires API key)
-# =============================================================================
-func customize_and_run_workflow(args: Dictionary) -> Dictionary:
-	return {
-		&"ok": true,
-		&"message": "RunningHub workflow execution requires API configuration. This feature will be available in a future update."
 	}

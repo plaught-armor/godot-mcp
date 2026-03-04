@@ -302,6 +302,117 @@ func _extract_file_line(text: String) -> Dictionary:
 	return {&"file": file_path}
 
 # =============================================================================
+# get_debug_errors - Read errors from the Debugger > Errors tab
+# =============================================================================
+var _debugger_error_tree: Tree = null
+
+func get_debug_errors(args: Dictionary) -> Dictionary:
+	var max_errors: int = int(args.get(&"max_errors", 50))
+	var include_warnings: bool = bool(args.get(&"include_warnings", true))
+
+	var tree := _get_debugger_error_tree()
+	if not tree:
+		return {&"ok": true, &"errors": [], &"error_count": 0,
+			&"summary": "Debugger Errors tab not available (game not running or no errors)."}
+
+	var errors: Array = []
+	var item := tree.get_root()
+	if not item:
+		return {&"ok": true, &"errors": [], &"error_count": 0,
+			&"summary": "No errors in debugger."}
+
+	# Root items are errors; children are stack frames
+	item = item.get_first_child()
+	while item:
+		var msg: String = item.get_text(0).strip_edges()
+		var detail: String = item.get_text(1).strip_edges() if tree.get_columns() > 1 else ""
+		var is_warning := "WARNING" in msg.to_upper() or item.get_icon_modulate(0) == Color.YELLOW
+
+		if not include_warnings and is_warning:
+			item = item.get_next()
+			continue
+
+		var error_info: Dictionary = {
+			&"message": msg,
+			&"detail": detail,
+			&"severity": "warning" if is_warning else "error",
+		}
+
+		# Extract file:line from detail column (format: "at: res://path.gd:123")
+		var loc := _extract_file_line(detail)
+		if loc.is_empty():
+			loc = _extract_file_line(msg)
+		if not loc.is_empty():
+			error_info[&"file"] = loc.get(&"file", "")
+			if loc.has(&"line"):
+				error_info[&"line"] = loc[&"line"]
+
+		# Collect stack frames from child items
+		var stack: Array = []
+		var child := item.get_first_child()
+		while child:
+			var frame_text: String = child.get_text(0).strip_edges()
+			var frame_detail: String = child.get_text(1).strip_edges() if tree.get_columns() > 1 else ""
+			if not frame_text.is_empty() or not frame_detail.is_empty():
+				var frame := {&"text": frame_text}
+				if not frame_detail.is_empty():
+					frame[&"detail"] = frame_detail
+				var frame_loc := _extract_file_line(frame_detail)
+				if not frame_loc.is_empty():
+					frame[&"file"] = frame_loc.get(&"file", "")
+					if frame_loc.has(&"line"):
+						frame[&"line"] = frame_loc[&"line"]
+				stack.append(frame)
+			child = child.get_next()
+		if not stack.is_empty():
+			error_info[&"stack"] = stack
+
+		errors.append(error_info)
+		item = item.get_next()
+
+	# Return most recent errors
+	var start := maxi(0, errors.size() - max_errors)
+	errors = errors.slice(start)
+	return {&"ok": true, &"errors": errors, &"error_count": errors.size(),
+		&"summary": "%d debugger error(s) found" % errors.size()}
+
+
+func _get_debugger_error_tree() -> Tree:
+	"""Find (and cache) the error Tree inside the Debugger panel."""
+	if is_instance_valid(_debugger_error_tree):
+		return _debugger_error_tree
+	if not _editor_plugin:
+		return null
+	var base := _editor_plugin.get_editor_interface().get_base_control()
+	var debugger := _utils.find_node_by_class(base, "ScriptEditorDebugger")
+	if not debugger:
+		return null
+	# The error tree is a 2-column Tree inside the debugger
+	_debugger_error_tree = _find_error_tree(debugger)
+	return _debugger_error_tree
+
+
+func _find_error_tree(node: Node) -> Tree:
+	"""Find the error Tree (2 columns) inside ScriptEditorDebugger."""
+	for child: Node in node.get_children():
+		if child is Tree and child.get_columns() == 2:
+			# Verify it looks like the error tree by checking if parent
+			# or grandparent tab has "Error" in its name
+			var parent := child.get_parent()
+			while parent and parent != node:
+				if parent.name.containsn("error"):
+					return child
+				parent = parent.get_parent()
+			# Fallback: return first 2-column tree we find
+			if not _debugger_error_tree:
+				_debugger_error_tree = child
+		var found := _find_error_tree(child)
+		if found:
+			return found
+	return null
+
+
+# =============================================================================
 # clear_console_log
 # =============================================================================
 func clear_console_log(_args: Dictionary) -> Dictionary:
@@ -326,7 +437,9 @@ func open_in_godot(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path'"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not _editor_plugin:
 		return {&"ok": false, &"error": "Editor plugin not available"}

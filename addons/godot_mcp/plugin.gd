@@ -10,7 +10,7 @@ const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
 		&"list_dir", &"read_file", &"search_project", \
-		&"list_scripts", &"map_scenes", &"validate_script":
+		&"list_scripts", &"map_scenes":
 			return true
 	return false
 
@@ -26,6 +26,7 @@ var _thread_running := false
 func _enter_tree() -> void:
 	print("[Godot MCP] Plugin loading...")
 
+	_register_settings()
 	_mutex = Mutex.new()
 
 	# Create MCP client
@@ -78,8 +79,38 @@ func _exit_tree() -> void:
 		_status_label.queue_free()
 
 	remove_tool_menu_item("MCP: Map Project")
+	_unregister_settings()
 
 	print("[Godot MCP] Plugin unloaded")
+
+
+const SETTINGS := {
+	&"godot_mcp/auto_format_scripts": {&"type": TYPE_BOOL, &"default": false,
+		&"hint": PROPERTY_HINT_NONE, &"hint_string": "",
+		&"description": "Automatically format GDScript files after MCP tool edits."},
+	&"godot_mcp/script_formatter_command": {&"type": TYPE_STRING, &"default": "gdscript-formatter",
+		&"hint": PROPERTY_HINT_NONE, &"hint_string": "",
+		&"description": "Command to run for GDScript formatting (e.g., gdscript-formatter, gdformat)."},
+}
+
+
+func _register_settings() -> void:
+	for path: StringName in SETTINGS:
+		var info: Dictionary = SETTINGS[path]
+		if not ProjectSettings.has_setting(path):
+			ProjectSettings.set_setting(path, info[&"default"])
+		ProjectSettings.set_initial_value(path, info[&"default"])
+		ProjectSettings.set_as_basic(path, true)
+		ProjectSettings.add_property_info({
+			&"name": path, &"type": info[&"type"],
+			&"hint": info[&"hint"], &"hint_string": info[&"hint_string"],
+		})
+
+
+func _unregister_settings() -> void:
+	for path: StringName in SETTINGS:
+		if ProjectSettings.has_setting(path):
+			ProjectSettings.set_setting(path, null)
 
 
 func _setup_status_indicator() -> void:

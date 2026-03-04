@@ -26,6 +26,19 @@ var _utils: ToolUtils
 func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
 
+
+func _auto_format(path: String) -> void:
+	"""Run the configured formatter on a script file if auto-format is enabled."""
+	if not ProjectSettings.get_setting(&"godot_mcp/auto_format_scripts", false):
+		return
+	var cmd: String = ProjectSettings.get_setting(&"godot_mcp/script_formatter_command", "gdscript-formatter")
+	if cmd.is_empty():
+		return
+	var abs_path := ProjectSettings.globalize_path(path)
+	var output: Array = []
+	OS.execute(cmd, [abs_path], output)
+
+
 # =============================================================================
 # edit_script - Apply a small surgical code edit to a GDScript file
 # =============================================================================
@@ -38,7 +51,9 @@ func edit_script(args: Dictionary) -> Dictionary:
 	if path.is_empty():
 		return {&"ok": false, &"error": "Missing 'file' in edit"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -100,6 +115,7 @@ func edit_script(args: Dictionary) -> Dictionary:
 	var added := maxi(0, new_lines.size() - old_lines.size())
 	var removed := maxi(0, old_lines.size() - new_lines.size())
 
+	_auto_format(path)
 	_utils.refresh_filesystem()
 
 	return {
@@ -119,7 +135,9 @@ func validate_script(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path'"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -248,7 +266,9 @@ func create_script(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path' parameter"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	# Add .gd extension if missing
 	if not "." in path.get_file():
@@ -271,6 +291,7 @@ func create_script(args: Dictionary) -> Dictionary:
 	file.store_string(content)
 	file.close()
 
+	_auto_format(path)
 	_utils.refresh_filesystem()
 
 	return {
@@ -278,6 +299,64 @@ func create_script(args: Dictionary) -> Dictionary:
 		&"path": path,
 		&"size_bytes": content.length(),
 		&"message": "Script created successfully"
+	}
+
+# =============================================================================
+# format_script - Format a GDScript file using gdscript-formatter
+# =============================================================================
+func format_script(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get(&"path", ""))
+	if path.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'path'"}
+
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
+
+	if not FileAccess.file_exists(path):
+		return {&"ok": false, &"error": "File not found: " + path}
+
+	var abs_path := ProjectSettings.globalize_path(path)
+
+	# Read original content for comparison
+	var file := FileAccess.open(path, FileAccess.READ)
+	if not file:
+		return {&"ok": false, &"error": "Cannot read file: " + path}
+	var original := file.get_as_text()
+	file.close()
+
+	# Run the configured formatter (formats in-place when given a file path)
+	var cmd: String = ProjectSettings.get_setting(&"godot_mcp/script_formatter_command", "gdscript-formatter")
+	if cmd.is_empty():
+		return {&"ok": false, &"error": "No formatter command configured. Set godot_mcp/script_formatter_command in Project Settings."}
+	var output: Array = []
+	var exit_code := OS.execute(cmd, [abs_path], output)
+
+	if exit_code == -1:
+		return {&"ok": false, &"error": "'%s' not found. Install it or update godot_mcp/script_formatter_command in Project Settings." % cmd}
+
+	if exit_code != 0:
+		var error_text := ""
+		if output.size() > 0:
+			error_text = str(output[0]).strip_edges()
+		return {&"ok": false, &"error": "Formatter failed (exit %d): %s" % [exit_code, error_text]}
+
+	# Re-read to check if content changed
+	file = FileAccess.open(path, FileAccess.READ)
+	if not file:
+		return {&"ok": false, &"error": "Cannot read formatted file: " + path}
+	var formatted := file.get_as_text()
+	file.close()
+
+	var changed := original != formatted
+	if changed:
+		_utils.refresh_filesystem()
+
+	return {
+		&"ok": true,
+		&"path": path,
+		&"changed": changed,
+		&"message": "Formatted " + path if changed else "No changes needed for " + path
 	}
 
 # =============================================================================
@@ -293,7 +372,9 @@ func create_script_file(args: Dictionary) -> Dictionary:
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "No path provided"}
 
-	script_path = _utils.ensure_res_path(script_path)
+	script_path = _utils.validate_res_path(script_path)
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not script_path.ends_with(".gd"):
 		script_path += ".gd"
@@ -324,6 +405,7 @@ func create_script_file(args: Dictionary) -> Dictionary:
 	file.store_string(content)
 	file.close()
 
+	_auto_format(script_path)
 	return {&"ok": true, &"path": script_path}
 
 
@@ -340,6 +422,9 @@ func modify_variable(args: Dictionary) -> Dictionary:
 
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "No script path provided"}
+	script_path = _utils.validate_res_path(script_path)
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	var file := FileAccess.open(script_path, FileAccess.READ)
 	if file == null:
@@ -384,6 +469,7 @@ func modify_variable(args: Dictionary) -> Dictionary:
 			return {&"ok": false, &"error": "Cannot write to file: " + script_path}
 		write_file.store_string(new_content)
 		write_file.close()
+		_auto_format(script_path)
 		return {&"ok": true, &"action": action, &"variable": new_name}
 
 	return {&"ok": false, &"error": "Variable not found: " + old_name}
@@ -399,6 +485,9 @@ func modify_signal(args: Dictionary) -> Dictionary:
 
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "No script path provided"}
+	script_path = _utils.validate_res_path(script_path)
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	var file := FileAccess.open(script_path, FileAccess.READ)
 	if file == null:
@@ -446,6 +535,7 @@ func modify_signal(args: Dictionary) -> Dictionary:
 			return {&"ok": false, &"error": "Cannot write to file: " + script_path}
 		write_file.store_string(new_content)
 		write_file.close()
+		_auto_format(script_path)
 		return {&"ok": true, &"action": action, &"signal": new_name}
 
 	return {&"ok": false, &"error": "Signal not found: " + old_name}
@@ -459,6 +549,9 @@ func modify_function(args: Dictionary) -> Dictionary:
 
 	if script_path.is_empty() or func_name.is_empty():
 		return {&"ok": false, &"error": "Missing path or function name"}
+	script_path = _utils.validate_res_path(script_path)
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	var file := FileAccess.open(script_path, FileAccess.READ)
 	if file == null:
@@ -490,6 +583,7 @@ func modify_function(args: Dictionary) -> Dictionary:
 	write_file.store_string(new_content)
 	write_file.close()
 
+	_auto_format(script_path)
 	return {&"ok": true, &"function": func_name}
 
 
@@ -500,6 +594,9 @@ func modify_function_delete(args: Dictionary) -> Dictionary:
 
 	if script_path.is_empty() or func_name.is_empty():
 		return {&"ok": false, &"error": "Missing path or function name"}
+	script_path = _utils.validate_res_path(script_path)
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	var file := FileAccess.open(script_path, FileAccess.READ)
 	if file == null:
@@ -526,6 +623,7 @@ func modify_function_delete(args: Dictionary) -> Dictionary:
 	write_file.store_string(new_content)
 	write_file.close()
 
+	_auto_format(script_path)
 	return {&"ok": true, &"deleted": func_name}
 
 
@@ -566,7 +664,9 @@ func delete_script(args: Dictionary) -> Dictionary:
 	if path.is_empty():
 		return {&"ok": false, &"error": "No path provided"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -595,8 +695,12 @@ func rename_script(args: Dictionary) -> Dictionary:
 	if new_path.is_empty():
 		return {&"ok": false, &"error": "No new_path provided"}
 
-	old_path = _utils.ensure_res_path(old_path)
-	new_path = _utils.ensure_res_path(new_path)
+	old_path = _utils.validate_res_path(old_path)
+	if old_path.is_empty():
+		return {&"ok": false, &"error": "old_path escapes project root"}
+	new_path = _utils.validate_res_path(new_path)
+	if new_path.is_empty():
+		return {&"ok": false, &"error": "new_path escapes project root"}
 
 	if not FileAccess.file_exists(old_path):
 		return {&"ok": false, &"error": "File not found: " + old_path}

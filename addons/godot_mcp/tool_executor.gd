@@ -34,7 +34,22 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	if handler == null:
 		return {&"ok": false, &"error": "Unknown tool: " + tool_name}
 
-	return handler.call(tool_name, args)
+	if not handler.has_method(tool_name):
+		push_error("[MCP] Handler has no method '%s'" % tool_name)
+		return {&"ok": false, &"error": "Handler missing method: " + tool_name}
+
+	var result = handler.call(tool_name, args)
+
+	# GDScript runtime errors (null deref, bad type) print to console but
+	# don't throw — they return null. Catch that here so the Go bridge
+	# gets a proper error response instead of a 30s timeout.
+	if result == null:
+		push_error("[MCP] Tool '%s' returned null (likely a runtime error — check console above)" % tool_name)
+		return {&"ok": false, &"error": "Tool crashed or returned null: " + tool_name}
+	if result is not Dictionary:
+		push_error("[MCP] Tool '%s' returned non-Dictionary: %s" % [tool_name, typeof(result)])
+		return {&"ok": false, &"error": "Tool returned invalid type: " + tool_name}
+	return result
 
 
 func _get_handler(tool_name: StringName) -> RefCounted:
@@ -59,13 +74,14 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 		&"create_script", &"edit_script", &"validate_script", &"list_scripts", \
 		&"create_script_file", &"modify_variable", &"modify_signal", \
 		&"modify_function", &"modify_function_delete", \
-		&"delete_script", &"rename_script":
+		&"delete_script", &"rename_script", &"format_script":
 			return _script_tools
 
 		# Project/debug tools
 		&"get_project_settings", &"get_input_map", &"get_collision_layers", \
 		&"get_node_properties", &"get_console_log", &"get_errors", \
-		&"clear_console_log", &"open_in_godot", &"scene_tree_dump":
+		&"get_debug_errors", &"clear_console_log", &"open_in_godot", \
+		&"scene_tree_dump":
 			return _project_tools
 
 		# Asset tools

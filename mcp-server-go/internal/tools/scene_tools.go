@@ -1,7 +1,5 @@
 package tools
 
-
-
 var sceneTools = []ToolDef{
 	{
 		Name:        "create_scene",
@@ -86,7 +84,7 @@ var sceneTools = []ToolDef{
 				"scene_path":    {Type: "string", Description: "Path to the .tscn scene file"},
 				"node_path":     {Type: "string", Description: `Path to the node (. for root, or relative path like "Sprite2D")`},
 				"property_name": {Type: "string", Description: "Name of the property to modify (position, scale, rotation, modulate, visible, etc.)"},
-				"value":         {Type: "object", Description: "New value. For Vector2/Vector3/Color, use {type: \"Vector2\", x: 100, y: 200}. For primitives, use directly."},
+				"value":         {Description: `New value. For Vector2/Vector3/Color, use {type: "Vector2", x: 100, y: 200}. For primitives, use directly.`},
 			},
 			Required: []string{"scene_path", "property_name", "value"},
 		},
@@ -152,7 +150,7 @@ var sceneTools = []ToolDef{
 				"scene_path": {Type: "string", Description: "Path to the scene file"},
 				"node_path":  {Type: "string", Description: "Path to the node (. for root)"},
 			},
-			Required: []string{"scene_path", "node_path"},
+			Required: []string{"scene_path"},
 		},
 		MockFn: func(args map[string]any) any {
 			return mockNote(map[string]any{"ok": true, "message": "Mock: Would detach script from " + str(args["node_path"])})
@@ -169,7 +167,7 @@ var sceneTools = []ToolDef{
 				"shape_type":   {Type: "string", Description: "Shape type: CircleShape2D, RectangleShape2D, CapsuleShape2D, SphereShape3D, BoxShape3D, etc."},
 				"shape_params": {Type: "object", Description: "Shape parameters: {radius: 32} for circles, {size: {x: 64, y: 64}} for rectangles, etc."},
 			},
-			Required: []string{"scene_path", "shape_type"},
+			Required: []string{"scene_path", "node_path", "shape_type"},
 		},
 		MockFn: func(args map[string]any) any {
 			return mockNote(map[string]any{"ok": true, "message": "Mock: Would set " + str(args["shape_type"]) + " shape"})
@@ -183,10 +181,10 @@ var sceneTools = []ToolDef{
 			Properties: map[string]*Schema{
 				"scene_path":     {Type: "string", Description: "Path to the .tscn scene file"},
 				"node_path":      {Type: "string", Description: "Path to the Sprite2D/Sprite3D/TextureRect node"},
-				"texture_type":   {Type: "string", Description: `Texture type: "ImageTexture", "PlaceholderTexture2D", "GradientTexture2D", "NoiseTexture2D"`},
+				"texture_type":   {Type: "string", Description: "Texture type", Enum: []string{"ImageTexture", "PlaceholderTexture2D", "GradientTexture2D", "NoiseTexture2D"}},
 				"texture_params": {Type: "object", Description: `Texture parameters. ImageTexture: {path: "res://assets/sprite.png"}. PlaceholderTexture2D: {size: {x: 64, y: 64}}.`},
 			},
-			Required: []string{"scene_path", "texture_type"},
+			Required: []string{"scene_path", "node_path", "texture_type"},
 		},
 		MockFn: func(args map[string]any) any {
 			return mockNote(map[string]any{"ok": true, "message": "Mock: Would set " + str(args["texture_type"]) + " texture"})

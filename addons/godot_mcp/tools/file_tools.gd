@@ -22,7 +22,9 @@ func set_utils(utils: ToolUtils) -> void:
 # list_dir - List files and folders in a directory
 # =============================================================================
 func list_dir(args: Dictionary) -> Dictionary:
-	var root: String = _utils.ensure_res_path(str(args.get(&"root", "res://")))
+	var root: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
+	if root.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 	var include_hidden: bool = bool(args.get(&"include_hidden", false))
 
 	var dir := DirAccess.open(root)
@@ -77,7 +79,9 @@ func read_file(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path' parameter"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -231,7 +235,9 @@ func create_folder(args: Dictionary) -> Dictionary:
 	if path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'path'"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if DirAccess.dir_exists_absolute(path):
 		return {&"ok": true, &"path": path, &"message": "Directory already exists"}
@@ -257,7 +263,9 @@ func delete_file(args: Dictionary) -> Dictionary:
 	if not confirm:
 		return {&"ok": false, &"error": "Must set confirm=true to delete"}
 
-	path = _utils.ensure_res_path(path)
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
 
 	if not FileAccess.file_exists(path):
 		return {&"ok": false, &"error": "File not found: " + path}
@@ -287,8 +295,12 @@ func rename_file(args: Dictionary) -> Dictionary:
 	if new_path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'new_path'"}
 
-	old_path = _utils.ensure_res_path(old_path)
-	new_path = _utils.ensure_res_path(new_path)
+	old_path = _utils.validate_res_path(old_path)
+	if old_path.is_empty():
+		return {&"ok": false, &"error": "old_path escapes project root"}
+	new_path = _utils.validate_res_path(new_path)
+	if new_path.is_empty():
+		return {&"ok": false, &"error": "new_path escapes project root"}
 
 	if not FileAccess.file_exists(old_path):
 		return {&"ok": false, &"error": "File not found: " + old_path}
