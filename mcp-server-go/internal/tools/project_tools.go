@@ -99,6 +99,20 @@ var projectTools = []ToolDef{
 		},
 	},
 	{
+		Name:        "get_debug_errors",
+		Description: "Get runtime errors and warnings from the Godot Debugger > Errors tab. Includes stack traces. Only available when the game has been run.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"max_errors":       {Type: "number", Description: "Maximum number of errors to return (default: 50)"},
+				"include_warnings": {Type: "boolean", Description: "Include warnings in addition to errors (default: true)"},
+			},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "errors": []any{}, "error_count": 0})
+		},
+	},
+	{
 		Name:        "clear_console_log",
 		Description: "Mark the current position in the Godot editor log. Subsequent get_console_log and get_errors calls will only return output after this point.",
 		InputSchema: &Schema{

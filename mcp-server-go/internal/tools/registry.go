@@ -8,6 +8,7 @@ func init() {
 	AllTools = append(AllTools, fileTools...)
 	AllTools = append(AllTools, sceneTools...)
 	AllTools = append(AllTools, scriptTools...)
+	AllTools = append(AllTools, optionalScriptTools()...)
 	AllTools = append(AllTools, projectTools...)
 	AllTools = append(AllTools, assetTools...)
 
