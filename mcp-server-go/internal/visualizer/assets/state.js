@@ -42,6 +42,11 @@ export function setDragging(value) {
   dragging = value;
 }
 
+// Connection drag state (signal → function)
+export let connectionDrag = null;
+// { signalName, signalParams, sourceNode, cursorX, cursorY, targetNode, hoveredPort }
+export function setConnectionDrag(value) { connectionDrag = value; }
+
 export function setHoveredNode(value) {
   hoveredNode = value;
 }

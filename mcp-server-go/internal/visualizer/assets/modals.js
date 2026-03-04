@@ -448,3 +448,164 @@ window.submitRenameScript = async function () {
 
   rightClickedNode = null;
 };
+
+// ---- Connect Signal Dialog ----
+
+let pendingConnect = null; // { sourceNode, signalName, targetNode, funcName }
+
+export function showConnectDialog(sourceNode, signalName, targetNode, funcName) {
+  pendingConnect = { sourceNode, signalName, targetNode, funcName };
+  const isSame = sourceNode.path === targetNode.path;
+
+  // Summary
+  const summary = document.getElementById('connect-summary');
+  summary.innerHTML = `<span style="color:#a6e3a1">signal</span> <strong>${signalName}</strong> → <span style="color:#89dceb">func</span> <strong>${funcName}</strong>` +
+    (isSame ? '' : `<br><span style="font-size:11px;color:var(--text-muted)">${sourceNode.filename} → ${targetNode.filename}</span>`);
+
+  // Reference input (cross-script only)
+  const refRow = document.getElementById('connect-ref-row');
+  const refInput = document.getElementById('connect-ref-input');
+  if (isSame) {
+    refRow.style.display = 'none';
+  } else {
+    refRow.style.display = '';
+    // Try to guess the reference: look for a variable typed to target's class_name
+    let guess = '$' + targetNode.filename.replace('.gd', '');
+    if (targetNode.class_name) {
+      const typedVar = sourceNode.variables && sourceNode.variables.find(v => v.type === targetNode.class_name);
+      if (typedVar) guess = typedVar.name;
+    }
+    refInput.value = guess;
+  }
+
+  // Live preview update when reference changes
+  refInput.oninput = updateConnectPreview;
+  refInput.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); window.confirmConnect(); }
+    if (e.key === 'Escape') { e.preventDefault(); closeConnectModal(); }
+  };
+
+  updateConnectPreview();
+  document.getElementById('connect-modal').style.display = 'flex';
+  if (!isSame) refInput.focus();
+}
+
+function updateConnectPreview() {
+  if (!pendingConnect) return;
+  const { sourceNode, signalName, targetNode, funcName } = pendingConnect;
+  const isSame = sourceNode.path === targetNode.path;
+  const refInput = document.getElementById('connect-ref-input');
+  const ref = isSame ? '' : (refInput ? refInput.value.trim() : '');
+
+  const connectLine = isSame
+    ? `${signalName}.connect(${funcName})`
+    : `${signalName}.connect(${ref}.${funcName})`;
+
+  const preview = document.getElementById('connect-preview');
+  preview.innerHTML = `<span style="color:var(--text-muted)"># in _ready():</span>\n${connectLine}`;
+}
+
+function closeConnectModal() {
+  document.getElementById('connect-modal').style.display = 'none';
+  pendingConnect = null;
+}
+window.closeConnectModal = closeConnectModal;
+
+window.confirmConnect = async function () {
+  if (!pendingConnect) return;
+  const { sourceNode, signalName, targetNode, funcName } = pendingConnect;
+  const isSame = sourceNode.path === targetNode.path;
+  const refInput = document.getElementById('connect-ref-input');
+  const ref = isSame ? '' : (refInput ? refInput.value.trim() : '');
+
+  if (!isSame && !ref) {
+    alert('Please enter a target reference');
+    return;
+  }
+
+  const connectLine = isSame
+    ? `\t${signalName}.connect(${funcName})`
+    : `\t${signalName}.connect(${ref}.${funcName})`;
+
+  closeConnectModal();
+
+  try {
+    // Find _ready() in source node
+    const readyFunc = sourceNode.functions ? sourceNode.functions.find(f => f.name === '_ready') : null;
+
+    if (readyFunc && readyFunc.body) {
+      const bodyLines = readyFunc.body.split('\n').filter(l => l.trim());
+      if (bodyLines.length === 1 && bodyLines[0].trim() === 'pass') {
+        // Replace 'pass' with connect line
+        await sendCommand('edit_script', {
+          edit: {
+            type: 'snippet_replace',
+            file: sourceNode.path,
+            old_snippet: '\tpass',
+            new_snippet: connectLine,
+            context_before: 'func _ready()'
+          }
+        });
+      } else {
+        // Append after last line of _ready body
+        const lastLine = bodyLines[bodyLines.length - 1];
+        await sendCommand('edit_script', {
+          edit: {
+            type: 'snippet_replace',
+            file: sourceNode.path,
+            old_snippet: lastLine,
+            new_snippet: lastLine + '\n' + connectLine,
+            context_before: 'func _ready()'
+          }
+        });
+      }
+    } else {
+      // No _ready() — create one. Insert before first function or at end.
+      const firstFunc = sourceNode.functions && sourceNode.functions.length > 0
+        ? sourceNode.functions[0] : null;
+      if (firstFunc) {
+        const funcDecl = `func ${firstFunc.name}(`;
+        await sendCommand('edit_script', {
+          edit: {
+            type: 'snippet_replace',
+            file: sourceNode.path,
+            old_snippet: funcDecl,
+            new_snippet: `func _ready() -> void:\n${connectLine}\n\n${funcDecl}`
+          }
+        });
+      } else {
+        // No functions at all — append to end of file by matching last signal or variable
+        const lastSig = sourceNode.signals && sourceNode.signals.length > 0
+          ? sourceNode.signals[sourceNode.signals.length - 1] : null;
+        const anchor = lastSig
+          ? `signal ${typeof lastSig === 'string' ? lastSig : lastSig.name}`
+          : sourceNode.extends ? `extends ${sourceNode.extends}` : null;
+
+        if (anchor) {
+          // Find the full line to anchor on — just match the beginning
+          await sendCommand('edit_script', {
+            edit: {
+              type: 'snippet_replace',
+              file: sourceNode.path,
+              old_snippet: anchor,
+              new_snippet: anchor + `\n\n\nfunc _ready() -> void:\n${connectLine}`
+            }
+          });
+        }
+      }
+    }
+
+    // Optimistically add edge
+    edges.push({
+      from: sourceNode.path,
+      to: targetNode.path,
+      type: 'signal',
+      signal_name: signalName
+    });
+
+    draw();
+  } catch (err) {
+    alert('Failed to inject .connect(): ' + err.message);
+    console.error('Connect injection error:', err);
+  }
+};

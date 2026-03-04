@@ -1656,3 +1656,40 @@ canvas.dragging { cursor: grabbing; }
   margin-right: 4px;
   margin-left: -2px;
 }
+
+/* ---- Connection Drag (signal → function) ---- */
+.connection-drag-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  user-select: none;
+}
+li:hover .connection-drag-handle { opacity: 0.4; }
+.connection-drag-handle:hover { opacity: 1 !important; color: #a6e3a1; }
+
+/* Panel function drop targets during connection drag */
+.connection-drop-target {
+  outline: 1px dashed rgba(166, 227, 161, 0.4);
+  outline-offset: -1px;
+  border-radius: 3px;
+  transition: background 0.1s;
+}
+.connection-drop-target:hover {
+  background: rgba(166, 227, 161, 0.1) !important;
+  outline-color: #a6e3a1;
+}
+
+/* Connect modal code preview */
+.connect-code-preview {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-top: 8px;
+  white-space: pre;
+  line-height: 1.5;
+}

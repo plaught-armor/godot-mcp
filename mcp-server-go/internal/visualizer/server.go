@@ -193,12 +193,37 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[visualizer] Browser disconnected")
 }
 
+// allowedCommands is the set of Godot tools the visualizer is permitted to invoke.
+var allowedCommands = map[string]bool{
+	"add_node":                  true,
+	"create_script_file":        true,
+	"delete_script":             true,
+	"duplicate_node":            true,
+	"edit_script":               true,
+	"get_scene_hierarchy":       true,
+	"get_scene_node_properties": true,
+	"map_project":               true,
+	"map_scenes":                true,
+	"modify_function":           true,
+	"modify_function_delete":    true,
+	"modify_signal":             true,
+	"modify_variable":           true,
+	"remove_node":               true,
+	"rename_node":               true,
+	"rename_script":             true,
+	"reorder_node":              true,
+	"set_scene_node_property":   true,
+}
+
 func (s *Server) handleInternalCommand(ctx context.Context, command string, args map[string]any) map[string]any {
 	if s.bridge == nil {
 		return map[string]any{"ok": false, "error": "Bridge not initialized"}
 	}
 	if !s.bridge.IsConnected() {
 		return map[string]any{"ok": false, "error": "Godot is not connected"}
+	}
+	if !allowedCommands[command] {
+		return map[string]any{"ok": false, "error": "Command not allowed: " + command}
 	}
 
 	log.Printf("[visualizer] Internal command: %s", command)

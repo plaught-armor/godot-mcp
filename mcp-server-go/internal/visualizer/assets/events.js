@@ -11,13 +11,15 @@ import {
   setExpandedScene, setExpandedSceneHierarchy,
   setSelectedSceneNode, setHoveredSceneNode,
   selectedSceneNode, scenePositions, setScenePosition,
-  folderGroups
+  folderGroups,
+  connectionDrag, setConnectionDrag
 } from './state.js';
 import {
   getCanvas, screenToWorld, hitTest, draw, resize,
   updateZoomIndicator, centerOnNodes, savePositions,
   sceneHitTest, SCENE_CARD_W, SCENE_CARD_H,
-  getMinimapState, onNodeMoved
+  getMinimapState, onNodeMoved,
+  signalPortHitTest, portHitTest
 } from './canvas.js';
 import { openPanel, closePanel, openSceneNodePanel, closeSceneNodePanel } from './panel.js';
 import { sendCommand } from './websocket.js';
@@ -221,6 +223,15 @@ export function initEvents() {
     }
 
     if (e.key === 'Escape') {
+      // Cancel connection drag if active
+      if (connectionDrag) {
+        document.removeEventListener('mousemove', onCanvasConnectionDragMove);
+        document.removeEventListener('mouseup', onCanvasConnectionDragEnd);
+        document.body.style.cursor = '';
+        setConnectionDrag(null);
+        draw();
+        return;
+      }
       // Also close context menus
       hideSceneContextMenu();
       
@@ -308,6 +319,28 @@ function handleScriptsMouseDown(e, w) {
       draw();
     }
     return;
+  }
+
+  // Check signal port dots on hovered node first
+  if (hoveredNode && e.button === 0) {
+    const sigPort = signalPortHitTest(w.x, w.y, hoveredNode);
+    if (sigPort) {
+      // Start connection drag from canvas signal port
+      setConnectionDrag({
+        signalName: sigPort.signalName,
+        signalParams: sigPort.signalParams,
+        sourceNode: hoveredNode,
+        cursorX: e.clientX,
+        cursorY: e.clientY,
+        targetNode: null,
+        hoveredPort: -1
+      });
+      document.body.style.cursor = 'crosshair';
+      document.addEventListener('mousemove', onCanvasConnectionDragMove);
+      document.addEventListener('mouseup', onCanvasConnectionDragEnd);
+      draw();
+      return;
+    }
   }
 
   const hit = hitTest(w.x, w.y);
@@ -405,13 +438,19 @@ function handleScriptsMouseMove(e) {
     setHoveredNode(hitTest(w.x, w.y));
     if (hoveredNode !== prev) {
       if (hoveredNode) {
-        canvas.style.cursor = 'pointer';
+        // Check if over a signal port dot
+        const sigPort = signalPortHitTest(w.x, w.y, hoveredNode);
+        canvas.style.cursor = sigPort ? 'crosshair' : 'pointer';
       } else if (folderHitTest(w.x, w.y)) {
         canvas.style.cursor = 'move';
       } else {
         canvas.style.cursor = 'grab';
       }
       draw();
+    } else if (hoveredNode) {
+      // Same node but might be moving between port and non-port area
+      const sigPort = signalPortHitTest(w.x, w.y, hoveredNode);
+      canvas.style.cursor = sigPort ? 'crosshair' : 'pointer';
     }
   }
 }
@@ -438,6 +477,49 @@ function handleScriptsMouseUp(e) {
   }
   canvas.classList.remove('dragging');
   setDragging(null);
+}
+
+// ---- Canvas-initiated connection drag (from signal port dots) ----
+function onCanvasConnectionDragMove(e) {
+  if (!connectionDrag) return;
+  connectionDrag.cursorX = e.clientX;
+  connectionDrag.cursorY = e.clientY;
+
+  const w = screenToWorld(e.clientX, e.clientY);
+  const hit = hitTest(w.x, w.y);
+  if (hit && hit.functions && hit.functions.length > 0) {
+    connectionDrag.targetNode = hit;
+    connectionDrag.hoveredPort = portHitTest(w.x, w.y, hit);
+  } else {
+    connectionDrag.targetNode = null;
+    connectionDrag.hoveredPort = -1;
+  }
+
+  draw();
+}
+
+function onCanvasConnectionDragEnd(e) {
+  if (!connectionDrag) return;
+
+  document.removeEventListener('mousemove', onCanvasConnectionDragMove);
+  document.removeEventListener('mouseup', onCanvasConnectionDragEnd);
+  document.body.style.cursor = '';
+
+  // Check if dropped on a canvas function port
+  if (connectionDrag.targetNode && connectionDrag.hoveredPort >= 0) {
+    const drag = connectionDrag;
+    const targetFunc = drag.targetNode.functions[drag.hoveredPort];
+    setConnectionDrag(null);
+    draw();
+    import('./modals.js').then(m => {
+      m.showConnectDialog(drag.sourceNode, drag.signalName, drag.targetNode, targetFunc.name);
+    });
+    return;
+  }
+
+  // Cancelled
+  setConnectionDrag(null);
+  draw();
 }
 
 // ---- Scene view event handlers ----

@@ -11,7 +11,8 @@ import {
   setScenePosition, scriptToScenes,
   MINIMAP_W, MINIMAP_H, MINIMAP_MARGIN, MINIMAP_PADDING,
   folderGroups, setFolderGroups,
-  rootFolderGroups, setRootFolderGroups, getRootFolder
+  rootFolderGroups, setRootFolderGroups, getRootFolder,
+  connectionDrag
 } from './state.js';
 
 let canvas, ctx;
@@ -515,6 +516,16 @@ export function draw() {
       ctx.stroke();
       ctx.setLineDash([]);
     }
+
+    // Signal ports on right edge (shown on hover/selected, not during connection drag)
+    if ((isHovered || isSelected) && !connectionDrag && n.signals && n.signals.length > 0) {
+      drawSignalPorts(n, x, y);
+    }
+  }
+
+  // Draw connection drag wire + function ports (in world space, before restore)
+  if (connectionDrag) {
+    drawConnectionWire();
   }
 
   ctx.globalAlpha = 1;
@@ -581,6 +592,197 @@ function drawFolderGroups() {
 
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
+}
+
+// ---- Signal Ports on Node Edge (hover) ----
+
+const SIG_PORT_R = 5; // radius of signal port dot
+const SIG_PORT_GAP = 4;
+
+function drawSignalPorts(node, nodeX, nodeY) {
+  const sigs = node.signals;
+  const count = sigs.length;
+  const totalH = count * (SIG_PORT_R * 2 + SIG_PORT_GAP) - SIG_PORT_GAP;
+  const startY = nodeY + NODE_H / 2 - totalH / 2;
+  const portX = nodeX + NODE_W + SIG_PORT_R + 3;
+
+  for (let i = 0; i < count; i++) {
+    const py = startY + i * (SIG_PORT_R * 2 + SIG_PORT_GAP) + SIG_PORT_R;
+    const sig = sigs[i];
+    const sigName = typeof sig === 'string' ? sig : sig.name;
+
+    // Dot
+    ctx.beginPath();
+    ctx.arc(portX, py, SIG_PORT_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#a6e3a1';
+    ctx.fill();
+    ctx.strokeStyle = '#1a1a1e';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Label
+    ctx.font = '9px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = '#a6e3a1';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(sigName.length > 14 ? sigName.slice(0, 13) + '…' : sigName, portX + SIG_PORT_R + 4, py);
+  }
+}
+
+// Hit test signal ports on a hovered/selected node. Returns { index, signalName } or null.
+export function signalPortHitTest(wx, wy, node) {
+  if (!node || !node.signals || node.signals.length === 0) return null;
+  const count = node.signals.length;
+  const nodeX = node.x - NODE_W / 2;
+  const nodeY = node.y - NODE_H / 2;
+  const totalH = count * (SIG_PORT_R * 2 + SIG_PORT_GAP) - SIG_PORT_GAP;
+  const startY = nodeY + NODE_H / 2 - totalH / 2;
+  const portX = nodeX + NODE_W + SIG_PORT_R + 3;
+
+  for (let i = 0; i < count; i++) {
+    const py = startY + i * (SIG_PORT_R * 2 + SIG_PORT_GAP) + SIG_PORT_R;
+    const dx = wx - portX, dy = wy - py;
+    if (dx * dx + dy * dy <= (SIG_PORT_R + 3) * (SIG_PORT_R + 3)) {
+      const sig = node.signals[i];
+      return { index: i, signalName: typeof sig === 'string' ? sig : sig.name, signalParams: typeof sig === 'object' ? sig.params || '' : '' };
+    }
+  }
+  return null;
+}
+
+// ---- Connection Drag Wire + Function Ports ----
+
+const PORT_H = 16;
+const PORT_GAP = 2;
+const PORT_W = 110;
+const PORT_OFFSET = 8; // gap between ports and node edge
+
+function drawConnectionWire() {
+  const drag = connectionDrag;
+  if (!drag) return;
+
+  const src = drag.sourceNode;
+  // Source: right edge center of source node
+  const srcX = src.x + NODE_W / 2;
+  const srcY = src.y;
+
+  // Cursor in world coords
+  const cursor = screenToWorld(drag.cursorX, drag.cursorY);
+  let endX = cursor.x, endY = cursor.y;
+
+  // If hovering a target node, snap to its left edge
+  if (drag.targetNode) {
+    endX = drag.targetNode.x - NODE_W / 2;
+    endY = drag.targetNode.y;
+  }
+
+  // Draw dashed green wire
+  ctx.save();
+  ctx.strokeStyle = '#a6e3a1';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  // Bezier curve for a nice arc
+  const cpOffset = Math.min(80, Math.abs(endX - srcX) * 0.4);
+  ctx.moveTo(srcX, srcY);
+  ctx.bezierCurveTo(srcX + cpOffset, srcY, endX - cpOffset, endY, endX, endY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw small circle at source
+  ctx.beginPath();
+  ctx.arc(srcX, srcY, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#a6e3a1';
+  ctx.fill();
+
+  // Draw function ports on target node (if any)
+  if (drag.targetNode && drag.targetNode.functions && drag.targetNode.functions.length > 0) {
+    drawFunctionPorts(drag.targetNode, drag.hoveredPort);
+  }
+
+  // Highlight all valid target nodes (those with functions)
+  for (const n of nodes) {
+    if (n === src) continue;
+    if (!n.functions || n.functions.length === 0) continue;
+    if (n === drag.targetNode) continue; // already highlighted via ports
+    if (searchTerm && n.visible === false) continue;
+
+    // Subtle glow on valid targets
+    ctx.strokeStyle = '#a6e3a166';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    roundRect(ctx, n.x - NODE_W / 2 - 2, n.y - NODE_H / 2 - 2, NODE_W + 4, NODE_H + 4, 12);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawFunctionPorts(node, hoveredIdx) {
+  const funcs = node.functions;
+  const count = funcs.length;
+  const totalH = count * PORT_H + (count - 1) * PORT_GAP;
+  const startY = node.y - totalH / 2;
+  const portX = node.x - NODE_W / 2 - PORT_W - PORT_OFFSET;
+
+  for (let i = 0; i < count; i++) {
+    const py = startY + i * (PORT_H + PORT_GAP);
+    const isHovered = i === hoveredIdx;
+
+    // Port background
+    ctx.beginPath();
+    ctx.roundRect(portX, py, PORT_W, PORT_H, 4);
+    ctx.fillStyle = isHovered ? 'rgba(166, 227, 161, 0.25)' : 'rgba(36, 36, 40, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = isHovered ? '#a6e3a1' : '#3a3a40';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Function name
+    ctx.font = '9px -apple-system, system-ui, sans-serif';
+    ctx.fillStyle = isHovered ? '#a6e3a1' : '#9a9a9a';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const label = funcs[i].name;
+    ctx.fillText(label.length > 16 ? label.slice(0, 15) + '…' : label, portX + 6, py + PORT_H / 2);
+
+    // Connection dot on right edge of port
+    ctx.beginPath();
+    ctx.arc(portX + PORT_W, py + PORT_H / 2, 3, 0, Math.PI * 2);
+    ctx.fillStyle = isHovered ? '#a6e3a1' : '#5a5a60';
+    ctx.fill();
+  }
+
+  // Draw connecting line from ports to node
+  ctx.beginPath();
+  ctx.moveTo(portX + PORT_W, startY + PORT_H / 2);
+  ctx.lineTo(node.x - NODE_W / 2, node.y);
+  ctx.strokeStyle = '#3a3a40';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  if (count > 1) {
+    ctx.beginPath();
+    ctx.moveTo(portX + PORT_W, startY + (count - 1) * (PORT_H + PORT_GAP) + PORT_H / 2);
+    ctx.lineTo(node.x - NODE_W / 2, node.y);
+    ctx.stroke();
+  }
+}
+
+export function portHitTest(wx, wy, node) {
+  if (!node || !node.functions || node.functions.length === 0) return -1;
+  const count = node.functions.length;
+  const totalH = count * PORT_H + (count - 1) * PORT_GAP;
+  const startY = node.y - totalH / 2;
+  const portX = node.x - NODE_W / 2 - PORT_W - PORT_OFFSET;
+
+  for (let i = 0; i < count; i++) {
+    const py = startY + i * (PORT_H + PORT_GAP);
+    if (wx >= portX && wx <= portX + PORT_W && wy >= py && wy <= py + PORT_H) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 // ---- Minimap ----
@@ -1122,8 +1324,17 @@ export function hitTest(wx, wy) {
     const n = nodes[i];
     // Skip hidden nodes during search
     if (searchTerm && n.visible === false) continue;
+    // Standard node box
     if (wx >= n.x - NODE_W / 2 && wx <= n.x + NODE_W / 2 &&
         wy >= n.y - NODE_H / 2 && wy <= n.y + NODE_H / 2) return n;
+    // Extended hit zone for signal port area (right edge through dot+label)
+    // Covers the bridge gap between node edge and port dots
+    if (n.signals && n.signals.length > 0) {
+      const rightEdge = n.x + NODE_W / 2;
+      const portRight = rightEdge + SIG_PORT_R * 2 + 8 + 80; // dot + label
+      if (wx >= rightEdge && wx <= portRight &&
+          wy >= n.y - NODE_H / 2 && wy <= n.y + NODE_H / 2) return n;
+    }
   }
   return null;
 }

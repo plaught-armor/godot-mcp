@@ -6,11 +6,12 @@ import {
   nodes, edges, selectedNode, setSelectedNode, esc,
   selectedSceneNode, setSelectedSceneNode,
   sceneNodeProperties, setSceneNodeProperties,
-  expandedScene, scriptToScenes
+  expandedScene, scriptToScenes,
+  connectionDrag, setConnectionDrag
 } from './state.js';
 import { sendCommand } from './websocket.js';
 import { highlightGDScript } from './syntax.js';
-import { draw } from './canvas.js';
+import { draw, screenToWorld, getCanvas, hitTest, portHitTest } from './canvas.js';
 import { undoManager, createCommand } from './undo.js';
 
 let detailPanel;
@@ -475,6 +476,113 @@ function saveSignalParamsFromEditor(editor) {
   });
 }
 
+// ---- Connection Drag (signal → function) ----
+
+function initConnectionDrag() {
+  const handles = document.querySelectorAll('.connection-drag-handle');
+  for (const handle of handles) {
+    handle.addEventListener('mousedown', onConnectionDragStart);
+  }
+}
+
+function onConnectionDragStart(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!selectedNode) return;
+
+  const handle = e.currentTarget;
+  const sigName = handle.dataset.signalName;
+  const sigParams = handle.dataset.signalParams || '';
+
+  setConnectionDrag({
+    signalName: sigName,
+    signalParams: sigParams,
+    sourceNode: selectedNode,
+    cursorX: e.clientX,
+    cursorY: e.clientY,
+    targetNode: null,
+    hoveredPort: -1
+  });
+
+  // Add drop-target class to function items in the same panel (same-script shortcut)
+  const funcItems = document.querySelectorAll('.func-item');
+  for (const item of funcItems) {
+    item.classList.add('connection-drop-target');
+  }
+
+  document.body.style.cursor = 'crosshair';
+
+  // Document-level handlers for the drag duration
+  document.addEventListener('mousemove', onConnectionDragMove);
+  document.addEventListener('mouseup', onConnectionDragEnd);
+}
+
+function onConnectionDragMove(e) {
+  if (!connectionDrag) return;
+  connectionDrag.cursorX = e.clientX;
+  connectionDrag.cursorY = e.clientY;
+
+  // Hit test for target node and function port on canvas
+  const w = screenToWorld(e.clientX, e.clientY);
+  const hit = hitTest(w.x, w.y);
+  // Allow same-node targeting (self-connect) and cross-node
+  if (hit && hit.functions && hit.functions.length > 0) {
+    connectionDrag.targetNode = hit;
+    connectionDrag.hoveredPort = portHitTest(w.x, w.y, hit);
+  } else {
+    connectionDrag.targetNode = null;
+    connectionDrag.hoveredPort = -1;
+  }
+
+  draw();
+}
+
+function onConnectionDragEnd(e) {
+  if (!connectionDrag) return;
+
+  document.removeEventListener('mousemove', onConnectionDragMove);
+  document.removeEventListener('mouseup', onConnectionDragEnd);
+  document.body.style.cursor = '';
+
+  // Remove drop-target classes
+  const funcItems = document.querySelectorAll('.connection-drop-target');
+  for (const item of funcItems) {
+    item.classList.remove('connection-drop-target');
+  }
+
+  // Check if dropped on a panel function item (same-script)
+  const target = e.target.closest('.func-item.connection-drop-target');
+  if (target && selectedNode) {
+    const funcName = target.dataset.funcName;
+    if (funcName) {
+      const drag = connectionDrag;
+      setConnectionDrag(null);
+      draw();
+      // Fire the connection dialog for same-script
+      import('./modals.js').then(m => {
+        m.showConnectDialog(drag.sourceNode, drag.signalName, drag.sourceNode, funcName);
+      });
+      return;
+    }
+  }
+
+  // Check if dropped on a canvas function port (cross-script) — handled by events.js
+  if (connectionDrag.targetNode && connectionDrag.hoveredPort >= 0) {
+    const drag = connectionDrag;
+    const targetFunc = drag.targetNode.functions[drag.hoveredPort];
+    setConnectionDrag(null);
+    draw();
+    import('./modals.js').then(m => {
+      m.showConnectDialog(drag.sourceNode, drag.signalName, drag.targetNode, targetFunc.name);
+    });
+    return;
+  }
+
+  // Cancelled — dropped on empty space
+  setConnectionDrag(null);
+  draw();
+}
+
 export function initPanel() {
   detailPanel = document.getElementById('detail-panel');
   initPanelResizing();
@@ -582,7 +690,8 @@ export function openPanel(node) {
     html += `<ul class="item-list">`;
     for (let fi = 0; fi < node.functions.length; fi++) {
       const f = node.functions[fi];
-      html += `<li class="clickable" onclick="toggleFunc(${fi})">`;
+      html += `<li class="clickable func-item" data-func-index="${fi}" data-func-name="${esc(f.name)}" onclick="toggleFunc(${fi})">`;
+
       html += `<span class="kw">func</span> <span class="fn">${esc(f.name)}</span>`;
       html += `<span class="param">(${esc(f.params)})</span>`;
       if (f.return_type) html += ` <span class="ret">&rarr;</span> <span class="tp">${esc(f.return_type)}</span>`;
@@ -612,6 +721,7 @@ export function openPanel(node) {
     html += renderParamEditor(sigParams, si);
     html += `<span class="param">)</span>`;
     html += `<span class="item-actions">`;
+    html += `<span class="connection-drag-handle" data-signal-index="${si}" data-signal-name="${esc(sigName)}" data-signal-params="${esc(sigParams)}" title="Drag to connect">⊙</span>`;
     html += `<button class="delete" onclick="showDeleteUsages(${si}, false, 'signal')" title="Delete">×</button>`;
     html += `</span>`;
     html += `</li>`;
@@ -678,6 +788,7 @@ export function openPanel(node) {
   initSectionResizing();
   initInlineEditing();
   initParamEditors();
+  initConnectionDrag();
   draw();
 }
 
