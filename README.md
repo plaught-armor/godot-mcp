@@ -4,7 +4,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 31 tools · Interactive project visualizer · MIT license
+> Godot 4.x · 33 tools · Interactive project visualizer · MIT license
 
 ---
 
@@ -94,15 +94,17 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ## What Can It Do?
 
-### 31 Tools Across 5 Categories
+### 33 Tools Across 5 Categories
 
 | Category | Tools | Examples |
 |----------|-------|---------|
-| **File Operations** | 4 | Browse directories, read files, search project, create scripts |
+| **File Operations** | 6 | Browse directories, read/search files, create folders, rename/delete files |
 | **Scene Operations** | 11 | Create scenes, add/remove/move nodes, set properties, attach scripts, assign collision shapes and textures |
-| **Script Operations** | 6 | Apply code edits, validate syntax, rename/move files with reference updates |
-| **Project Tools** | 9 | Read project settings, input map, collision layers, console errors, scene tree dumps |
+| **Script Operations** | 5 | Create/edit/validate/format scripts, list all scripts |
+| **Project Tools** | 10 | Project settings, input map, collision layers, console log, runtime debug errors, scene tree dumps |
 | **Asset Generation** | 1 | Generate 2D sprites from SVG |
+
+> `format_script` requires [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter) on PATH. If not found, the tool is hidden from AI clients automatically.
 
 ### Interactive Visualizer
 
@@ -130,6 +132,15 @@ Open the visualizer from the Godot editor: **Project → Tools → MCP: Map Proj
 
 <img width="1710" height="1107" alt="image" src="https://github.com/user-attachments/assets/a9faf163-8b8b-43da-93ec-c7a651e8ac60" />
 
+### Plugin Settings
+
+The Godot plugin adds settings under **Project → Project Settings → Godot MCP**:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| **Auto Format Scripts** | `false` | Automatically format GDScript files after every MCP script edit |
+| **Script Formatter Command** | `gdscript-formatter` | External formatter binary to use (e.g., `gdscript-formatter`, `gdformat`) |
+
 ### Limitations
 
 AI cannot create 100% of a game by itself — it struggles with complex UI layouts, compositing scenes, and some node property manipulation. It's still in active development, so feedback is very welcome!
@@ -143,7 +154,7 @@ AI cannot create 100% of a game by itself — it struggles with complex UI layou
 │  AI Client   │◄────────────────►│  MCP Server  │◄─────────────►│ Godot Editor │
 │  (Claude,    │                  │  (Go binary) │   port 6505   │  (Plugin)    │
 │   Cursor)    │                  │              │               │              │
-└─────────────┘                  │  Visualizer  │               │  32 tool     │
+└─────────────┘                  │  Visualizer  │               │  33 tool     │
                                  │  HTTP :6510  │               │  handlers    │
                                  └──────┬───────┘               └──────────────┘
                                         │

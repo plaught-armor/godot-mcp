@@ -65,30 +65,52 @@
   - Serializes to/from raw `"name: Type, name2: Type2"` format for backend
 - [x] Unified toolbar
   - Single toolbar row with view tabs (Scripts/Scenes), layout/zoom controls, search
+- [x] GDScript formatting via `format_script` MCP tool
+  - Conditional tool: only registered when `gdscript-formatter` binary is on PATH
+  - Auto-format setting in Project Settings (`godot_mcp/auto_format_scripts`)
+  - Configurable formatter command (`godot_mcp/script_formatter_command`)
 
-## Planned
+## In Progress
 
 ### Phase 2: Visual Connections
-- Drag from signal → function to create `.connect()` code
-- Visual ports on node edges when hovering
+- [ ] Drag signal → function to create `.connect()` code (WIP — scaffolding in place, not yet functional)
+  - Drag handle (⊙) on signal items in panel
+  - Green dashed bezier wire follows cursor to canvas
+  - Function ports appear on target node's left edge during drag
+  - Same-script drop targets on panel function items
+  - Connection dialog with target reference guess and live code preview
+  - Injects `.connect()` into `_ready()` via `edit_script`
+  - Optimistic edge update in graph
+- Visual signal/function ports on node edges when hovering (without active drag)
+- Show existing `.connect()` edges with signal/function labels on hover
 
-### Phase 3: Script Management
+### Phase 3: Script Editing
+- Create new functions from panel (name, params, return type, body template)
+- Edit function signatures (rename, change params/return type)
+- Structured function parameter editor (reuse signal param editor pattern)
 - Script templates (Node2D, State Machine, Singleton, etc.)
+- Add `@export` annotations with type hints from combobox
+- Visualizer "Format" button in panel (runs `format_script` on current script)
 
 ### Phase 4: Scene View (Enhancements)
 - Drag to reorder siblings (change draw order)
 - Drag scripts onto scene nodes to attach
 - Cross-scene signal visualization
+- Scene node creation from script class (instantiate a script's base type)
 
 ### Phase 5: Advanced
 - Full-text search in function bodies
+- Find all references to a variable/function/signal across all scripts
+- Batch rename (rename a function and update all call sites)
 
 ### Phase 6: Polish
 - Documentation generation
 - Code snippets library
+- Keyboard shortcuts panel / help overlay
+- Export visualizer as static image (PNG/SVG)
 
 ### Phase 7: Native Editor Integration
 - Main screen plugin (`_has_main_screen()`) — visualizer as a tab alongside 2D/3D/Script/AssetLib
-- Graph rendering via `Control._draw()` (force-directed layout, folder grouping, edges, minimap)
-- Panel UI with Godot Control nodes (LineEdit, OptionButton, PopupMenu, etc.)
-- Start read-only (graph + inspect), keep browser version for editing initially
+- Embed existing HTML/JS visualizer via [godot_wry](https://github.com/kroketio/godot_wry) (Rust-based system webview, MIT, Godot 4.1+)
+- Webview loads `localhost:6510` — same URL, same WebSocket, zero JS changes needed
+- Go MCP server is always running (it's the Claude↔Godot bridge), so the visualizer URL is always available

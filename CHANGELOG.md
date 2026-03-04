@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.5.0] - 2026-03-03
+
+### Added
+- **`format_script` tool** — format GDScript files using an external formatter (e.g., [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter)). Conditionally registered — only available when the formatter binary is on PATH
+- **`get_debug_errors` tool** — read runtime errors and warnings from the Godot Debugger > Errors tab, including stack traces. Scrapes the editor's internal ScriptEditorDebugger Tree widget
+- **Auto-format setting** — enable `godot_mcp/auto_format_scripts` in Project Settings to automatically format scripts after every MCP edit (create, edit, modify variable/signal/function)
+- **Configurable formatter command** — `godot_mcp/script_formatter_command` Project Setting lets users choose their preferred formatter binary
+- **Plugin settings in Project Settings** — settings appear under Godot MCP section without needing Advanced Settings toggle
+
+### Security
+- **Path traversal fix** — `validate_res_path()` blocks `../` escape sequences in all tool handlers (file, scene, script, project, asset, visualizer)
+- **Concurrent write safety** — added `writeMu` mutex for WebSocket writes in Go bridge
+- **Crash boundary** — `tool_executor.gd` catches null/non-Dictionary returns from tool handlers
+- **Background thread fix** — removed `validate_script` from background-safe list (accesses editor UI)
+
+### Changed
+- Script Operations tool count: 4 → 5
+- Project Tools count: 9 → 10
+- Total tools: 31 → 33
+- Go tool schemas: added `Enum` field, fixed `Required` fields, reorganized tool files to match GDScript handlers
+- Removed dead code stubs from asset_tools (search_comfyui_nodes, RunningHub tools)
+
+## [0.4.0] - 2026-02-28
+
+### Added
+- **Undo/redo system** — Ctrl+Z / Ctrl+Shift+Z across all visualizer edit operations via command pattern
+- **Searchable type combobox** — for variable types and signal param types, includes project types and all built-in Godot types
+- **Structured signal parameter editor** — name input + type combobox per param, Tab to add more
+- **Usage analysis** — detection before deleting or renaming scripts/functions
+
+### Changed
+- Unified toolbar layout in visualizer
+- Scene tree view improvements
+
+## [0.3.2] - 2026-02-27
+
+### Changed
+- **Refactored GDScript addon** — all tool handlers are now `RefCounted` (not Node), shared `ToolUtils` class, unified routing through `tool_executor.gd`
+
+## [0.3.1] - 2026-02-26
+
+### Fixed
+- **Moved visualizer to editor button** — accessible via Project → Tools menu
+- **Fixed rendering issues** in visualizer
+
 ## [0.2.4] - 2026-02-23
 
 ### Changed
