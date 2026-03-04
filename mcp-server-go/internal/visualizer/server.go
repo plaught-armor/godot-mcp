@@ -71,6 +71,10 @@ func (s *Server) Serve(projectData any) (string, error) {
 
 		// Serve JS and CSS files from embedded assets
 		name := strings.TrimPrefix(r.URL.Path, "/")
+		if strings.Contains(name, "..") {
+			http.NotFound(w, r)
+			return
+		}
 		data, err := assets.ReadFile("assets/" + name)
 		if err != nil {
 			http.NotFound(w, r)
@@ -180,6 +184,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 		var msg wsMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
+			log.Printf("[visualizer] Invalid JSON from browser: %v", err)
 			conn.Write(ctx, websocket.MessageText, mustJSON(map[string]any{"error": "invalid JSON"}))
 			continue
 		}

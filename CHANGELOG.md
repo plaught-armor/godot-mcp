@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.0] - 2026-03-03
+## [0.5.1] - 2026-03-04
 
 ### Added
 - **`format_script` tool** — format GDScript files using an external formatter (e.g., [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter)). Conditionally registered — only available when the formatter binary is on PATH
