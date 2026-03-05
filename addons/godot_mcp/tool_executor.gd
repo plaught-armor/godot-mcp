@@ -81,7 +81,8 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 		&"get_project_settings", &"get_input_map", &"get_collision_layers", \
 		&"get_node_properties", &"get_console_log", &"get_errors", \
 		&"get_debug_errors", &"clear_console_log", &"open_in_godot", \
-		&"scene_tree_dump":
+		&"scene_tree_dump", \
+		&"play_project", &"stop_project", &"is_project_running":
 			return _project_tools
 
 		# Asset tools

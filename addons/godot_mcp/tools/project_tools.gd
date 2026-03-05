@@ -4,7 +4,8 @@ class_name ProjectTools
 ## Project configuration and debug tools for MCP.
 ## Handles: get_project_settings, get_input_map, get_collision_layers,
 ##          get_node_properties, get_console_log, get_errors, clear_console_log,
-##          open_in_godot, scene_tree_dump
+##          open_in_godot, scene_tree_dump, play_project, stop_project,
+##          is_project_running
 
 var _editor_plugin: EditorPlugin = null
 
@@ -492,3 +493,53 @@ func _dump_node(node: Node, depth: int, out: PackedStringArray) -> void:
 	out.append(line)
 	for child: Node in node.get_children():
 		_dump_node(child, depth + 1, out)
+
+# =============================================================================
+# play_project
+# =============================================================================
+func play_project(args: Dictionary) -> Dictionary:
+	if not _editor_plugin:
+		return {&"ok": false, &"error": "Editor plugin not available"}
+
+	var ei = _editor_plugin.get_editor_interface()
+	var scene_path: String = str(args.get(&"scene_path", ""))
+
+	if scene_path == "current":
+		ei.play_current_scene()
+		return {&"ok": true, &"message": "Playing current scene"}
+	elif not scene_path.is_empty():
+		scene_path = _utils.validate_res_path(scene_path)
+		if scene_path.is_empty():
+			return {&"ok": false, &"error": "Path escapes project root"}
+		if not FileAccess.file_exists(scene_path):
+			return {&"ok": false, &"error": "Scene not found: " + scene_path}
+		ei.play_custom_scene(scene_path)
+		return {&"ok": true, &"message": "Playing scene: " + scene_path}
+	else:
+		ei.play_main_scene()
+		return {&"ok": true, &"message": "Playing main scene"}
+
+# =============================================================================
+# stop_project
+# =============================================================================
+func stop_project(_args: Dictionary) -> Dictionary:
+	if not _editor_plugin:
+		return {&"ok": false, &"error": "Editor plugin not available"}
+
+	var ei = _editor_plugin.get_editor_interface()
+	if not ei.is_playing_scene():
+		return {&"ok": true, &"message": "No scene is running"}
+
+	ei.stop_playing_scene()
+	return {&"ok": true, &"message": "Stopped running scene"}
+
+# =============================================================================
+# is_project_running
+# =============================================================================
+func is_project_running(_args: Dictionary) -> Dictionary:
+	if not _editor_plugin:
+		return {&"ok": false, &"error": "Editor plugin not available"}
+
+	var ei = _editor_plugin.get_editor_interface()
+	var running: bool = ei.is_playing_scene()
+	return {&"ok": true, &"running": running}

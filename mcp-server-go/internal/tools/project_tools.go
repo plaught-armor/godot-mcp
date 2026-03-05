@@ -150,4 +150,39 @@ var projectTools = []ToolDef{
 			})
 		},
 	},
+	{
+		Name:        "play_project",
+		Description: "Play the project in the Godot editor. By default plays the main scene. Pass scene_path for a specific scene, or \"current\" to play the scene currently open in the editor.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"scene_path": {Type: "string", Description: `Optional: res:// path to a specific scene, or "current" to play the currently edited scene. Omit to play the main scene.`},
+			},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "message": "Mock: Would play project"})
+		},
+	},
+	{
+		Name:        "stop_project",
+		Description: "Stop the currently running scene in the Godot editor.",
+		InputSchema: &Schema{
+			Type:       "object",
+			Properties: map[string]*Schema{},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "message": "Mock: Would stop project"})
+		},
+	},
+	{
+		Name:        "is_project_running",
+		Description: "Check if a scene is currently running in the Godot editor.",
+		InputSchema: &Schema{
+			Type:       "object",
+			Properties: map[string]*Schema{},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "running": false})
+		},
+	},
 }

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.5.1] - 2026-03-04
+## [0.6.0] - 2026-03-04
 
 ### Added
 - **`format_script` tool** — format GDScript files using an external formatter (e.g., [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter)). Conditionally registered — only available when the formatter binary is on PATH
@@ -8,6 +8,7 @@
 - **Auto-format setting** — enable `godot_mcp/auto_format_scripts` in Project Settings to automatically format scripts after every MCP edit (create, edit, modify variable/signal/function)
 - **Configurable formatter command** — `godot_mcp/script_formatter_command` Project Setting lets users choose their preferred formatter binary
 - **Plugin settings in Project Settings** — settings appear under Godot MCP section without needing Advanced Settings toggle
+- **Runtime control tools** — `play_project`, `stop_project`, `is_project_running` for playing/stopping scenes from AI clients
 
 ### Security
 - **Path traversal fix** — `validate_res_path()` blocks `../` escape sequences in all tool handlers (file, scene, script, project, asset, visualizer)
@@ -17,8 +18,8 @@
 
 ### Changed
 - Script Operations tool count: 4 → 5
-- Project Tools count: 9 → 10
-- Total tools: 31 → 33
+- Project Tools count: 9 → 13
+- Total tools: 31 → 36
 - Go tool schemas: added `Enum` field, fixed `Required` fields, reorganized tool files to match GDScript handlers
 - Removed dead code stubs from asset_tools (search_comfyui_nodes, RunningHub tools)
 

@@ -4,7 +4,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 33 tools · Interactive project visualizer · MIT license
+> Godot 4.x · 36 tools · Interactive project visualizer · MIT license
 
 ---
 
@@ -94,14 +94,14 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ## What Can It Do?
 
-### 33 Tools Across 5 Categories
+### 36 Tools Across 5 Categories
 
 | Category | Tools | Examples |
 |----------|-------|---------|
 | **File Operations** | 6 | Browse directories, read/search files, create folders, rename/delete files |
 | **Scene Operations** | 11 | Create scenes, add/remove/move nodes, set properties, attach scripts, assign collision shapes and textures |
 | **Script Operations** | 5 | Create/edit/validate/format scripts, list all scripts |
-| **Project Tools** | 10 | Project settings, input map, collision layers, console log, runtime debug errors, scene tree dumps |
+| **Project Tools** | 13 | Project settings, input map, collision layers, console log, runtime debug errors, scene tree dumps, play/stop project |
 | **Asset Generation** | 1 | Generate 2D sprites from SVG |
 
 > `format_script` requires [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter) on PATH. If not found, the tool is hidden from AI clients automatically.
@@ -154,7 +154,7 @@ AI cannot create 100% of a game by itself — it struggles with complex UI layou
 │  AI Client   │◄────────────────►│  MCP Server  │◄─────────────►│ Godot Editor │
 │  (Claude,    │                  │  (Go binary) │   port 6505   │  (Plugin)    │
 │   Cursor)    │                  │              │               │              │
-└─────────────┘                  │  Visualizer  │               │  33 tool     │
+└─────────────┘                  │  Visualizer  │               │  36 tool     │
                                  │  HTTP :6510  │               │  handlers    │
                                  └──────┬───────┘               └──────────────┘
                                         │
@@ -169,9 +169,8 @@ AI cannot create 100% of a game by itself — it struggles with complex UI layou
 ## Current Limitations
 
 - **Local only** — runs on localhost, no remote connections
-- **Single connection** — one Godot instance at a time
+- **One project per server** — each MCP server process connects to one Godot editor (run multiple servers for multiple projects)
 - **Limited undo** — the visualizer has undo/redo, but MCP tool changes from AI clients save directly (use version control)
-- **No runtime control** — can't press play or simulate input
 - **AI is still limited in Godot knowledge** — it can't create 100% of the game alone, but it can help debug, write scripts, and tag along for the journey
 
 ---
