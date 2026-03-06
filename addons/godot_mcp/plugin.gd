@@ -80,12 +80,10 @@ func _on_tool_requested(request_id: String, tool_name: String, args: Dictionary)
 	# Execute the tool
 	var result: Dictionary = _tool_executor.execute_tool(tool_name, args)
 
-	# Send result back
-	var success: bool = result.get("ok", false)
+	var success: bool = result.get(&"ok", false)
 	if success:
-		# Remove 'ok' key from result before sending
-		result.erase("ok")
+		result.erase(&"ok")
 		_mcp_client.send_tool_result(request_id, true, result)
 	else:
-		var error: String = result.get("error", "Unknown error")
+		var error: String = result.get(&"error", "Unknown error")
 		_mcp_client.send_tool_result(request_id, false, null, error)

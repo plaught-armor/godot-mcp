@@ -6,8 +6,13 @@ class_name FileTools
 
 const DEFAULT_MAX_BYTES := 200_000
 const DEFAULT_MAX_RESULTS := 200
-const SKIP_EXTENSIONS := [".import", ".png", ".jpg", ".jpeg", ".webp", ".svg",
-	".ogg", ".wav", ".mp3", ".escn", ".glb", ".gltf", ".uid"]
+const MAX_TRAVERSAL_DEPTH := 20
+const _SKIP_EXTENSIONS: Dictionary = {
+	".import": true, ".png": true, ".jpg": true, ".jpeg": true,
+	".webp": true, ".svg": true, ".ogg": true, ".wav": true,
+	".mp3": true, ".escn": true, ".glb": true, ".gltf": true,
+	".uid": true,
+}
 
 var _editor_plugin: EditorPlugin = null
 
@@ -18,18 +23,18 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 # list_dir - List files and folders in a directory
 # =============================================================================
 func list_dir(args: Dictionary) -> Dictionary:
-	var root: String = str(args.get("root", "res://"))
-	var include_hidden: bool = bool(args.get("include_hidden", false))
+	var root: String = str(args.get(&"root", "res://"))
+	var include_hidden: bool = bool(args.get(&"include_hidden", false))
 
 	if not root.begins_with("res://"):
 		root = "res://" + root
 
 	var dir := DirAccess.open(root)
 	if dir == null:
-		return {"ok": false, "error": "Cannot open directory: " + root}
+		return {&"ok": false, &"error": "Cannot open directory: " + root}
 
-	var files: Array = []
-	var folders: Array = []
+	var files: PackedStringArray = []
+	var folders: PackedStringArray = []
 
 	dir.list_dir_begin()
 	var name := dir.get_next()
@@ -40,11 +45,10 @@ func list_dir(args: Dictionary) -> Dictionary:
 			continue
 
 		# Skip .uid files
-		if name.to_lower().ends_with(".uid"):
+		if name.ends_with(".uid"):
 			name = dir.get_next()
 			continue
 
-		var full_path := root.path_join(name)
 		if dir.current_is_dir():
 			folders.append(name)
 		else:
@@ -58,34 +62,34 @@ func list_dir(args: Dictionary) -> Dictionary:
 	folders.sort()
 
 	return {
-		"ok": true,
-		"path": root,
-		"files": files,
-		"folders": folders,
-		"total": files.size() + folders.size()
+		&"ok": true,
+		&"path": root,
+		&"files": files,
+		&"folders": folders,
+		&"total": files.size() + folders.size()
 	}
 
 # =============================================================================
 # read_file - Read contents of a file
 # =============================================================================
 func read_file(args: Dictionary) -> Dictionary:
-	var path: String = str(args.get("path", ""))
-	var start_line: int = int(args.get("start_line", 1))
-	var end_line: int = int(args.get("end_line", 0))
-	var max_bytes: int = int(args.get("max_bytes", DEFAULT_MAX_BYTES))
+	var path: String = str(args.get(&"path", ""))
+	var start_line: int = int(args.get(&"start_line", 1))
+	var end_line: int = int(args.get(&"end_line", 0))
+	var max_bytes: int = int(args.get(&"max_bytes", DEFAULT_MAX_BYTES))
 
 	if path.strip_edges().is_empty():
-		return {"ok": false, "error": "Missing 'path' parameter"}
+		return {&"ok": false, &"error": "Missing 'path' parameter"}
 
 	if not path.begins_with("res://"):
 		path = "res://" + path
 
 	if not FileAccess.file_exists(path):
-		return {"ok": false, "error": "File not found: " + path}
+		return {&"ok": false, &"error": "File not found: " + path}
 
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return {"ok": false, "error": "Cannot open file: " + path}
+		return {&"ok": false, &"error": "Cannot open file: " + path}
 
 	var content: String
 	var line_count: int = 0
@@ -123,30 +127,30 @@ func read_file(args: Dictionary) -> Dictionary:
 	file.close()
 
 	return {
-		"ok": true,
-		"path": path,
-		"content": content,
-		"line_count": line_count,
-		"range": [start_line, end_line] if end_line > 0 else null
+		&"ok": true,
+		&"path": path,
+		&"content": content,
+		&"line_count": line_count,
+		&"range": [start_line, end_line] if end_line > 0 else null
 	}
 
 # =============================================================================
 # search_project - Search for text in project files
 # =============================================================================
 func search_project(args: Dictionary) -> Dictionary:
-	var query: String = str(args.get("query", ""))
-	var glob_filter: String = str(args.get("glob", ""))
-	var max_results: int = int(args.get("max_results", DEFAULT_MAX_RESULTS))
-	var case_sensitive: bool = bool(args.get("case_sensitive", false))
+	var query: String = str(args.get(&"query", ""))
+	var glob_filter: String = str(args.get(&"glob", ""))
+	var max_results: int = int(args.get(&"max_results", DEFAULT_MAX_RESULTS))
+	var case_sensitive: bool = bool(args.get(&"case_sensitive", false))
 
 	if query.strip_edges().is_empty():
-		return {"ok": false, "error": "Missing 'query' parameter"}
+		return {&"ok": false, &"error": "Missing 'query' parameter"}
 
 	var search_query := query if case_sensitive else query.to_lower()
 	var files := _collect_files("res://", glob_filter)
 	var matches: Array = []
 
-	for file_path in files:
+	for file_path: String in files:
 		if matches.size() >= max_results:
 			break
 
@@ -154,39 +158,44 @@ func search_project(args: Dictionary) -> Dictionary:
 		if file == null:
 			continue
 
-		var line_num := 0
-		while not file.eof_reached():
-			var line := file.get_line()
-			line_num += 1
+		var content := file.get_as_text()
+		file.close()
 
+		var search_content := content if case_sensitive else content.to_lower()
+		if search_content.find(search_query) == -1:
+			continue
+
+		var lines := content.split("\n")
+		for i: int in range(lines.size()):
+			var line := lines[i]
 			var search_line := line if case_sensitive else line.to_lower()
 			if search_line.find(search_query) != -1:
 				matches.append({
-					"file": file_path,
-					"line": line_num,
-					"content": line.strip_edges()
+					&"file": file_path,
+					&"line": i + 1,
+					&"content": line.strip_edges()
 				})
-
 				if matches.size() >= max_results:
 					break
 
-		file.close()
-
 	return {
-		"ok": true,
-		"query": query,
-		"matches": matches,
-		"total_matches": matches.size(),
-		"truncated": matches.size() >= max_results
+		&"ok": true,
+		&"query": query,
+		&"matches": matches,
+		&"total_matches": matches.size(),
+		&"truncated": matches.size() >= max_results
 	}
 
-func _collect_files(path: String, glob_filter: String) -> Array:
+func _collect_files(path: String, glob_filter: String) -> PackedStringArray:
 	"""Recursively collect all searchable files."""
-	var result: Array = []
+	var result: PackedStringArray = []
 	_collect_files_recursive(path, glob_filter, result)
 	return result
 
-func _collect_files_recursive(path: String, glob_filter: String, out: Array) -> void:
+func _collect_files_recursive(path: String, glob_filter: String, out: PackedStringArray, depth: int = 0) -> void:
+	if depth >= MAX_TRAVERSAL_DEPTH:
+		return
+
 	var dir := DirAccess.open(path)
 	if dir == null:
 		return
@@ -202,17 +211,10 @@ func _collect_files_recursive(path: String, glob_filter: String, out: Array) -> 
 		var full_path := path.path_join(name)
 
 		if dir.current_is_dir():
-			_collect_files_recursive(full_path, glob_filter, out)
+			_collect_files_recursive(full_path, glob_filter, out, depth + 1)
 		else:
-			# Skip binary files
-			var skip := false
-			for ext in SKIP_EXTENSIONS:
-				if name.to_lower().ends_with(ext):
-					skip = true
-					break
-
-			if not skip:
-				# Apply glob filter if specified
+			var ext := "." + name.get_extension().to_lower()
+			if not _SKIP_EXTENSIONS.has(ext):
 				if glob_filter.is_empty() or _matches_glob(full_path, glob_filter):
 					out.append(full_path)
 
@@ -237,11 +239,11 @@ func _matches_glob(path: String, pattern: String) -> bool:
 # create_script - Create a new GDScript file
 # =============================================================================
 func create_script(args: Dictionary) -> Dictionary:
-	var path: String = str(args.get("path", ""))
-	var content: String = str(args.get("content", ""))
+	var path: String = str(args.get(&"path", ""))
+	var content: String = str(args.get(&"content", ""))
 
 	if path.strip_edges().is_empty():
-		return {"ok": false, "error": "Missing 'path' parameter"}
+		return {&"ok": false, &"error": "Missing 'path' parameter"}
 
 	if not path.begins_with("res://"):
 		path = "res://" + path
@@ -252,19 +254,19 @@ func create_script(args: Dictionary) -> Dictionary:
 
 	# Check if file already exists
 	if FileAccess.file_exists(path):
-		return {"ok": false, "error": "File already exists: " + path}
+		return {&"ok": false, &"error": "File already exists: " + path}
 
 	# Ensure parent directory exists
 	var dir_path := path.get_base_dir()
 	if not DirAccess.dir_exists_absolute(dir_path):
 		var err := DirAccess.make_dir_recursive_absolute(dir_path)
 		if err != OK:
-			return {"ok": false, "error": "Could not create directory: " + dir_path}
+			return {&"ok": false, &"error": "Could not create directory: " + dir_path}
 
 	# Write file
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
-		return {"ok": false, "error": "Could not create file: " + path}
+		return {&"ok": false, &"error": "Could not create file: " + path}
 
 	file.store_string(content)
 	file.close()
@@ -273,10 +275,10 @@ func create_script(args: Dictionary) -> Dictionary:
 	_refresh_filesystem()
 
 	return {
-		"ok": true,
-		"path": path,
-		"size_bytes": content.length(),
-		"message": "Script created successfully"
+		&"ok": true,
+		&"path": path,
+		&"size_bytes": content.length(),
+		&"message": "Script created successfully"
 	}
 
 func _refresh_filesystem() -> void:

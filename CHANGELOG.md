@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.5] - 2026-03-06
+
+### Changed
+- **StringName dictionary keys** across all GDScript files — avoids per-frame string allocations for dictionary lookups
+- **Typed for loops** — explicit type annotations on loop variables throughout all tool files
+- **Bulk file read in `search_project`** — reads whole file and does a quick `find()` before line-by-line scanning, skipping non-matching files entirely
+- **`_SKIP_EXTENSIONS` Dictionary** — O(1) extension filtering in `_collect_files_recursive` (was O(n) array scan)
+- **`_SKIP_PROPS` Dictionary** — O(1) property filtering in `get_node_properties` and `get_scene_node_properties`
+- **`PackedStringArray`** for `list_dir` results, `_collect_files`, and `_dump_node` tree building
+- **`MAX_TRAVERSAL_DEPTH` guard** — prevents runaway recursion in `_collect_files_recursive` (cap at 20 levels)
+- **`MAX_PACKETS_PER_FRAME` cap** — limits WebSocket packet processing to 32 per frame to prevent editor stalls
+- **`127.0.0.1` instead of `localhost`** — avoids DNS lookup on every connection attempt
+- **`_parse_value` improvement** — uses `value is Dictionary` instead of `typeof()` check, single `.get()` for type field
+
+### Fixed
+- **`SERVER_VERSION` constant** now matches `package.json` (was stuck at `0.2.0`)
+
 ## [0.2.4] - 2026-02-23
 
 ### Changed

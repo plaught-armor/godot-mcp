@@ -8,9 +8,10 @@ signal connected
 signal disconnected
 signal tool_requested(request_id: String, tool_name: String, args: Dictionary)
 
-const DEFAULT_URL := "ws://localhost:6505"
-const RECONNECT_DELAY := 3.0  # seconds
-const MAX_RECONNECT_DELAY := 30.0  # max backoff
+const DEFAULT_URL := "ws://127.0.0.1:6505"
+const RECONNECT_DELAY := 3.0
+const MAX_RECONNECT_DELAY := 30.0
+const MAX_PACKETS_PER_FRAME := 32
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 var server_url: String = DEFAULT_URL
@@ -45,10 +46,10 @@ func _process(_delta: float) -> void:
 		WebSocketPeer.STATE_OPEN:
 			if not _is_connected:
 				_handle_connect()
-			# Process incoming messages
-			while socket.get_available_packet_count() > 0:
-				var packet := socket.get_packet()
-				_handle_message(packet.get_string_from_utf8())
+			var packets_processed := 0
+			while socket.get_available_packet_count() > 0 and packets_processed < MAX_PACKETS_PER_FRAME:
+				_handle_message(socket.get_packet().get_string_from_utf8())
+				packets_processed += 1
 
 		WebSocketPeer.STATE_CLOSING:
 			pass  # Wait for close
@@ -88,8 +89,8 @@ func _handle_connect() -> void:
 
 	# Send godot_ready message with project info
 	_send_message({
-		"type": "godot_ready",
-		"project_path": _project_path
+		&"type": &"godot_ready",
+		&"project_path": _project_path,
 	})
 
 	connected.emit()
@@ -119,31 +120,30 @@ func _handle_message(json_string: String) -> void:
 		push_error("[MCP] Failed to parse message: ", json_string)
 		return
 
-	match message.get("type", ""):
+	var msg_type: String = message.get(&"type", "")
+	match msg_type:
 		"ping":
-			_send_message({"type": "pong"})
-
+			_send_message({&"type": &"pong"})
 		"tool_invoke":
-			var request_id: String = message.get("id", "")
-			var tool_name: String = message.get("tool", "")
-			var args: Dictionary = message.get("args", {})
+			var request_id: String = message.get(&"id", "")
+			var tool_name: String = message.get(&"tool", "")
+			var args: Dictionary = message.get(&"args", {})
 			print("[MCP] Tool request: ", tool_name, " (", request_id, ")")
 			tool_requested.emit(request_id, tool_name, args)
-
 		_:
-			print("[MCP] Unknown message type: ", message.get("type", "unknown"))
+			print("[MCP] Unknown message type: ", msg_type)
 
 func send_tool_result(request_id: String, success: bool, result = null, error: String = "") -> void:
 	var response := {
-		"type": "tool_result",
-		"id": request_id,
-		"success": success
+		&"type": &"tool_result",
+		&"id": request_id,
+		&"success": success,
 	}
 
 	if success:
-		response["result"] = result
+		response[&"result"] = result
 	else:
-		response["error"] = error
+		response[&"error"] = error
 
 	_send_message(response)
 	print("[MCP] Sent result for ", request_id, " (success=", success, ")")
