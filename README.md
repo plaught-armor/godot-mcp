@@ -1,5 +1,7 @@
 # Godot MCP
 
+> Forked from [tomyud1/godot-mcp](https://github.com/tomyud1/godot-mcp) — independently maintained with extended features. Actively developed with Claude and tested daily in real Godot projects.
+
 **Give your AI assistant full access to the Godot editor.**
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
@@ -18,7 +20,7 @@ That's it — no manual file copying needed.
 
 ### 2. Install the MCP server
 
-Download the binary for your platform from [GitHub Releases](https://github.com/tomyud1/godot-mcp/releases):
+Download the binary for your platform from [GitHub Releases](https://github.com/plaught-armor/godot-mcp/releases):
 
 | Platform | File |
 |----------|------|
@@ -197,4 +199,4 @@ MIT
 
 ---
 
-**[GitHub](https://github.com/tomyud1/godot-mcp)** · **[Report Issues](https://github.com/tomyud1/godot-mcp/issues)**
+**[GitHub](https://github.com/plaught-armor/godot-mcp)** · **[Report Issues](https://github.com/plaught-armor/godot-mcp/issues)**

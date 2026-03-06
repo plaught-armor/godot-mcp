@@ -1,4 +1,4 @@
-module github.com/tomyud1/godot-mcp/mcp-server-go
+module github.com/plaught-armor/godot-mcp/mcp-server-go
 
 go 1.25.0
 

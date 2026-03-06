@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/bridge"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/bridge"
 )
 
 const defaultVizPort = 6510

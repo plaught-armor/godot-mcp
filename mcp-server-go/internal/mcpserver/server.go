@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/bridge"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/tools"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/bridge"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/tools"
 )
 
 const (

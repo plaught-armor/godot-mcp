@@ -9,10 +9,10 @@ import (
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/bridge"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/mcpserver"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/tools"
-	"github.com/tomyud1/godot-mcp/mcp-server-go/internal/visualizer"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/bridge"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/mcpserver"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/tools"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/visualizer"
 )
 
 func main() {
