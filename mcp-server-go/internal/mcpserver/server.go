@@ -12,7 +12,7 @@ import (
 
 const (
 	serverName    = "godot-mcp-server"
-	serverVersion = "0.6.0"
+	serverVersion = "0.6.1"
 )
 
 // New creates and configures the MCP server with all tools registered.
@@ -95,29 +95,23 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 		var args map[string]any
 		if req.Params.Arguments != nil {
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-				args = make(map[string]any)
+				return errorResult(td.Name, nil, fmt.Errorf("invalid arguments: %w", err), "parse")
 			}
 		} else {
 			args = make(map[string]any)
 		}
 
-		var result any
-
 		raw, err := b.InvokeTool(ctx, td.Name, args)
 		if err != nil {
 			if !b.IsConnected() {
 				// Godot not connected — fall back to mock
-				result = td.MockFn(args)
-			} else {
-				return errorResult(td.Name, args, err, "live")
+				return textResult(td.MockFn(args))
 			}
-		} else {
-			if err := json.Unmarshal(raw, &result); err != nil {
-				result = string(raw)
-			}
+			return errorResult(td.Name, args, err, "live")
 		}
 
-		return textResult(result)
+		// raw is already valid JSON from Godot — pass through without re-marshaling
+		return rawTextResult(raw), nil
 	}
 }
 
@@ -126,11 +120,15 @@ func textResult(v any) (*mcp.CallToolResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal result: %w", err)
 	}
+	return rawTextResult(data), nil
+}
+
+func rawTextResult(data []byte) *mcp.CallToolResult {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{Text: string(data)},
 		},
-	}, nil
+	}
 }
 
 func errorResult(toolName string, args map[string]any, err error, mode string) (*mcp.CallToolResult, error) {

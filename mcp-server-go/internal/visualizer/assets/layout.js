@@ -11,6 +11,9 @@ const MIN_SPACING_Y = NODE_H + 60;
 export function initLayout() {
   if (nodes.length === 0) return;
 
+  // Build path→node index for O(1) edge lookups
+  buildNodeIndex();
+
   // Build adjacency map for connected nodes
   const adjacency = new Map();
   nodes.forEach(n => adjacency.set(n.path, []));
@@ -47,7 +50,8 @@ export function initLayout() {
   });
 
   // Run force-directed simulation with collision detection
-  const iterations = 150;
+  // Scale iterations: small graphs converge quickly, large ones need fewer per perf budget
+  const iterations = Math.min(150, Math.max(50, 300 - nodes.length));
   for (let iter = 0; iter < iterations; iter++) {
     const alpha = Math.pow(1 - iter / iterations, 2); // Quadratic cooling
     applyForces(alpha, adjacency);
@@ -208,6 +212,14 @@ function snapRootFoldersToGrid() {
   }
 }
 
+// Path → node lookup (rebuilt once per layout run)
+let nodeByPath = null;
+
+function buildNodeIndex() {
+  nodeByPath = new Map();
+  for (const n of nodes) nodeByPath.set(n.path, n);
+}
+
 function applyForces(alpha, adjacency) {
   const repulsion = 80000;  // Strong repulsion
   const attraction = 0.08;  // Moderate attraction
@@ -249,8 +261,8 @@ function applyForces(alpha, adjacency) {
   // Attraction along edges - pull connected nodes together
   // Cross-folder edges are much weaker so they don't stretch folder clusters
   edges.forEach(e => {
-    const from = nodes.find(n => n.path === e.from);
-    const to = nodes.find(n => n.path === e.to);
+    const from = nodeByPath.get(e.from);
+    const to = nodeByPath.get(e.to);
     if (!from || !to) return;
 
     const dx = to.x - from.x;

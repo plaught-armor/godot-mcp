@@ -157,13 +157,22 @@ export function clearPositions() {
 }
 
 // Save positions when node is moved
+let folderGroupsDirty = true;
+
+export function invalidateFolderGroups() {
+  folderGroupsDirty = true;
+}
+
 export function onNodeMoved() {
+  folderGroupsDirty = true;
   savePositions();
   draw();
 }
 
 // ---- Folder Groups ----
 export function computeFolderGroups() {
+  if (!folderGroupsDirty) return;
+  folderGroupsDirty = false;
   // Subfolder groups (colored)
   const groups = {};
   for (const n of nodes) {

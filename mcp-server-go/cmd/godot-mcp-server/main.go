@@ -48,7 +48,7 @@ func main() {
 	})
 
 	// Handle visualizer requests from Godot (Project → Tools → MCP: Map Project)
-	b.OnVisualizerRequest(func(data json.RawMessage) {
+	b.OnVisualizerRequest(func(_ context.Context, data json.RawMessage) {
 		var projectMap any
 		if err := json.Unmarshal(data, &projectMap); err != nil {
 			log.Printf("[godot-mcp-server] Failed to parse visualizer data: %v", err)

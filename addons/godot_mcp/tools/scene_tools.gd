@@ -318,12 +318,7 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 		return {&"ok": false, &"error": "Node not found: " + node_path}
 
 	# Check property exists
-	var prop_exists := false
-	for prop: Dictionary in target.get_property_list():
-		if prop[&"name"] == property_name:
-			prop_exists = true
-			break
-	if not prop_exists:
+	if not (property_name in target):
 		var node_type = target.get_class()
 		root.queue_free()
 		return {&"ok": false, &"error": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property_name, node_path, node_type]}
@@ -793,6 +788,16 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 	var properties: Array = []
 	var categories: Dictionary = {}  # category -> [properties]
 
+	# Build property→class lookup once (avoids O(n²) per-property hierarchy walk)
+	var prop_owner: Dictionary = {}  # prop_name → defining class
+	var cls: String = node_type
+	while cls != "":
+		for p: Dictionary in ClassDB.class_get_property_list(cls, true):
+			var pn: String = p[&"name"]
+			if not prop_owner.has(pn):
+				prop_owner[pn] = cls
+		cls = ClassDB.get_parent_class(cls)
+
 	# Get property list with full metadata
 	for prop: Dictionary in target.get_property_list():
 		var prop_name: String = prop[&"name"]
@@ -820,8 +825,8 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 			&"usage": prop[&"usage"]
 		}
 
-		# Determine category from class hierarchy
-		var category = _get_property_category(target, prop_name)
+		# Look up category from pre-built map
+		var category = prop_owner.get(prop_name, node_type)
 		prop_info[&"category"] = category
 
 		if not categories.has(category):

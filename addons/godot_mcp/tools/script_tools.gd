@@ -570,13 +570,10 @@ func modify_function(args: Dictionary) -> Dictionary:
 
 	var new_lines := Array(new_body.split("\n"))
 
-	for i: int in range(func_end - 1, func_start - 1, -1):
-		lines.remove_at(i)
+	# Splice: keep lines before func_start, insert new body, keep lines after func_end
+	var spliced: Array = lines.slice(0, func_start) + new_lines + lines.slice(func_end)
 
-	for i: int in range(new_lines.size()):
-		lines.insert(func_start + i, new_lines[i])
-
-	var new_content := "\n".join(PackedStringArray(lines))
+	var new_content := "\n".join(PackedStringArray(spliced))
 	var write_file := FileAccess.open(script_path, FileAccess.WRITE)
 	if write_file == null:
 		return {&"ok": false, &"error": "Cannot write to file: " + script_path}
@@ -613,10 +610,10 @@ func modify_function_delete(args: Dictionary) -> Dictionary:
 	var func_start: int = range_result[0]
 	var func_end: int = range_result[1]
 
-	for i: int in range(func_end - 1, func_start - 1, -1):
-		lines.remove_at(i)
+	# Splice out the function range
+	var spliced: Array = lines.slice(0, func_start) + lines.slice(func_end)
 
-	var new_content := "\n".join(PackedStringArray(lines))
+	var new_content := "\n".join(PackedStringArray(spliced))
 	var write_file := FileAccess.open(script_path, FileAccess.WRITE)
 	if write_file == null:
 		return {&"ok": false, &"error": "Cannot write to file: " + script_path}

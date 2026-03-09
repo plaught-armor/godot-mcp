@@ -119,6 +119,34 @@ var fileTools = []ToolDef{
 			return mockNote(map[string]any{"ok": true, "old_path": args["old_path"], "new_path": args["new_path"], "message": "Mock: File would be renamed"})
 		},
 	},
+	{
+		Name:        "replace_in_files",
+		Description: "Bulk find-and-replace text across project files. Like Godot's Ctrl+Shift+R. Use preview mode first to verify scope before applying.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"search":         {Type: "string", Description: "Text to find"},
+				"replace":        {Type: "string", Description: "Replacement text"},
+				"glob":           {Type: "string", Description: "Glob filter (e.g. **/*.gd). Default: all text files"},
+				"exclude":        {Type: "array", Description: "Glob patterns to skip (e.g. [\"**/addons/**\"])", Items: &Schema{Type: "string"}},
+				"case_sensitive":  {Type: "boolean", Description: "Case-sensitive search (default: true)"},
+				"preview":        {Type: "boolean", Description: "Dry-run — show what would change without writing (default: false)"},
+			},
+			Required: []string{"search", "replace"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":                 true,
+				"search":            args["search"],
+				"replace":           args["replace"],
+				"files_modified":    3,
+				"total_replacements": 7,
+				"files":             []string{"res://scripts/a.gd", "res://scripts/b.gd", "res://scenes/c.tscn"},
+				"preview":           args["preview"],
+				"message":           "Mock: Would replace across files",
+			})
+		},
+	},
 }
 
 func str(v any) string {

@@ -18,7 +18,7 @@ import {
   getCanvas, screenToWorld, hitTest, draw, resize,
   updateZoomIndicator, centerOnNodes, savePositions,
   sceneHitTest, SCENE_CARD_W, SCENE_CARD_H,
-  getMinimapState, onNodeMoved,
+  getMinimapState, onNodeMoved, invalidateFolderGroups,
   signalPortHitTest, portHitTest
 } from './canvas.js';
 import { openPanel, closePanel, openSceneNodePanel, closeSceneNodePanel } from './panel.js';
@@ -78,7 +78,12 @@ export function initEvents() {
     camera.x = wx - (e.clientX - W / 2) / camera.zoom;
     camera.y = wy - (e.clientY - H / 2) / camera.zoom;
     updateZoomIndicator();
-    draw();
+    if (!dragRAF) {
+      dragRAF = requestAnimationFrame(() => {
+        draw();
+        dragRAF = null;
+      });
+    }
   }, { passive: false });
 
   // Double-click to rename
@@ -402,6 +407,7 @@ function handleScriptsMouseMove(e) {
       if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
         dragging.moved = true;
       }
+      invalidateFolderGroups();
       // Batch draw to next frame for smooth folder dragging
       if (!dragRAF) {
         dragRAF = requestAnimationFrame(() => {
@@ -414,6 +420,7 @@ function handleScriptsMouseMove(e) {
       const w = screenToWorld(e.clientX, e.clientY);
       dragging.node.x = w.x + dragging.offX;
       dragging.node.y = w.y + dragging.offY;
+      invalidateFolderGroups();
 
       const dx = Math.abs(e.clientX - dragging.startScreenX);
       const dy = Math.abs(e.clientY - dragging.startScreenY);
@@ -426,7 +433,13 @@ function handleScriptsMouseMove(e) {
       camera.x = dragging.camX - dx;
       camera.y = dragging.camY - dy;
     }
-    draw();
+    // Batch all drag draws to next frame
+    if (!dragRAF) {
+      dragRAF = requestAnimationFrame(() => {
+        draw();
+        dragRAF = null;
+      });
+    }
   } else {
     // Check minimap hover
     if (isInMinimap(e.clientX, e.clientY)) {
@@ -580,7 +593,12 @@ function handleSceneMouseMove(e) {
       const dy = (e.clientY - dragging.startY) / camera.zoom;
       camera.x = dragging.camX - dx;
       camera.y = dragging.camY - dy;
-      draw();
+      if (!dragRAF) {
+        dragRAF = requestAnimationFrame(() => {
+          draw();
+          dragRAF = null;
+        });
+      }
     }
   } else {
     const w = screenToWorld(e.clientX, e.clientY);

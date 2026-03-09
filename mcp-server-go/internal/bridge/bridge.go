@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	DefaultPort    = 6505
-	DefaultTimeout = 30 * time.Second
-	pingInterval   = 10 * time.Second
+	DefaultPort        = 6505
+	DefaultTimeout     = 30 * time.Second
+	pingInterval       = 10 * time.Second
+	maxPendingRequests = 100
 )
 
 var nextID atomic.Int64
@@ -50,7 +51,7 @@ type pendingRequest struct {
 }
 
 type connectionCallback func(connected bool, info *GodotInfo)
-type visualizerCallback func(data json.RawMessage)
+type visualizerCallback func(ctx context.Context, data json.RawMessage)
 
 // GodotBridge manages the WebSocket connection to the Godot plugin.
 type GodotBridge struct {
@@ -61,9 +62,9 @@ type GodotBridge struct {
 	writeMu    sync.Mutex // serializes concurrent WebSocket writes
 	conn       *websocket.Conn
 	info       *GodotInfo
-	pending    map[string]*pendingRequest
-	callbacks  []connectionCallback
-	vizCb      visualizerCallback
+	pending  map[string]*pendingRequest
+	connCb   connectionCallback
+	vizCb    visualizerCallback
 	httpServer *http.Server
 	cancelRead context.CancelFunc
 }
@@ -156,7 +157,7 @@ func (b *GodotBridge) GetStatus() Status {
 func (b *GodotBridge) OnConnectionChange(fn connectionCallback) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.callbacks = append(b.callbacks, fn)
+	b.connCb = fn
 }
 
 // OnVisualizerRequest registers a callback for when Godot sends project map data to visualize.
@@ -198,6 +199,10 @@ func (b *GodotBridge) InvokeTool(ctx context.Context, toolName string, args map[
 	if conn == nil {
 		b.mu.Unlock()
 		return nil, fmt.Errorf("Godot is not connected")
+	}
+	if len(b.pending) >= maxPendingRequests {
+		b.mu.Unlock()
+		return nil, fmt.Errorf("too many pending requests (%d), try again later", maxPendingRequests)
 	}
 	b.pending[id] = &pendingRequest{ch: ch, toolName: toolName, start: time.Now()}
 	b.mu.Unlock()
@@ -304,11 +309,11 @@ func (b *GodotBridge) readLoop(ctx context.Context, conn *websocket.Conn) {
 			continue
 		}
 
-		b.handleMessage(msg)
+		b.handleMessage(ctx, msg)
 	}
 }
 
-func (b *GodotBridge) handleMessage(msg IncomingMessage) {
+func (b *GodotBridge) handleMessage(ctx context.Context, msg IncomingMessage) {
 	switch msg.Type {
 	case "tool_result":
 		b.handleToolResult(msg)
@@ -326,7 +331,7 @@ func (b *GodotBridge) handleMessage(msg IncomingMessage) {
 		cb := b.vizCb
 		b.mu.Unlock()
 		if cb != nil {
-			go cb(msg.Result) // Run in goroutine — viz.Serve() blocks while starting HTTP server
+			go cb(ctx, msg.Result) // Run in goroutine — viz.Serve() blocks; ctx cancels on disconnect
 		} else {
 			log.Printf("[GodotBridge] Received open_visualizer but no handler registered")
 		}
@@ -408,23 +413,24 @@ func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn) {
 
 func (b *GodotBridge) notifyConnectionChange(connected bool, info ...*GodotInfo) {
 	b.mu.Lock()
-	cbs := make([]connectionCallback, len(b.callbacks))
-	copy(cbs, b.callbacks)
+	cb := b.connCb
 	b.mu.Unlock()
+
+	if cb == nil {
+		return
+	}
 
 	var gi *GodotInfo
 	if len(info) > 0 {
 		gi = info[0]
 	}
 
-	for _, cb := range cbs {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("[GodotBridge] Connection callback panic: %v", r)
-				}
-			}()
-			cb(connected, gi)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[GodotBridge] Connection callback panic: %v", r)
+			}
 		}()
-	}
+		cb(connected, gi)
+	}()
 }

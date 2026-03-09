@@ -57,7 +57,8 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 	match tool_name:
 		# File tools
 		&"list_dir", &"read_file", &"search_project", \
-		&"create_folder", &"delete_file", &"rename_file":
+		&"create_folder", &"delete_file", &"rename_file", \
+		&"replace_in_files":
 			return _file_tools
 
 		# Scene tools

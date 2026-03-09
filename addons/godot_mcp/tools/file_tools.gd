@@ -207,11 +207,15 @@ func _collect_files_recursive(path: String, glob_filter: String, out: PackedStri
 	dir.list_dir_end()
 
 func _matches_glob(path: String, pattern: String) -> bool:
-	"""Simple glob matching: *.gd, **/*.tscn, etc."""
-	# Handle **/*.ext pattern
+	"""Simple glob matching: *.gd, **/*.tscn, **/dirname/**, etc."""
 	if pattern.begins_with("**/"):
-		var ext := pattern.substr(3)  # Remove **/
-		return path.ends_with(ext.replace("*", ""))
+		var rest := pattern.substr(3)  # Remove **/
+		# Handle **/dirname/** — directory exclusion
+		if rest.ends_with("/**"):
+			var dir_name := rest.substr(0, rest.length() - 3)
+			return ("/" + dir_name + "/") in path
+		# Handle **/*.ext — extension match anywhere
+		return path.ends_with(rest.replace("*", ""))
 
 	# Handle *.ext pattern
 	if pattern.begins_with("*."):
@@ -219,6 +223,104 @@ func _matches_glob(path: String, pattern: String) -> bool:
 
 	# Simple contains check
 	return path.find(pattern) != -1
+
+# =============================================================================
+# replace_in_files - Bulk find-and-replace across project files
+# =============================================================================
+func replace_in_files(args: Dictionary) -> Dictionary:
+	var search: String = str(args.get(&"search", ""))
+	var replace: String = str(args.get(&"replace", ""))
+	var glob_filter: String = str(args.get(&"glob", ""))
+	var exclude_patterns: Array = args.get(&"exclude", [])
+	var case_sensitive: bool = bool(args.get(&"case_sensitive", true))
+	var preview: bool = bool(args.get(&"preview", false))
+
+	if search.is_empty():
+		return {&"ok": false, &"error": "Missing 'search' parameter"}
+	if search == replace:
+		return {&"ok": false, &"error": "'search' and 'replace' are identical"}
+
+	var files := _collect_files("res://", glob_filter)
+	var search_term := search if case_sensitive else search.to_lower()
+	var modified_files: PackedStringArray = []
+	var total_replacements := 0
+
+	for file_path: String in files:
+		# Check exclude patterns
+		var excluded := false
+		for pattern: String in exclude_patterns:
+			if _matches_glob(file_path, pattern):
+				excluded = true
+				break
+		if excluded:
+			continue
+
+		var file := FileAccess.open(file_path, FileAccess.READ)
+		if file == null:
+			continue
+		var content := file.get_as_text()
+		file.close()
+
+		# Quick whole-file check
+		var check_content := content if case_sensitive else content.to_lower()
+		if check_content.find(search_term) == -1:
+			continue
+
+		# Count occurrences
+		var count := 0
+		var pos := check_content.find(search_term)
+		while pos != -1:
+			count += 1
+			pos = check_content.find(search_term, pos + search_term.length())
+
+		if count == 0:
+			continue
+
+		total_replacements += count
+		modified_files.append(file_path)
+
+		if not preview:
+			var new_content: String
+			if case_sensitive:
+				new_content = content.replace(search, replace)
+			else:
+				# Case-insensitive replace: collect segments, join once
+				var parts: PackedStringArray = []
+				var src := content
+				var src_lower := check_content
+				var idx := src_lower.find(search_term)
+				while idx != -1:
+					parts.append(src.substr(0, idx))
+					parts.append(replace)
+					src = src.substr(idx + search_term.length())
+					src_lower = src_lower.substr(idx + search_term.length())
+					idx = src_lower.find(search_term)
+				parts.append(src)
+				new_content = "".join(parts)
+
+			file = FileAccess.open(file_path, FileAccess.WRITE)
+			if file == null:
+				continue
+			file.store_string(new_content)
+			file.close()
+
+	if not preview and modified_files.size() > 0:
+		_utils.refresh_filesystem()
+
+	return {
+		&"ok": true,
+		&"search": search,
+		&"replace": replace,
+		&"files_modified": modified_files.size(),
+		&"total_replacements": total_replacements,
+		&"files": modified_files,
+		&"preview": preview,
+		&"message": "%s %d occurrence(s) across %d file(s)" % [
+			"Would replace" if preview else "Replaced",
+			total_replacements,
+			modified_files.size()
+		]
+	}
 
 static func _is_binary_ext(ext: String) -> bool:
 	match ext:

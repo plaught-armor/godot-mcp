@@ -164,31 +164,32 @@ func _parse_script(path: String) -> Dictionary:
 	for i: int in range(line_count):
 		var line: String = lines[i]
 		var stripped: String = line.strip_edges()
+		var is_indented: bool = line.begins_with("\t") or line.begins_with(" ")
 
-		# Description tag (check first 15 lines)
-		if i < 15 and description.is_empty():
-			var m := _re_desc.search(stripped)
-			if m:
-				description = m.get_string(1)
-				continue
+		# Top-level declarations only apply to non-indented lines
+		if not is_indented:
+			# Description tag (check first 15 lines)
+			if i < 15 and description.is_empty():
+				var m := _re_desc.search(stripped)
+				if m:
+					description = m.get_string(1)
+					continue
 
-		# extends
-		if extends_class.is_empty():
-			var m := _re_extends.search(stripped)
-			if m:
-				extends_class = m.get_string(1)
-				continue
+			# extends
+			if extends_class.is_empty():
+				var m := _re_extends.search(stripped)
+				if m:
+					extends_class = m.get_string(1)
+					continue
 
-		# class_name
-		if class_name_str.is_empty():
-			var m := _re_class_name.search(stripped)
-			if m:
-				class_name_str = m.get_string(1)
-				continue
+			# class_name
+			if class_name_str.is_empty():
+				var m := _re_class_name.search(stripped)
+				if m:
+					class_name_str = m.get_string(1)
+					continue
 
-		# Variables - only match top-level (not indented)
-		# Skip lines that start with tab or spaces (inside functions)
-		if not line.begins_with("\t") and not line.begins_with(" "):
+			# Variables
 			var m_var := _re_var.search(stripped)
 			if m_var:
 				var exported: bool = m_var.get_string(1) != ""
@@ -197,11 +198,9 @@ func _parse_script(path: String) -> Dictionary:
 				var var_type: String = m_var.get_string(4)
 				var default_val: String = m_var.get_string(5).strip_edges()
 
-				# Try to infer type from default value if no explicit type
 				if var_type.is_empty() and not default_val.is_empty():
 					var_type = _infer_type(default_val)
 
-				# Track variable types for signal connection resolution
 				if not var_type.is_empty():
 					var_type_map[var_name] = var_type
 
@@ -213,55 +212,56 @@ func _parse_script(path: String) -> Dictionary:
 					&"default": default_val
 				})
 
-		# Functions
-		var m_func := _re_func.search(stripped)
-		if m_func:
-			var func_name: String = m_func.get_string(1)
-			var return_type: String = m_func.get_string(3)
-			func_starts.append({&"line_idx": i, &"name": func_name})
-			functions.append({
-				&"name": func_name,
-				&"params": m_func.get_string(2).strip_edges(),
-				&"return_type": return_type,
-				&"line": i + 1,
-				&"body": ""  # filled in second pass
-			})
+			# Functions
+			var m_func := _re_func.search(stripped)
+			if m_func:
+				var func_name: String = m_func.get_string(1)
+				var return_type: String = m_func.get_string(3)
+				func_starts.append({&"line_idx": i, &"name": func_name})
+				functions.append({
+					&"name": func_name,
+					&"params": m_func.get_string(2).strip_edges(),
+					&"return_type": return_type,
+					&"line": i + 1,
+					&"body": ""  # filled in second pass
+				})
 
-		# Signals
-		var m_sig := _re_signal.search(stripped)
-		if m_sig:
-			signals_list.append({
-				&"name": m_sig.get_string(1),
-				&"params": m_sig.get_string(2).strip_edges() if m_sig.get_string(2) else ""
-			})
+			# Signals
+			var m_sig := _re_signal.search(stripped)
+			if m_sig:
+				signals_list.append({
+					&"name": m_sig.get_string(1),
+					&"params": m_sig.get_string(2).strip_edges() if m_sig.get_string(2) else ""
+				})
 
-		# Preload/load references
+		# Preload/load and connections can appear anywhere (including inside functions)
 		var m_preload := _re_preload.search(stripped)
 		if m_preload:
 			preloads.append(m_preload.get_string(1))
 
 		# Signal connections (Godot 4 style)
-		# Pattern: obj.signal.connect(...) - e.g. wave_manager.wave_started.connect(...)
-		var m_conn_obj := _re_connect_obj.search(stripped)
-		if m_conn_obj:
-			var obj_name: String = m_conn_obj.get_string(1)
-			var signal_name: String = m_conn_obj.get_string(2)
-			var target_type: String = var_type_map.get(obj_name, "")
-			connections.append({
-				&"object": obj_name,
-				&"signal": signal_name,
-				&"target": target_type,
-				&"line": i + 1
-			})
-		else:
-			# Pattern: signal.connect(...) - e.g. body_entered.connect(...)
-			var m_conn_direct := _re_connect_direct.search(stripped)
-			if m_conn_direct:
+		if stripped.find(".connect") != -1:
+			# Pattern: obj.signal.connect(...) - e.g. wave_manager.wave_started.connect(...)
+			var m_conn_obj := _re_connect_obj.search(stripped)
+			if m_conn_obj:
+				var obj_name: String = m_conn_obj.get_string(1)
+				var signal_name: String = m_conn_obj.get_string(2)
+				var target_type: String = var_type_map.get(obj_name, "")
 				connections.append({
-					&"signal": m_conn_direct.get_string(1),
-					&"target": extends_class,  # Direct signal likely from parent class
+					&"object": obj_name,
+					&"signal": signal_name,
+					&"target": target_type,
 					&"line": i + 1
 				})
+			else:
+				# Pattern: signal.connect(...) - e.g. body_entered.connect(...)
+				var m_conn_direct := _re_connect_direct.search(stripped)
+				if m_conn_direct:
+					connections.append({
+						&"signal": m_conn_direct.get_string(1),
+						&"target": extends_class,
+						&"line": i + 1
+					})
 
 	# Second pass: extract function bodies
 	for fi: int in range(func_starts.size()):
@@ -285,11 +285,7 @@ func _parse_script(path: String) -> Dictionary:
 				end_idx = check_idx
 				break
 
-		var body_lines: PackedStringArray = PackedStringArray()
-		for li: int in range(start_idx, end_idx):
-			body_lines.append(lines[li])
-
-		var body: String = "\n".join(body_lines)
+		var body: String = "\n".join(lines.slice(start_idx, end_idx))
 		# Cap body size to avoid huge payloads
 		if body.length() > 3000:
 			body = body.substr(0, 3000) + "\n# ... (truncated)"
