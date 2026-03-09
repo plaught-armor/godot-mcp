@@ -253,14 +253,12 @@ func (b *GodotBridge) handleUpgrade(ctx context.Context, w http.ResponseWriter, 
 	hasConn := b.conn != nil
 	b.mu.Unlock()
 
-	// Only accept connections from localhost origins (prevents CSWSH attacks).
-	wsOpts := &websocket.AcceptOptions{
-		OriginPatterns: []string{"localhost:*", "127.0.0.1:*"},
-	}
-
+	// Godot's WebSocketPeer doesn't send an Origin header (it's not a browser),
+	// so origin checking is not applicable here. The single-connection limit
+	// already prevents hijacking — if Godot is connected, all others are rejected.
 	if hasConn {
 		log.Printf("[GodotBridge] Rejecting connection - Godot already connected")
-		conn, err := websocket.Accept(w, r, wsOpts)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -268,7 +266,7 @@ func (b *GodotBridge) handleUpgrade(ctx context.Context, w http.ResponseWriter, 
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, wsOpts)
+	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		log.Printf("[GodotBridge] WebSocket accept error: %v", err)
 		return
