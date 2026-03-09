@@ -117,9 +117,11 @@ func create_scene(args: Dictionary) -> Dictionary:
 	root.name = root_node_name
 
 	if not attach_script_path.is_empty():
-		var script_res = load(attach_script_path)
-		if script_res:
-			root.set_script(script_res)
+		attach_script_path = _utils.validate_res_path(attach_script_path)
+		if not attach_script_path.is_empty():
+			var script_res = load(attach_script_path)
+			if script_res:
+				root.set_script(script_res)
 
 	var node_count := 0
 	for node_data: Variant in nodes:
@@ -152,9 +154,11 @@ func _create_node_recursive(data: Dictionary, parent: Node, owner: Node) -> Node
 	_set_node_properties(node, props)
 
 	if not n_script.is_empty():
-		var s = load(n_script)
-		if s:
-			node.set_script(s)
+		n_script = _utils.validate_res_path(n_script)
+		if not n_script.is_empty():
+			var s = load(n_script)
+			if s:
+				node.set_script(s)
 
 	parent.add_child(node)
 	node.owner = owner
@@ -545,6 +549,9 @@ func attach_script(args: Dictionary) -> Dictionary:
 		return {&"ok": false, &"error": "Missing 'scene_path'"}
 	if script_path.strip_edges().is_empty():
 		return {&"ok": false, &"error": "Missing 'script_path'"}
+	script_path = _utils.validate_res_path(script_path)
+	if script_path.is_empty():
+		return {&"ok": false, &"error": "script_path escapes project root"}
 
 	var result := _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -678,10 +685,10 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 
 	match texture_type:
 		"ImageTexture":
-			var tex_path: String = str(texture_params.get(&"path", ""))
+			var tex_path: String = _utils.validate_res_path(str(texture_params.get(&"path", "")))
 			if tex_path.is_empty():
 				root.queue_free()
-				return {&"ok": false, &"error": "Missing 'path' in texture_params for ImageTexture"}
+				return {&"ok": false, &"error": "Missing or invalid 'path' in texture_params for ImageTexture"}
 			texture = load(tex_path)
 			if not texture:
 				root.queue_free()

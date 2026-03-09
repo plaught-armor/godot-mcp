@@ -11,12 +11,19 @@ var _re_helper_var: RegEx
 var _re_helper_func: RegEx
 var _re_helper_class: RegEx
 var _re_helper_signal: RegEx
+var _re_identifier: RegEx
 
 func _init() -> void:
 	_re_helper_var = RegEx.create_from_string("^(@export)?\\s*(@onready)?\\s*var\\s+")
 	_re_helper_func = RegEx.create_from_string("^func\\s+")
 	_re_helper_class = RegEx.create_from_string("^(class_name|extends)\\s+")
 	_re_helper_signal = RegEx.create_from_string("^signal\\s+")
+	_re_identifier = RegEx.create_from_string("^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+func _is_valid_identifier(name: String) -> bool:
+	"""Validate that a name is a legal GDScript identifier (prevents regex injection)."""
+	return not name.is_empty() and _re_identifier.search(name) != null
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
@@ -32,11 +39,24 @@ func _auto_format(path: String) -> void:
 	if not ProjectSettings.get_setting(&"godot_mcp/auto_format_scripts", false):
 		return
 	var cmd: String = ProjectSettings.get_setting(&"godot_mcp/script_formatter_command", "gdscript-formatter")
-	if cmd.is_empty():
+	if not _is_safe_command(cmd):
 		return
 	var abs_path := ProjectSettings.globalize_path(path)
 	var output: Array = []
 	OS.execute(cmd, [abs_path], output)
+
+
+static func _is_safe_command(cmd: String) -> bool:
+	"""Reject commands with shell metacharacters or path traversal."""
+	if cmd.is_empty():
+		return false
+	# Only allow simple command names or absolute paths to executables.
+	# Block shell operators, pipes, backticks, semicolons, etc.
+	for c: String in [";", "|", "&", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"]:
+		if cmd.find(c) != -1:
+			push_warning("[MCP] Refusing formatter command with shell metacharacter: ", cmd)
+			return false
+	return true
 
 
 # =============================================================================
@@ -327,8 +347,8 @@ func format_script(args: Dictionary) -> Dictionary:
 
 	# Run the configured formatter (formats in-place when given a file path)
 	var cmd: String = ProjectSettings.get_setting(&"godot_mcp/script_formatter_command", "gdscript-formatter")
-	if cmd.is_empty():
-		return {&"ok": false, &"error": "No formatter command configured. Set godot_mcp/script_formatter_command in Project Settings."}
+	if not _is_safe_command(cmd):
+		return {&"ok": false, &"error": "No formatter command configured or command contains unsafe characters. Set godot_mcp/script_formatter_command in Project Settings."}
 	var output: Array = []
 	var exit_code := OS.execute(cmd, [abs_path], output)
 
@@ -426,6 +446,12 @@ func modify_variable(args: Dictionary) -> Dictionary:
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "Path escapes project root"}
 
+	# Validate identifiers to prevent regex injection
+	if not old_name.is_empty() and not _is_valid_identifier(old_name):
+		return {&"ok": false, &"error": "Invalid identifier: " + old_name}
+	if not new_name.is_empty() and not _is_valid_identifier(new_name):
+		return {&"ok": false, &"error": "Invalid identifier: " + new_name}
+
 	var file := FileAccess.open(script_path, FileAccess.READ)
 	if file == null:
 		return {&"ok": false, &"error": "Cannot open file: " + script_path}
@@ -489,6 +515,12 @@ func modify_signal(args: Dictionary) -> Dictionary:
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "Path escapes project root"}
 
+	# Validate identifiers to prevent regex injection
+	if not old_name.is_empty() and not _is_valid_identifier(old_name):
+		return {&"ok": false, &"error": "Invalid signal name: " + old_name}
+	if not new_name.is_empty() and not _is_valid_identifier(new_name):
+		return {&"ok": false, &"error": "Invalid signal name: " + new_name}
+
 	var file := FileAccess.open(script_path, FileAccess.READ)
 	if file == null:
 		return {&"ok": false, &"error": "Cannot open file: " + script_path}
@@ -549,6 +581,8 @@ func modify_function(args: Dictionary) -> Dictionary:
 
 	if script_path.is_empty() or func_name.is_empty():
 		return {&"ok": false, &"error": "Missing path or function name"}
+	if not _is_valid_identifier(func_name):
+		return {&"ok": false, &"error": "Invalid function name: " + func_name}
 	script_path = _utils.validate_res_path(script_path)
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "Path escapes project root"}
@@ -591,6 +625,8 @@ func modify_function_delete(args: Dictionary) -> Dictionary:
 
 	if script_path.is_empty() or func_name.is_empty():
 		return {&"ok": false, &"error": "Missing path or function name"}
+	if not _is_valid_identifier(func_name):
+		return {&"ok": false, &"error": "Invalid function name: " + func_name}
 	script_path = _utils.validate_res_path(script_path)
 	if script_path.is_empty():
 		return {&"ok": false, &"error": "Path escapes project root"}

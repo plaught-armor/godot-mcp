@@ -4,7 +4,7 @@
 
 import {
   nodes, selectedNode, pendingDelete, setPendingDelete,
-  currentUsages, setCurrentUsages, esc
+  currentUsages, setCurrentUsages, esc, escRegex
 } from './state.js';
 import { sendCommand } from './websocket.js';
 import { highlightGDScript } from './syntax.js';
@@ -212,8 +212,8 @@ function onUfpResizeEnd() {
 
 function highlightUsageInCode(code, name) {
   const escaped = esc(code);
-  // Highlight the variable/signal/function name
-  const regex = new RegExp(`\\b(${name})\\b`, 'g');
+  // Highlight the variable/signal/function name (escape for safe regex)
+  const regex = new RegExp(`\\b(${escRegex(name)})\\b`, 'g');
   return escaped.replace(regex, '<span class="highlight">$1</span>');
 }
 
@@ -400,22 +400,24 @@ function findUsagesSmart(name, type) {
 
 function isDeclarationLine(line, name, type) {
   const trimmed = line.trim();
+  const n = escRegex(name);
   if (type === 'variable') {
     // var name, @export var name, @onready var name
-    return new RegExp(`^(@export\\s+)?(@onready\\s+)?var\\s+${name}\\b`).test(trimmed);
+    return new RegExp(`^(@export\\s+)?(@onready\\s+)?var\\s+${n}\\b`).test(trimmed);
   }
   if (type === 'signal') {
-    return new RegExp(`^signal\\s+${name}\\b`).test(trimmed);
+    return new RegExp(`^signal\\s+${n}\\b`).test(trimmed);
   }
   if (type === 'function') {
-    return new RegExp(`^func\\s+${name}\\s*\\(`).test(trimmed);
+    return new RegExp(`^func\\s+${n}\\s*\\(`).test(trimmed);
   }
   return false;
 }
 
 function isActualUsage(line, name, type, isBuiltinMethod) {
+  const n = escRegex(name);
   // Build a regex that matches the name as a word boundary
-  const namePattern = `\\b${name}\\b`;
+  const namePattern = `\\b${n}\\b`;
 
   if (!new RegExp(namePattern).test(line)) {
     return false; // Name not in line at all
@@ -425,10 +427,10 @@ function isActualUsage(line, name, type, isBuiltinMethod) {
   if (isBuiltinMethod) {
     // Exclude patterns like "ClassName.new()" or ".new()"
     // These are constructor calls, not variable usages
-    const constructorPattern = new RegExp(`\\.${name}\\s*\\(`);
+    const constructorPattern = new RegExp(`\\.${n}\\s*\\(`);
     if (constructorPattern.test(line)) {
       // Check if the name appears OUTSIDE of a constructor pattern too
-      const withoutConstructors = line.replace(new RegExp(`\\w+\\.${name}\\s*\\([^)]*\\)`, 'g'), '');
+      const withoutConstructors = line.replace(new RegExp(`\\w+\\.${n}\\s*\\([^)]*\\)`, 'g'), '');
       if (!new RegExp(namePattern).test(withoutConstructors)) {
         return false; // Only appears in constructor calls
       }
@@ -438,13 +440,13 @@ function isActualUsage(line, name, type, isBuiltinMethod) {
   // For signals, check for signal-specific patterns
   if (type === 'signal') {
     // Match: signal_name.emit(), signal_name.connect(), etc.
-    return new RegExp(`\\b${name}\\s*\\.\\s*(emit|connect|disconnect)\\b`).test(line) ||
-      new RegExp(`\\.${name}\\s*\\.\\s*(connect|emit)`).test(line);
+    return new RegExp(`\\b${n}\\s*\\.\\s*(emit|connect|disconnect)\\b`).test(line) ||
+      new RegExp(`\\.${n}\\s*\\.\\s*(connect|emit)`).test(line);
   }
 
   // For functions, match function calls
   if (type === 'function') {
-    return new RegExp(`\\b${name}\\s*\\(`).test(line);
+    return new RegExp(`\\b${n}\\s*\\(`).test(line);
   }
 
   // For variables, the name should appear as a standalone identifier

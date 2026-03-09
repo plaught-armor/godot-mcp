@@ -153,7 +153,10 @@ func buildHTML(projectDataJSON []byte) (string, error) {
 	// the ES module import.  Module imports are hoisted, so if both were in
 	// the same <script type="module">, the import would execute first and
 	// state.js would read window.__PROJECT_DATA__ before it was set.
-	dataScript := fmt.Sprintf("window.__PROJECT_DATA__ = %s;", string(projectDataJSON))
+	//
+	// Escape "</script>" inside JSON strings to prevent XSS breakout.
+	safeJSON := strings.ReplaceAll(string(projectDataJSON), "</script>", `<\/script>`)
+	dataScript := fmt.Sprintf("window.__PROJECT_DATA__ = %s;", safeJSON)
 	html = strings.Replace(html, "%%DATA%%", dataScript, 1)
 
 	return html, nil
@@ -166,12 +169,16 @@ type wsMessage struct {
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{"localhost:*", "127.0.0.1:*"},
+	})
 	if err != nil {
 		log.Printf("[visualizer] WebSocket accept error: %v", err)
 		return
 	}
 	defer conn.CloseNow()
+
+	conn.SetReadLimit(10 * 1024 * 1024) // 10 MB — match bridge limit
 
 	log.Printf("[visualizer] Browser connected via WebSocket")
 
