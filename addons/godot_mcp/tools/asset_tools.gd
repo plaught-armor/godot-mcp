@@ -77,7 +77,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 		# Fallback: try loading SVG data directly
 		image = Image.create(width, height, false, Image.FORMAT_RGBA8)
 		image.fill(Color(1, 0, 1, 1))  # Magenta fallback = something went wrong
-		print("[MCP] Warning: Could not render SVG, created fallback image")
+		print("[GMCP] Warning: Could not render SVG, created fallback image")
 
 	# Clean up temp file
 	DirAccess.remove_absolute(temp_svg_path)

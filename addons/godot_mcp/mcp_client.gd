@@ -104,20 +104,20 @@ func _attempt_connection() -> void:
 	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
 
-	print("[MCP] Connecting to ", server_url, "...")
+	print("[GMCP] Connecting to ", server_url, "...")
 	socket.outbound_buffer_size = OUTBOUND_BUFFER_SIZE
 	var err := socket.connect_to_url(server_url)
 	if err == OK:
 		set_process(true)
 	else:
-		push_error("[MCP] Failed to connect: ", err)
+		push_error("[GMCP] Failed to connect: ", err)
 		_schedule_reconnect()
 
 
 func _handle_connect() -> void:
 	_is_connected = true
 	_current_reconnect_delay = RECONNECT_DELAY # Reset backoff
-	print("[MCP] Connected to server")
+	print("[GMCP] Connected to server")
 
 	# Send godot_ready message with project info
 	_send_message(
@@ -132,7 +132,7 @@ func _handle_connect() -> void:
 
 func _handle_disconnect() -> void:
 	_is_connected = false
-	print("[MCP] Disconnected from server")
+	print("[GMCP] Disconnected from server")
 	disconnected.emit()
 
 	if _should_reconnect:
@@ -142,7 +142,7 @@ func _handle_disconnect() -> void:
 func _schedule_reconnect() -> void:
 	if not _reconnect_timer:
 		return
-	print("[MCP] Reconnecting in ", _current_reconnect_delay, " seconds...")
+	print("[GMCP] Reconnecting in ", _current_reconnect_delay, " seconds...")
 	_reconnect_timer.start(_current_reconnect_delay)
 	# Exponential backoff
 	_current_reconnect_delay = min(_current_reconnect_delay * 2, MAX_RECONNECT_DELAY)
@@ -155,7 +155,7 @@ func _on_reconnect_timer() -> void:
 func _handle_message(json_string: String) -> void:
 	var message = JSON.parse_string(json_string)
 	if message == null:
-		push_error("[MCP] Failed to parse message: ", json_string)
+		push_error("[GMCP] Failed to parse message: ", json_string)
 		return
 
 	var msg_type: String = message.get(&"type", "")
@@ -167,7 +167,7 @@ func _handle_message(json_string: String) -> void:
 			var tool_name: String = message.get(&"tool", "")
 			var args: Dictionary = message.get(&"args", { })
 			if not tool_name.begins_with("visualizer."):
-				print("[MCP] Tool request: ", tool_name, " (", request_id, ")")
+				print("[GMCP] Tool request: ", tool_name, " (", request_id, ")")
 			tool_requested.emit(request_id, tool_name, args)
 		"visualizer_status":
 			var url: String = message.get(&"url", "")
@@ -177,7 +177,7 @@ func _handle_message(json_string: String) -> void:
 			else:
 				visualizer_failed.emit(err)
 		_:
-			print("[MCP] Unknown message type: ", msg_type)
+			print("[GMCP] Unknown message type: ", msg_type)
 
 
 func _send_message(message: Dictionary) -> void:

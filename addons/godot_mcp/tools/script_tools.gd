@@ -54,7 +54,7 @@ static func _is_safe_command(cmd: String) -> bool:
 	# Block shell operators, pipes, backticks, semicolons, etc.
 	for c: String in [";", "|", "&", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"]:
 		if cmd.find(c) != -1:
-			push_warning("[MCP] Refusing formatter command with shell metacharacter: ", cmd)
+			push_warning("[GMCP] Refusing formatter command with shell metacharacter: ", cmd)
 			return false
 	return true
 
