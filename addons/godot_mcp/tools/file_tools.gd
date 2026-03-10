@@ -93,11 +93,12 @@ func read_file(args: Dictionary) -> Dictionary:
 	var content: String
 	var line_count: int = 0
 
-	# Bulk read — single syscall for any access pattern
-	var file_size := file.get_length()
-	var read_size := mini(max_bytes, file_size)
-	var raw_content := file.get_buffer(read_size).get_string_from_utf8()
+	# Read as text — get_as_text() handles UTF-8 correctly without splitting
+	# multi-byte characters (unlike get_buffer().get_string_from_utf8())
+	var raw_content := file.get_as_text()
 	file.close()
+	if raw_content.length() > max_bytes:
+		raw_content = raw_content.left(max_bytes)
 
 	if end_line <= 0 and start_line <= 1:
 		content = raw_content
@@ -358,8 +359,12 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 
 static func _is_binary_ext(ext: String) -> bool:
 	match ext:
-		"import", "png", "jpg", "jpeg", "webp", "svg", \
-		"ogg", "wav", "mp3", "escn", "glb", "gltf", "uid":
+		"import", "png", "jpg", "jpeg", "webp", "svg", "exr", "ico", "bmp", \
+		"ogg", "wav", "mp3", "oggstr", \
+		"escn", "glb", "gltf", "obj", "fbx", "dae", \
+		"ttf", "otf", "woff", "woff2", \
+		"res", "scn", "ctex", "stex", "uid", \
+		"so", "dll", "dylib", "exe", "bin", "zip", "gz", "tar", "pck":
 			return true
 	return false
 
