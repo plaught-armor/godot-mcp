@@ -6,7 +6,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 41 tools · Interactive project visualizer · MIT license
+> Godot 4.x · 42 tools · Interactive project visualizer · MIT license
 
 ---
 
@@ -90,27 +90,27 @@ Close and reopen Claude Desktop / Cursor / your client so it picks up the new co
 
 ### 5. Restart your Godot project
 
-Hit **Restart Project** in the Godot editor. Check the **top-right corner** — you should see **MCP Connected** in green. You're ready to go.
+Hit **Restart Project** in the Godot editor. Check the **top-right corner** — you should see **GMCP: Connected** in green. You're ready to go.
 
 ---
 
 ## What Can It Do?
 
-### 41 Tools Across 5 Categories
+### 42 Tools Across 5 Categories
 
 | Category | Tools | Examples |
 |----------|-------|---------|
 | **File Operations** | 9 | Browse directories, read/create/search files, create folders, rename/delete files and folders, bulk find-and-replace |
 | **Scene Operations** | 11 | Create scenes, add/remove/move nodes, set properties, attach scripts, assign collision shapes and textures |
 | **Script Operations** | 5 | Create/edit/validate/format scripts, list all scripts |
-| **Project Tools** | 15 | Get/set project settings, input map, collision layers, console log, runtime debug errors, scene tree dumps, play/stop project, git status and commits |
+| **Project Tools** | 16 | Get/set project settings, configure input map, collision layers, console log, runtime debug errors, scene tree dumps, play/stop project, git status and commits |
 | **Asset Generation** | 1 | Generate 2D sprites from SVG |
 
 > `format_script` requires [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter) on PATH. If not found, the tool is hidden from AI clients automatically.
 
 ### Interactive Visualizer
 
-Open the visualizer from the Godot editor: **Project → Tools → MCP: Map Project**. A browser-based explorer opens at `localhost:6510`.
+Open the visualizer from the Godot editor: **Project → Tools → GMCP: Map Project**. A browser-based explorer opens at `localhost:6510`.
 
 **Script Map**
 - Force-directed graph of all scripts and their relationships
@@ -152,7 +152,7 @@ The Godot plugin adds settings under **Project → Project Settings → Godot MC
 │  AI Client   │◄────────────────►│  MCP Server  │◄─────────────►│ Godot Editor │
 │  (Claude,    │                  │  (Go binary) │   port 6505   │  (Plugin)    │
 │   Cursor)    │                  │              │               │              │
-└─────────────┘                  │  Visualizer  │               │  41 tool     │
+└─────────────┘                  │  Visualizer  │               │  42 tool     │
                                  │  HTTP :6510  │               │  handlers    │
                                  └──────┬───────┘               └──────────────┘
                                         │

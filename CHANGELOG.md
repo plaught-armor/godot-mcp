@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.1] - 2026-03-10
+
+### Added
+- **`configure_input_map` tool** — add, remove, or replace input actions with key/mouse/joypad events. Refreshes editor UI live. Blocks removal of built-in `ui_*` actions
+
+### Changed
+- Unified all log prefixes to `[GMCP]` (was mixed `[MCP]` / `[Godot MCP]`)
+- Menu item renamed to **GMCP: Map Project**
+- Status label renamed to **GMCP: Connected** / **GMCP: Disconnected**
+- Project Tools count: 15 → 16, total tools: 41 → 42
+
 ## [0.7.0] - 2026-03-10
 
 ### Added
