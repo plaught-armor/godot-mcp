@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.7.0] - 2026-03-10
+
+### Added
+- **`set_project_setting` tool** — modify any ProjectSettings value (autoloads, window size, main scene, etc.) with old/new value confirmation
+- **`create_file` tool** — create text files in the Godot project with overwrite protection and auto-created parent directories
+- **`delete_folder` tool** — delete directories with optional recursive mode and protected path safeguards (`res://`, `res://addons`, `res://addons/godot_mcp`)
+- **`git_status` tool** — show working tree status, current branch, and changed/added/deleted/renamed files
+- **`git_commit` tool** — stage specific files or all changes and commit, with path traversal protection
+
+### Changed
+- File Operations tool count: 6 → 9
+- Project Tools count: 13 → 15
+- Total tools: 36 → 41
+- Collision layer response uses `{index, value}` shape instead of flat map
+- Cached `_project_path` in ProjectTools to avoid repeated `globalize_path` calls
+
+### Fixed
+- Duplicate `var cls` declaration in `scene_tools.gd` causing parse errors
+
+### Security
+- Git commit file paths validated against `..` traversal and absolute path escapes
+- Git args use `--` separator to prevent flag injection from filenames starting with `-`
+
 ## [0.6.0] - 2026-03-04
 
 ### Added
