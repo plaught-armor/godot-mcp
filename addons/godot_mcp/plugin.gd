@@ -24,7 +24,7 @@ var _thread_running := false
 
 
 func _enter_tree() -> void:
-	print("[Godot MCP] Plugin loading...")
+	print("[GMCP] Plugin loading...")
 
 	_register_settings()
 	_mutex = Mutex.new()
@@ -43,10 +43,10 @@ func _enter_tree() -> void:
 	_mcp_client.disconnected.connect(_on_disconnected)
 	_mcp_client.tool_requested.connect(_on_tool_requested)
 	_mcp_client.visualizer_opened.connect(func(url: String):
-		print_rich("[Godot MCP] Project visualizer available at [url]%s[/url]" % url)
+		print_rich("[GMCP] Project visualizer available at [url]%s[/url]" % url)
 	)
 	_mcp_client.visualizer_failed.connect(func(err: String):
-		push_error("[Godot MCP] Visualizer failed: ", err)
+		push_error("[GMCP] Visualizer failed: ", err)
 	)
 
 	# Add status indicator and menu items to editor
@@ -56,11 +56,11 @@ func _enter_tree() -> void:
 	# Start connection
 	_mcp_client.connect_to_server()
 
-	print("[Godot MCP] Plugin loaded - connecting to MCP server...")
+	print("[GMCP] Plugin loaded - connecting to MCP server...")
 
 
 func _exit_tree() -> void:
-	print("[Godot MCP] Plugin unloading...")
+	print("[GMCP] Plugin unloading...")
 
 	# Stop accepting new work and wait for the background thread to finish
 	_thread_running = false
@@ -81,7 +81,7 @@ func _exit_tree() -> void:
 	remove_tool_menu_item("MCP: Map Project")
 	_unregister_settings()
 
-	print("[Godot MCP] Plugin unloaded")
+	print("[GMCP] Plugin unloaded")
 
 
 const SETTINGS := {
@@ -123,14 +123,14 @@ func _setup_status_indicator() -> void:
 
 
 func _on_connected() -> void:
-	print("[Godot MCP] Connected to MCP server")
+	print("[GMCP] Connected to MCP server")
 	if _status_label:
 		_status_label.text = "MCP: Connected"
 		_status_label.add_theme_color_override(&"font_color", Color.GREEN)
 
 
 func _on_disconnected() -> void:
-	print("[Godot MCP] Disconnected from MCP server")
+	print("[GMCP] Disconnected from MCP server")
 	if _status_label:
 		_status_label.text = "MCP: Disconnected"
 		_status_label.add_theme_color_override(&"font_color", Color.RED)
@@ -138,7 +138,7 @@ func _on_disconnected() -> void:
 
 func _on_tool_requested(request_id: String, tool_name: String, args: Dictionary) -> void:
 	"""Handle incoming tool request from MCP server."""
-	print("[Godot MCP] Executing tool: ", tool_name)
+	print("[GMCP] Executing tool: ", tool_name)
 
 	# Only pure-read tools go to the background thread; everything else
 	# stays on the main thread (filesystem refresh, editor UI, etc.).
@@ -194,7 +194,7 @@ func _send_result(request_id: String, result: Dictionary) -> void:
 
 func _on_map_project_pressed() -> void:
 	if not _mcp_client.is_connected_to_server():
-		push_warning("[Godot MCP] Cannot map project — not connected to MCP server")
+		push_warning("[GMCP] Cannot map project — not connected to MCP server")
 		return
 	# Run map_project on a background thread to avoid blocking the editor
 	var thread := Thread.new()
@@ -203,7 +203,7 @@ func _on_map_project_pressed() -> void:
 		if result[&"ok"]:
 			_send_visualizer_data.call_deferred(result[&"project_map"], thread)
 		else:
-			push_error("[Godot MCP] Map project failed: ", result[&"error"])
+			push_error("[GMCP] Map project failed: ", result[&"error"])
 			_cleanup_thread.call_deferred(thread)
 	)
 

@@ -35,7 +35,7 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 		return {&"ok": false, &"error": "Unknown tool: " + tool_name}
 
 	if not handler.has_method(tool_name):
-		push_error("[MCP] Handler has no method '%s'" % tool_name)
+		push_error("[GMCP] Handler has no method '%s'" % tool_name)
 		return {&"ok": false, &"error": "Handler missing method: " + tool_name}
 
 	var result = handler.call(tool_name, args)
@@ -44,10 +44,10 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	# don't throw — they return null. Catch that here so the Go bridge
 	# gets a proper error response instead of a 30s timeout.
 	if result == null:
-		push_error("[MCP] Tool '%s' returned null (likely a runtime error — check console above)" % tool_name)
+		push_error("[GMCP] Tool '%s' returned null (likely a runtime error — check console above)" % tool_name)
 		return {&"ok": false, &"error": "Tool crashed or returned null: " + tool_name}
 	if result is not Dictionary:
-		push_error("[MCP] Tool '%s' returned non-Dictionary: %s" % [tool_name, typeof(result)])
+		push_error("[GMCP] Tool '%s' returned non-Dictionary: %s" % [tool_name, typeof(result)])
 		return {&"ok": false, &"error": "Tool returned invalid type: " + tool_name}
 	return result
 
