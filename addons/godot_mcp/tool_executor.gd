@@ -80,7 +80,7 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 
 		# Project/debug tools
 		&"get_project_settings", &"set_project_setting", \
-		&"get_input_map", &"get_collision_layers", \
+		&"get_input_map", &"configure_input_map", &"get_collision_layers", \
 		&"get_node_properties", &"get_console_log", &"get_errors", \
 		&"get_debug_errors", &"clear_console_log", &"open_in_godot", \
 		&"scene_tree_dump", \

@@ -3,7 +3,8 @@ extends RefCounted
 class_name ProjectTools
 ## Project configuration and debug tools for MCP.
 ## Handles: get_project_settings, set_project_setting, get_input_map,
-##          get_collision_layers, get_node_properties, get_console_log,
+##          configure_input_map, get_collision_layers, get_node_properties,
+##          get_console_log,
 ##          get_errors, clear_console_log, open_in_godot, scene_tree_dump,
 ##          play_project, stop_project, is_project_running,
 ##          git_status, git_commit
@@ -112,6 +113,187 @@ func get_input_map(args: Dictionary) -> Dictionary:
 		result[action] = events
 
 	return {&"ok": true, &"actions": result, &"count": result.size()}
+
+# =============================================================================
+# configure_input_map - Add, remove, or replace input actions
+# =============================================================================
+func configure_input_map(args: Dictionary) -> Dictionary:
+	var action: String = str(args.get(&"action", ""))
+	var operation: String = str(args.get(&"operation", ""))
+
+	if action.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'action' name"}
+	if operation.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'operation'. Use: add, remove, set"}
+
+	match operation:
+		"add":
+			return _input_map_add(action, args)
+		"remove":
+			return _input_map_remove(action)
+		"set":
+			return _input_map_set(action, args)
+		_:
+			return {&"ok": false, &"error": "Unknown operation: %s. Use: add, remove, set" % operation}
+
+func _input_map_add(action: String, args: Dictionary) -> Dictionary:
+	var deadzone: float = float(args.get(&"deadzone", 0.5))
+	var events_data: Array = args.get(&"events", [])
+
+	var created := false
+	if not InputMap.has_action(action):
+		InputMap.add_action(action, deadzone)
+		created = true
+
+	var added_events: Array = []
+	var event_errors: Array = []
+	for event_desc in events_data:
+		if not event_desc is Dictionary:
+			continue
+		var result: Dictionary = _create_input_event(event_desc)
+		if result.has(&"error"):
+			event_errors.append(result[&"error"])
+			continue
+		InputMap.action_add_event(action, result[&"event"])
+		added_events.append(_describe_event(result[&"event"]))
+
+	_persist_action(action)
+	_save_and_refresh()
+	_try_refresh_input_map_ui()
+
+	var msg := "Action '%s' %s" % [action, "created" if created else "updated"]
+	if added_events.size() > 0:
+		msg += " with %d event(s)" % added_events.size()
+
+	var out: Dictionary = {&"ok": true, &"message": msg, &"events_added": added_events}
+	if event_errors.size() > 0:
+		out[&"event_errors"] = event_errors
+	return out
+
+func _input_map_remove(action: String) -> Dictionary:
+	if not InputMap.has_action(action):
+		return {&"ok": false, &"error": "Action not found: " + action}
+	if action.begins_with("ui_"):
+		return {&"ok": false, &"error": "Refusing to remove built-in action: " + action}
+
+	InputMap.erase_action(action)
+	if ProjectSettings.has_setting("input/" + action):
+		ProjectSettings.clear("input/" + action)
+	_save_and_refresh()
+	_try_refresh_input_map_ui()
+
+	return {&"ok": true, &"message": "Removed action: " + action}
+
+func _input_map_set(action: String, args: Dictionary) -> Dictionary:
+	var deadzone: float = float(args.get(&"deadzone", 0.5))
+	var events_data: Array = args.get(&"events", [])
+
+	if InputMap.has_action(action):
+		InputMap.erase_action(action)
+
+	InputMap.add_action(action, deadzone)
+
+	var added_events: Array = []
+	var event_errors: Array = []
+	for event_desc in events_data:
+		if not event_desc is Dictionary:
+			continue
+		var result: Dictionary = _create_input_event(event_desc)
+		if result.has(&"error"):
+			event_errors.append(result[&"error"])
+			continue
+		InputMap.action_add_event(action, result[&"event"])
+		added_events.append(_describe_event(result[&"event"]))
+
+	_persist_action(action)
+	_save_and_refresh()
+	_try_refresh_input_map_ui()
+
+	var out: Dictionary = {&"ok": true, &"message": "Set action '%s' with %d event(s)" % [action, added_events.size()], &"events": added_events}
+	if event_errors.size() > 0:
+		out[&"event_errors"] = event_errors
+	return out
+
+func _create_input_event(desc: Dictionary) -> Dictionary:
+	var type: String = str(desc.get(&"type", ""))
+	match type:
+		"key":
+			var key_string: String = str(desc.get(&"key", ""))
+			if key_string.is_empty():
+				return {&"error": "Missing 'key' for key event"}
+			var event := InputEventKey.new()
+			var keycode := OS.find_keycode_from_string(key_string)
+			if keycode == 0:
+				return {&"error": "Unknown key: " + key_string}
+			event.physical_keycode = keycode
+			return {&"event": event}
+		"mouse_button":
+			var button_index: int = int(desc.get(&"button_index", 0))
+			if button_index <= 0:
+				return {&"error": "Invalid 'button_index' for mouse_button (must be >= 1)"}
+			var event := InputEventMouseButton.new()
+			event.button_index = button_index
+			return {&"event": event}
+		"joypad_button":
+			var button_index: int = int(desc.get(&"button_index", -1))
+			if button_index < 0:
+				return {&"error": "Missing or invalid 'button_index' for joypad_button"}
+			var event := InputEventJoypadButton.new()
+			event.button_index = button_index
+			return {&"event": event}
+		"joypad_motion":
+			var axis: int = int(desc.get(&"axis", -1))
+			if axis < 0:
+				return {&"error": "Missing or invalid 'axis' for joypad_motion"}
+			var event := InputEventJoypadMotion.new()
+			event.axis = axis
+			event.axis_value = float(desc.get(&"axis_value", 0.0))
+			return {&"event": event}
+		_:
+			return {&"error": "Unknown event type: '%s'. Use: key, mouse_button, joypad_button, joypad_motion" % type}
+
+func _persist_action(action: String) -> void:
+	if not InputMap.has_action(action):
+		return
+	ProjectSettings.set_setting("input/" + action, {
+		"deadzone": InputMap.action_get_deadzone(action),
+		"events": InputMap.action_get_events(action)
+	})
+
+func _save_and_refresh() -> void:
+	ProjectSettings.save()
+	ProjectSettings.notify_property_list_changed()
+
+func _try_refresh_input_map_ui() -> void:
+	if not _editor_plugin:
+		return
+	var base := _editor_plugin.get_editor_interface().get_base_control()
+	var pse := _find_node_by_class(base, "ProjectSettingsEditor")
+	if not pse:
+		return
+	if pse.has_method("_update_action_map_editor"):
+		pse.call("_update_action_map_editor")
+
+func _find_node_by_class(node: Node, cls: String) -> Node:
+	if node.get_class() == cls:
+		return node
+	for child: Node in node.get_children():
+		var found := _find_node_by_class(child, cls)
+		if found:
+			return found
+	return null
+
+func _describe_event(event: InputEvent) -> String:
+	if event is InputEventKey:
+		var keycode: int = event.physical_keycode if event.physical_keycode != 0 else event.keycode
+		return "Key: " + (OS.get_keycode_string(keycode) if keycode != 0 else "Unknown")
+	elif event is InputEventMouseButton:
+		return "Mouse Button: " + str(event.button_index)
+	elif event is InputEventJoypadButton:
+		return "Joypad Button: " + str(event.button_index)
+	elif event is InputEventJoypadMotion:
+		return "Joypad Axis: %d (%.1f)" % [event.axis, event.axis_value]
+	return event.get_class()
 
 # =============================================================================
 # get_collision_layers

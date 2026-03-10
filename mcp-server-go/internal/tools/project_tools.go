@@ -57,6 +57,26 @@ var projectTools = []ToolDef{
 		},
 	},
 	{
+		Name:        "configure_input_map",
+		Description: "Add, remove, or replace input actions in the Godot InputMap. Operations: 'add' (create action or append events), 'remove' (delete action entirely), 'set' (replace action with new events). Events are objects with type ('key', 'mouse_button', 'joypad_button', 'joypad_motion') and type-specific fields.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"action":    {Type: "string", Description: `Action name (e.g. "move_left", "jump")`},
+				"operation": {Type: "string", Description: `Operation: "add", "remove", or "set"`, Enum: []string{"add", "remove", "set"}},
+				"events": {Type: "array", Description: `Array of event objects. Each has "type" plus type-specific fields: key={key:"Space"}, mouse_button={button_index:1}, joypad_button={button_index:0}, joypad_motion={axis:0, axis_value:1.0}`, Items: &Schema{Type: "object"}},
+				"deadzone": {Type: "number", Description: "Deadzone for the action (default: 0.5)"},
+			},
+			Required: []string{"action", "operation"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":      true,
+				"message": "Mock: Would configure input action " + str(args["action"]),
+			})
+		},
+	},
+	{
 		Name:        "get_collision_layers",
 		Description: "Return named 2D/3D physics collision layers from ProjectSettings.",
 		InputSchema: &Schema{
