@@ -843,7 +843,7 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 
 	# Get inheritance chain
 	var chain: Array = []
-	var cls: String = node_type
+	cls = node_type
 	while cls != "":
 		chain.append(cls)
 		cls = ClassDB.get_parent_class(cls)

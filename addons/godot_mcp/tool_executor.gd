@@ -56,9 +56,9 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 	"""Match a tool name to its handler."""
 	match tool_name:
 		# File tools
-		&"list_dir", &"read_file", &"search_project", \
-		&"create_folder", &"delete_file", &"rename_file", \
-		&"replace_in_files":
+		&"list_dir", &"read_file", &"create_file", &"search_project", \
+		&"create_folder", &"delete_file", &"delete_folder", \
+		&"rename_file", &"replace_in_files":
 			return _file_tools
 
 		# Scene tools
@@ -79,11 +79,13 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 			return _script_tools
 
 		# Project/debug tools
-		&"get_project_settings", &"get_input_map", &"get_collision_layers", \
+		&"get_project_settings", &"set_project_setting", \
+		&"get_input_map", &"get_collision_layers", \
 		&"get_node_properties", &"get_console_log", &"get_errors", \
 		&"get_debug_errors", &"clear_console_log", &"open_in_godot", \
 		&"scene_tree_dump", \
-		&"play_project", &"stop_project", &"is_project_running":
+		&"play_project", &"stop_project", &"is_project_running", \
+		&"git_status", &"git_commit":
 			return _project_tools
 
 		# Asset tools

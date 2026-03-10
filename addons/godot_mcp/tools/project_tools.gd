@@ -2,10 +2,11 @@
 extends RefCounted
 class_name ProjectTools
 ## Project configuration and debug tools for MCP.
-## Handles: get_project_settings, get_input_map, get_collision_layers,
-##          get_node_properties, get_console_log, get_errors, clear_console_log,
-##          open_in_godot, scene_tree_dump, play_project, stop_project,
-##          is_project_running
+## Handles: get_project_settings, set_project_setting, get_input_map,
+##          get_collision_layers, get_node_properties, get_console_log,
+##          get_errors, clear_console_log, open_in_godot, scene_tree_dump,
+##          play_project, stop_project, is_project_running,
+##          git_status, git_commit
 
 var _editor_plugin: EditorPlugin = null
 
@@ -16,6 +17,7 @@ var _editor_log_rtl: RichTextLabel = null
 var _clear_char_offset: int = 0
 
 var _utils: ToolUtils
+var _project_path := ProjectSettings.globalize_path("res://")
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
@@ -56,6 +58,28 @@ func get_project_settings(args: Dictionary) -> Dictionary:
 		if vsync != null: out[&"vsync"] = str(vsync)
 
 	return {&"ok": true, &"settings": out}
+
+# =============================================================================
+# set_project_setting
+# =============================================================================
+func set_project_setting(args: Dictionary) -> Dictionary:
+	var setting: String = str(args.get(&"setting", ""))
+	if setting.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'setting'"}
+	if not args.has(&"value"):
+		return {&"ok": false, &"error": "Missing 'value'"}
+
+	var old_value = ProjectSettings.get_setting(setting) if ProjectSettings.has_setting(setting) else null
+	var new_value = args[&"value"]
+
+	ProjectSettings.set_setting(setting, new_value)
+	var save_err := ProjectSettings.save()
+	if save_err != OK:
+		return {&"ok": false, &"error": "Failed to save project settings (error %d)" % save_err}
+
+	return {&"ok": true, &"setting": setting,
+		&"old_value": _utils.serialize_value(old_value),
+		&"new_value": _utils.serialize_value(new_value)}
 
 # =============================================================================
 # get_input_map
@@ -101,9 +125,8 @@ func _collect_layers(prefix: String) -> Array:
 	var out: Array = []
 	for i: int in range(1, 33):
 		var key := "%s/layer_%d" % [prefix, i]
-		var layer_name := str(ProjectSettings.get_setting(key, ""))
-		if not layer_name.is_empty():
-			out.append({&"index": i, &"name": layer_name})
+		if ProjectSettings.has_setting(key):
+			out.append({&"index": i, &"value": ProjectSettings.get_setting(key)})
 	return out
 
 # =============================================================================
@@ -543,3 +566,104 @@ func is_project_running(_args: Dictionary) -> Dictionary:
 	var ei = _editor_plugin.get_editor_interface()
 	var running: bool = ei.is_playing_scene()
 	return {&"ok": true, &"running": running}
+
+# =============================================================================
+# git_status - Show working tree status
+# =============================================================================
+func git_status(_args: Dictionary) -> Dictionary:
+	var project_path := _project_path
+	var output: Array = []
+	var exit_code := OS.execute("git", ["-C", project_path, "status", "--porcelain"], output)
+	if exit_code != 0:
+		return {&"ok": false, &"error": "git status failed (exit %d). Is this a git repo?" % exit_code}
+
+	var raw: String = output[0] if output.size() > 0 else ""
+	var files: Array = []
+	for line: String in raw.split("\n"):
+		if line.strip_edges().is_empty():
+			continue
+		if line.length() < 4:
+			continue
+		var status := line.substr(0, 2).strip_edges()
+		var file_path := line.substr(3).strip_edges()
+		# Handle renames (old -> new)
+		if " -> " in file_path:
+			file_path = file_path.split(" -> ")[1]
+		var label := "changed"
+		match status:
+			"??", "A", "AM":
+				label = "added"
+			"M", "MM":
+				label = "modified"
+			"D":
+				label = "deleted"
+			"R", "RM":
+				label = "renamed"
+		files.append({&"path": file_path, &"status": label})
+
+	# Also get current branch
+	var branch_output: Array = []
+	OS.execute("git", ["-C", project_path, "rev-parse", "--abbrev-ref", "HEAD"], branch_output)
+	var branch: String = branch_output[0].strip_edges() if branch_output.size() > 0 else "unknown"
+
+	return {&"ok": true, &"branch": branch, &"files": files,
+		&"file_count": files.size(),
+		&"clean": files.size() == 0}
+
+# =============================================================================
+# git_commit - Stage files and commit
+# =============================================================================
+func git_commit(args: Dictionary) -> Dictionary:
+	var message: String = str(args.get(&"message", ""))
+	var files: Array = args.get(&"files", [])
+	var stage_all: bool = bool(args.get(&"all", false))
+
+	if message.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'message'"}
+
+	var project_path := _project_path
+
+	# Stage files
+	if stage_all:
+		var output: Array = []
+		var exit_code := OS.execute("git", ["-C", project_path, "add", "-A"], output)
+		if exit_code != 0:
+			return {&"ok": false, &"error": "git add -A failed (exit %d)" % exit_code}
+	elif files.size() > 0:
+		var git_args: PackedStringArray = ["-C", project_path, "add", "--"]
+		for f: String in files:
+			# Convert res:// paths to relative paths
+			if f.begins_with("res://"):
+				f = f.substr(6)  # strip "res://"
+			# Block path traversal outside project
+			if ".." in f or f.begins_with("/"):
+				return {&"ok": false, &"error": "File path escapes project: " + f}
+			git_args.append(f)
+		var output: Array = []
+		var exit_code := OS.execute("git", git_args, output)
+		if exit_code != 0:
+			return {&"ok": false, &"error": "git add failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""]}
+	else:
+		return {&"ok": false, &"error": "No files specified. Provide 'files' array or set 'all' to true."}
+
+	# Commit
+	var commit_output: Array = []
+	var commit_code := OS.execute("git", ["-C", project_path, "commit", "-m", message], commit_output)
+	if commit_code != 0:
+		var err_text: String = commit_output[0] if commit_output.size() > 0 else "unknown error"
+		return {&"ok": false, &"error": "git commit failed (exit %d): %s" % [commit_code, err_text.strip_edges()]}
+
+	# Parse commit hash from output
+	var output_text: String = commit_output[0] if commit_output.size() > 0 else ""
+	var commit_hash := ""
+	# Output format: "[branch hash] message"
+	var bracket_start := output_text.find("[")
+	var bracket_end := output_text.find("]", bracket_start)
+	if bracket_start != -1 and bracket_end > bracket_start:
+		var inside := output_text.substr(bracket_start + 1, bracket_end - bracket_start - 1)
+		var parts := inside.split(" ")
+		if parts.size() >= 2:
+			commit_hash = parts[1]
+
+	return {&"ok": true, &"message": message, &"commit": commit_hash,
+		&"output": output_text.strip_edges()}

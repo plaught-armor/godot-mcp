@@ -2,8 +2,8 @@
 extends RefCounted
 class_name FileTools
 ## File operation tools for MCP.
-## Handles: list_dir, read_file, search_project,
-##          create_folder, delete_file, rename_file
+## Handles: list_dir, read_file, create_file, search_project,
+##          create_folder, delete_file, delete_folder, rename_file
 
 const DEFAULT_MAX_BYTES := 200_000
 const DEFAULT_MAX_RESULTS := 200
@@ -118,6 +118,40 @@ func read_file(args: Dictionary) -> Dictionary:
 		&"line_count": line_count,
 		&"range": [start_line, end_line] if end_line > 0 else null
 	}
+
+# =============================================================================
+# create_file - Create or overwrite a text file
+# =============================================================================
+func create_file(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get(&"path", ""))
+	var content: String = str(args.get(&"content", ""))
+	var overwrite: bool = bool(args.get(&"overwrite", false))
+
+	if path.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'path'"}
+
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
+
+	if FileAccess.file_exists(path) and not overwrite:
+		return {&"ok": false, &"error": "File already exists: " + path + ". Set overwrite=true to replace."}
+
+	# Ensure parent directory exists
+	var dir_path := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(dir_path):
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return {&"ok": false, &"error": "Cannot create file: " + path}
+	file.store_string(content)
+	file.close()
+
+	_utils.refresh_filesystem()
+
+	return {&"ok": true, &"path": path, &"line_count": content.count("\n") + 1,
+		&"message": "File created: " + path}
 
 # =============================================================================
 # search_project - Search for text in project files
@@ -384,6 +418,78 @@ func delete_file(args: Dictionary) -> Dictionary:
 	_utils.refresh_filesystem()
 
 	return {&"ok": true, &"path": path, &"message": "File deleted" + (" (backup created)" if create_backup else "")}
+
+# =============================================================================
+# delete_folder - Delete an empty directory
+# =============================================================================
+func delete_folder(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get(&"path", ""))
+	var confirm: bool = bool(args.get(&"confirm", false))
+	var recursive: bool = bool(args.get(&"recursive", false))
+
+	if path.strip_edges().is_empty():
+		return {&"ok": false, &"error": "Missing 'path'"}
+	if not confirm:
+		return {&"ok": false, &"error": "Must set confirm=true to delete"}
+
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return {&"ok": false, &"error": "Path escapes project root"}
+	if path == "res://" or path == "res://addons" or path == "res://addons/godot_mcp":
+		return {&"ok": false, &"error": "Refusing to delete protected directory: " + path}
+
+	if not DirAccess.dir_exists_absolute(path):
+		return {&"ok": false, &"error": "Directory not found: " + path}
+
+	if recursive:
+		var removed := _remove_dir_recursive(path)
+		if not removed:
+			return {&"ok": false, &"error": "Failed to remove directory recursively: " + path}
+	else:
+		# Only delete if empty
+		var dir := DirAccess.open(path)
+		if dir == null:
+			return {&"ok": false, &"error": "Cannot open directory: " + path}
+		dir.list_dir_begin()
+		var has_contents := false
+		var name := dir.get_next()
+		while name != "":
+			if not name.begins_with("."):
+				has_contents = true
+				break
+			name = dir.get_next()
+		dir.list_dir_end()
+		if has_contents:
+			return {&"ok": false, &"error": "Directory is not empty. Use recursive=true to delete contents."}
+		var err := DirAccess.remove_absolute(path)
+		if err != OK:
+			return {&"ok": false, &"error": "Failed to delete directory: " + str(err)}
+
+	_utils.refresh_filesystem()
+	return {&"ok": true, &"path": path,
+		&"message": "Directory deleted" + (" (recursive)" if recursive else "")}
+
+func _remove_dir_recursive(path: String) -> bool:
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return false
+	dir.list_dir_begin()
+	var name := dir.get_next()
+	while name != "":
+		if name.begins_with("."):
+			name = dir.get_next()
+			continue
+		var full_path := path.path_join(name)
+		if dir.current_is_dir():
+			if not _remove_dir_recursive(full_path):
+				return false
+		else:
+			var err := DirAccess.remove_absolute(full_path)
+			if err != OK:
+				return false
+		name = dir.get_next()
+	dir.list_dir_end()
+	return DirAccess.remove_absolute(path) == OK
 
 # =============================================================================
 # rename_file - Rename or move a file

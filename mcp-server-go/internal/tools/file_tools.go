@@ -49,6 +49,22 @@ var fileTools = []ToolDef{
 		},
 	},
 	{
+		Name:        "create_file",
+		Description: "Create a new text file in the Godot project. Use for config files, shaders, data files, etc. For GDScript files, prefer create_script_file instead.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"path":      {Type: "string", Description: "res:// path for the new file (e.g., res://data/config.json)"},
+				"content":   {Type: "string", Description: "File content to write"},
+				"overwrite": {Type: "boolean", Description: "Overwrite if file exists (default: false)"},
+			},
+			Required: []string{"path", "content"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "path": args["path"], "message": "Mock: File would be created"})
+		},
+	},
+	{
 		Name:        "search_project",
 		Description: "Search the Godot project for a substring and return file hits with line numbers. Useful for finding usages of functions, variables, or any text pattern.",
 		InputSchema: &Schema{
@@ -102,6 +118,22 @@ var fileTools = []ToolDef{
 		},
 		MockFn: func(args map[string]any) any {
 			return mockNote(map[string]any{"ok": true, "path": args["path"], "message": "Mock: File would be deleted"})
+		},
+	},
+	{
+		Name:        "delete_folder",
+		Description: "Delete a directory. By default only removes empty directories. Use recursive=true to delete a directory and all its contents. ONLY use when explicitly requested.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"path":      {Type: "string", Description: "Directory path to delete (res://path/to/folder)"},
+				"confirm":   {Type: "boolean", Description: "Must be true to proceed"},
+				"recursive": {Type: "boolean", Description: "Delete directory and all contents (default: false)"},
+			},
+			Required: []string{"path", "confirm"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "path": args["path"], "message": "Mock: Folder would be deleted"})
 		},
 	},
 	{

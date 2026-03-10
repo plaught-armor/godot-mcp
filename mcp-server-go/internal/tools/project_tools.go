@@ -21,6 +21,26 @@ var projectTools = []ToolDef{
 		},
 	},
 	{
+		Name:        "set_project_setting",
+		Description: "Set a Godot project setting. Use the full setting path (e.g. \"application/run/main_scene\", \"autoload/MyAutoload\", \"display/window/size/viewport_width\"). For autoloads, prefix the path with * for non-singleton (e.g. \"*res://scripts/my_autoload.gd\"). Set value to null to remove a setting.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"setting": {Type: "string", Description: `Full setting path (e.g. "application/run/main_scene", "autoload/GameManager")`},
+				"value":   {Description: `New value to set. Type depends on the setting (string, number, boolean, etc.). Use null to remove.`},
+			},
+			Required: []string{"setting", "value"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":        true,
+				"setting":   args["setting"],
+				"old_value": nil,
+				"new_value": args["value"],
+			})
+		},
+	},
+	{
 		Name:        "get_input_map",
 		Description: "Return the InputMap: action names mapped to events (keys, mouse, gamepad).",
 		InputSchema: &Schema{
@@ -46,7 +66,8 @@ var projectTools = []ToolDef{
 		MockFn: func(args map[string]any) any {
 			return mockNote(map[string]any{
 				"ok":        true,
-				"layers_2d": map[string]any{"1": "Player", "2": "Enemies", "3": "World"},
+				"layers_2d": []map[string]any{{"index": 1, "value": "Player"}, {"index": 2, "value": "Enemies"}, {"index": 3, "value": "World"}},
+				"layers_3d": []map[string]any{},
 			})
 		},
 	},
@@ -183,6 +204,42 @@ var projectTools = []ToolDef{
 		},
 		MockFn: func(args map[string]any) any {
 			return mockNote(map[string]any{"ok": true, "running": false})
+		},
+	},
+	{
+		Name:        "git_status",
+		Description: "Show git working tree status for the Godot project. Returns changed/added/deleted files, current branch, and whether the tree is clean.",
+		InputSchema: &Schema{
+			Type:       "object",
+			Properties: map[string]*Schema{},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":     true,
+				"branch": "main",
+				"files":  []map[string]any{{"path": "scripts/player.gd", "status": "modified"}},
+				"clean":  false,
+			})
+		},
+	},
+	{
+		Name:        "git_commit",
+		Description: "Stage files and create a git commit in the Godot project. Provide specific files to stage, or set all=true to stage everything. Does NOT push.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"message": {Type: "string", Description: "Commit message"},
+				"files":   {Type: "array", Description: "Files to stage (res:// paths or relative paths). Omit and set all=true to stage everything.", Items: &Schema{Type: "string"}},
+				"all":     {Type: "boolean", Description: "Stage all changes (git add -A). Default: false"},
+			},
+			Required: []string{"message"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":      true,
+				"message": args["message"],
+				"commit":  "abc1234",
+			})
 		},
 	},
 }

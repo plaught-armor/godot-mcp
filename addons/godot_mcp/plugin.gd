@@ -10,7 +10,7 @@ const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
 		&"list_dir", &"read_file", &"search_project", \
-		&"list_scripts", &"map_scenes":
+		&"list_scripts", &"map_scenes", &"git_status":
 			return true
 	return false
 
