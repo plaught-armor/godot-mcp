@@ -18,6 +18,7 @@ jobs:
             | grep -oP '"browser_download_url":\s*"\K[^"]*linux-x86_64\.zip')
           curl -sL "$DOWNLOAD_URL" -o formatter.zip
           unzip formatter.zip
+          mv gdscript-formatter-*-linux-x86_64 gdscript-formatter
           chmod +x gdscript-formatter
 
       - name: Check formatting
