@@ -1,0 +1,27 @@
+name: GDScript
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download GDScript formatter
+        run: |
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/GDQuest/GDScript-formatter/releases/latest \
+            | grep -oP '"browser_download_url":\s*"\K[^"]*linux-x86_64\.zip')
+          curl -sL "$DOWNLOAD_URL" -o formatter.zip
+          unzip formatter.zip
+          chmod +x gdscript-formatter
+
+      - name: Check formatting
+        run: find . -name "*.gd" -not -path "./.godot/*" -exec ./gdscript-formatter --check {} +
+
+      - name: Lint
+        run: find . -name "*.gd" -not -path "./.godot/*" -exec ./gdscript-formatter lint {} +
