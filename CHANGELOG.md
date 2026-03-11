@@ -5,6 +5,7 @@
 ### Fixed
 - **UTF-8 corruption in `read_file`** — replaced `get_buffer().get_string_from_utf8()` with `get_as_text()` to prevent splitting multi-byte characters at byte boundaries. Truncation now uses character count instead of byte count
 - **Binary file filter expanded** — `search_project` and `replace_in_files` now skip fonts (`.ttf`, `.otf`), compiled resources (`.res`, `.scn`, `.ctex`), archives (`.zip`, `.pck`), native libraries, and additional asset formats
+- **`get_debug_errors` tree lookup fixed** — ancestor walk in `_find_error_tree` stopped too early when the error Tree was a direct child of the `Errors` tab, never matching the name check
 
 ## [0.7.1] - 2026-03-10
 

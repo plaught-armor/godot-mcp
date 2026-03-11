@@ -602,14 +602,13 @@ func _find_error_tree(node: Node) -> Tree:
 	"""Find the error Tree (2 columns) inside ScriptEditorDebugger."""
 	for child: Node in node.get_children():
 		if child is Tree and child.get_columns() == 2:
-			# Verify it looks like the error tree by checking if parent
-			# or grandparent tab has "Error" in its name
-			var parent := child.get_parent()
-			while parent and parent != node:
-				if parent.name.containsn("error"):
+			# Check if this tree or any ancestor has "error" in its name
+			var ancestor := child.get_parent()
+			while ancestor:
+				if ancestor.name.containsn("error"):
 					return child
-				parent = parent.get_parent()
-			# Fallback: return first 2-column tree we find
+				ancestor = ancestor.get_parent()
+			# Fallback: first 2-column tree
 			if not _debugger_error_tree:
 				_debugger_error_tree = child
 		var found := _find_error_tree(child)
