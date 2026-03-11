@@ -6,11 +6,16 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Download GDScript formatter
         run: |
@@ -21,8 +26,16 @@ jobs:
           mv gdscript-formatter-*-linux-x86_64 gdscript-formatter
           chmod +x gdscript-formatter
 
-      - name: Check formatting
-        run: find . -name "*.gd" -not -path "./.godot/*" -exec ./gdscript-formatter --check {} +
+      - name: Format
+        run: find . -name "*.gd" -not -path "./.godot/*" -exec ./gdscript-formatter {} +
+
+      - name: Commit formatting fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --staged --quiet || git commit -m "style: auto-format GDScript files"
+          git push
 
       - name: Lint
         run: find . -name "*.gd" -not -path "./.godot/*" -exec ./gdscript-formatter lint {} +
