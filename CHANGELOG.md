@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.7.3] - 2026-03-11
+
+### Fixed
+- **`get_debug_errors` tree lookup fixed** — ancestor walk in `_find_error_tree` stopped too early when the error Tree was a direct child of the `Errors` tab, never matching the name check
+
 ## [0.7.2] - 2026-03-10
 
 ### Fixed
