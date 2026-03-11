@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+
 class_name VisualizerTools
 ## Crawls a Godot project and parses all GDScript files to build a project map.
 
@@ -24,6 +25,7 @@ var _re_node: RegEx
 var _re_node_instance: RegEx
 var _re_script_ref: RegEx
 
+
 func _init() -> void:
 	_re_desc = RegEx.create_from_string("^##\\s*@desc:\\s*(.+)")
 	_re_extends = RegEx.create_from_string("^extends\\s+(\\w+)")
@@ -41,11 +43,14 @@ func _init() -> void:
 	_re_node_instance = RegEx.create_from_string('\\[node name="([^"]+)".*instance=ExtResource\\("([^"]+)"\\)')
 	_re_script_ref = RegEx.create_from_string('script = ExtResource\\("([^"]+)"\\)')
 
+
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
+
 func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
+
 
 func map_project(args: Dictionary) -> Dictionary:
 	"""Crawl the entire project and build a structural map of all scripts."""
@@ -53,18 +58,18 @@ func map_project(args: Dictionary) -> Dictionary:
 	var include_addons: bool = bool(args.get(&"include_addons", false))
 
 	if root_path.is_empty():
-		return {&"ok": false, &"error": "Path escapes project root"}
+		return { &"ok": false, &"error": "Path escapes project root" }
 
 	# Collect all .gd files
 	var script_paths: PackedStringArray = []
 	_collect_scripts(root_path, script_paths, include_addons)
 
 	if script_paths.is_empty():
-		return {&"ok": false, &"error": "No GDScript files found in " + root_path}
+		return { &"ok": false, &"error": "No GDScript files found in " + root_path }
 
 	# Parse each script
 	var nodes: Array = []
-	var class_map: Dictionary = {}  # class_name -> path
+	var class_map: Dictionary = { } # class_name -> path
 
 	for path: String in script_paths:
 		var info: Dictionary = _parse_script(path)
@@ -80,18 +85,18 @@ func map_project(args: Dictionary) -> Dictionary:
 		# extends relationship (resolve class_name to path)
 		var extends_class: String = node[&"extends"]
 		if extends_class in class_map:
-			edges.append({&"from": from_path, &"to": class_map[extends_class], &"type": "extends"})
+			edges.append({ &"from": from_path, &"to": class_map[extends_class], &"type": "extends" })
 
 		# preload/load references
 		for ref: String in node[&"preloads"]:
 			if ref.ends_with(".gd"):
-				edges.append({&"from": from_path, &"to": ref, &"type": "preload"})
+				edges.append({ &"from": from_path, &"to": ref, &"type": "preload" })
 
 		# signal connections
 		for conn: Dictionary in node[&"connections"]:
 			var target: String = conn[&"target"]
 			if target in class_map:
-				edges.append({&"from": from_path, &"to": class_map[target], &"type": "signal", &"signal_name": conn[&"signal"]})
+				edges.append({ &"from": from_path, &"to": class_map[target], &"type": "signal", &"signal_name": conn[&"signal"] })
 
 	return {
 		&"ok": true,
@@ -99,11 +104,13 @@ func map_project(args: Dictionary) -> Dictionary:
 			&"nodes": nodes,
 			&"edges": edges,
 			&"total_scripts": nodes.size(),
-			&"total_connections": edges.size()
-		}
+			&"total_connections": edges.size(),
+		},
 	}
 
+
 const MAX_TRAVERSAL_DEPTH := 20
+
 
 func _collect_scripts(path: String, results: PackedStringArray, include_addons: bool, depth: int = 0) -> void:
 	"""Recursively collect all .gd files."""
@@ -133,12 +140,19 @@ func _collect_scripts(path: String, results: PackedStringArray, include_addons: 
 		name = dir.get_next()
 	dir.list_dir_end()
 
+
 func _parse_script(path: String) -> Dictionary:
 	"""Parse a GDScript file and extract its structure."""
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return {&"path": path, &"error": "Cannot open file",
-			&"class_name": "", &"extends": "", &"preloads": [], &"connections": []}
+		return {
+			&"path": path,
+			&"error": "Cannot open file",
+			&"class_name": "",
+			&"extends": "",
+			&"preloads": [],
+			&"connections": [],
+		}
 
 	var content: String = file.get_as_text()
 	file.close()
@@ -156,10 +170,10 @@ func _parse_script(path: String) -> Dictionary:
 	var connections: Array = []
 
 	# Map of variable names to their types (for resolving signal connections)
-	var var_type_map: Dictionary = {}
+	var var_type_map: Dictionary = { }
 
 	# First pass: extract metadata and find function boundaries
-	var func_starts: Array = []  # [{line_idx, name}]
+	var func_starts: Array = [] # [{line_idx, name}]
 
 	for i: int in range(line_count):
 		var line: String = lines[i]
@@ -204,35 +218,41 @@ func _parse_script(path: String) -> Dictionary:
 				if not var_type.is_empty():
 					var_type_map[var_name] = var_type
 
-				variables.append({
-					&"name": var_name,
-					&"type": var_type,
-					&"exported": exported,
-					&"onready": onready,
-					&"default": default_val
-				})
+				variables.append(
+					{
+						&"name": var_name,
+						&"type": var_type,
+						&"exported": exported,
+						&"onready": onready,
+						&"default": default_val,
+					},
+				)
 
 			# Functions
 			var m_func := _re_func.search(stripped)
 			if m_func:
 				var func_name: String = m_func.get_string(1)
 				var return_type: String = m_func.get_string(3)
-				func_starts.append({&"line_idx": i, &"name": func_name})
-				functions.append({
-					&"name": func_name,
-					&"params": m_func.get_string(2).strip_edges(),
-					&"return_type": return_type,
-					&"line": i + 1,
-					&"body": ""  # filled in second pass
-				})
+				func_starts.append({ &"line_idx": i, &"name": func_name })
+				functions.append(
+					{
+						&"name": func_name,
+						&"params": m_func.get_string(2).strip_edges(),
+						&"return_type": return_type,
+						&"line": i + 1,
+						&"body": "", # filled in second pass
+					},
+				)
 
 			# Signals
 			var m_sig := _re_signal.search(stripped)
 			if m_sig:
-				signals_list.append({
-					&"name": m_sig.get_string(1),
-					&"params": m_sig.get_string(2).strip_edges() if m_sig.get_string(2) else ""
-				})
+				signals_list.append(
+					{
+						&"name": m_sig.get_string(1),
+						&"params": m_sig.get_string(2).strip_edges() if m_sig.get_string(2) else "",
+					},
+				)
 
 		# Preload/load and connections can appear anywhere (including inside functions)
 		var m_preload := _re_preload.search(stripped)
@@ -247,21 +267,25 @@ func _parse_script(path: String) -> Dictionary:
 				var obj_name: String = m_conn_obj.get_string(1)
 				var signal_name: String = m_conn_obj.get_string(2)
 				var target_type: String = var_type_map.get(obj_name, "")
-				connections.append({
-					&"object": obj_name,
-					&"signal": signal_name,
-					&"target": target_type,
-					&"line": i + 1
-				})
+				connections.append(
+					{
+						&"object": obj_name,
+						&"signal": signal_name,
+						&"target": target_type,
+						&"line": i + 1,
+					},
+				)
 			else:
 				# Pattern: signal.connect(...) - e.g. body_entered.connect(...)
 				var m_conn_direct := _re_connect_direct.search(stripped)
 				if m_conn_direct:
-					connections.append({
-						&"signal": m_conn_direct.get_string(1),
-						&"target": extends_class,
-						&"line": i + 1
-					})
+					connections.append(
+						{
+							&"signal": m_conn_direct.get_string(1),
+							&"target": extends_class,
+							&"line": i + 1,
+						},
+					)
 
 	# Second pass: extract function bodies
 	for fi: int in range(func_starts.size()):
@@ -309,8 +333,9 @@ func _parse_script(path: String) -> Dictionary:
 		&"functions": functions,
 		&"signals": signals_list,
 		&"preloads": preloads,
-		&"connections": connections
+		&"connections": connections,
 	}
+
 
 func _infer_type(default_val: String) -> String:
 	"""Try to infer GDScript type from a default value."""
@@ -345,14 +370,14 @@ func map_scenes(args: Dictionary) -> Dictionary:
 	var include_addons: bool = bool(args.get(&"include_addons", false))
 
 	if root_path.is_empty():
-		return {&"ok": false, &"error": "Path escapes project root"}
+		return { &"ok": false, &"error": "Path escapes project root" }
 
 	# Collect all .tscn files
 	var scene_paths: PackedStringArray = []
 	_collect_scenes(root_path, scene_paths, include_addons)
 
 	if scene_paths.is_empty():
-		return {&"ok": true, &"scene_map": {&"scenes": [], &"total_scenes": 0}}
+		return { &"ok": true, &"scene_map": { &"scenes": [], &"total_scenes": 0 } }
 
 	# Parse each scene
 	var scenes: Array = []
@@ -365,15 +390,15 @@ func map_scenes(args: Dictionary) -> Dictionary:
 	for scene: Dictionary in scenes:
 		var from_path: String = scene[&"path"]
 		for instance: String in scene[&"instances"]:
-			edges.append({&"from": from_path, &"to": instance, &"type": "instance"})
+			edges.append({ &"from": from_path, &"to": instance, &"type": "instance" })
 
 	return {
 		&"ok": true,
 		&"scene_map": {
 			&"scenes": scenes,
 			&"edges": edges,
-			&"total_scenes": scenes.size()
-		}
+			&"total_scenes": scenes.size(),
+		},
 	}
 
 
@@ -410,7 +435,7 @@ func _parse_scene(path: String) -> Dictionary:
 	"""Parse a scene file and extract its structure."""
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return {&"path": path, &"error": "Cannot open file", &"instances": []}
+		return { &"path": path, &"error": "Cannot open file", &"instances": [] }
 
 	var content: String = file.get_as_text()
 	file.close()
@@ -423,7 +448,7 @@ func _parse_scene(path: String) -> Dictionary:
 
 	# Parse .tscn format
 	var lines: PackedStringArray = content.split("\n")
-	var ext_resources: Dictionary = {}  # id -> {path, type}
+	var ext_resources: Dictionary = { } # id -> {path, type}
 
 	for line: String in lines:
 		# External resources
@@ -434,7 +459,7 @@ func _parse_scene(path: String) -> Dictionary:
 			# Extract ID from the line
 			var id_match := _re_ext_id.search(line)
 			if id_match:
-				ext_resources[id_match.get_string(1)] = {&"path": res_path, &"type": res_type}
+				ext_resources[id_match.get_string(1)] = { &"path": res_path, &"type": res_type }
 				if res_type == "PackedScene":
 					instances.append(res_path)
 				elif res_type == "Script":
@@ -448,14 +473,14 @@ func _parse_scene(path: String) -> Dictionary:
 			var node_type: String = m_node.get_string(2)
 			if root_type.is_empty():
 				root_type = node_type
-			nodes.append({&"name": node_name, &"type": node_type})
+			nodes.append({ &"name": node_name, &"type": node_type })
 			continue
 
 		# Instance nodes
 		var m_inst := _re_node_instance.search(line)
 		if m_inst:
 			var node_name: String = m_inst.get_string(1)
-			nodes.append({&"name": node_name, &"type": "Instance"})
+			nodes.append({ &"name": node_name, &"type": "Instance" })
 
 	return {
 		&"path": path,
@@ -464,5 +489,5 @@ func _parse_scene(path: String) -> Dictionary:
 		&"nodes": nodes,
 		&"instances": instances,
 		&"scripts": scripts,
-		&"node_count": nodes.size()
+		&"node_count": nodes.size(),
 	}

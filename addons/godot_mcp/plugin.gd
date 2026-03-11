@@ -5,14 +5,16 @@ extends EditorPlugin
 
 const MCPClientScript = preload("res://addons/godot_mcp/mcp_client.gd")
 const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
+
+
 # Tools safe to run on a background thread (pure read, no editor API calls).
 # Everything else runs on the main thread (filesystem refresh, editor UI, etc.).
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
-		&"list_dir", &"read_file", &"search_project", \
-		&"list_scripts", &"map_scenes", &"git_status":
+		&"list_dir", &"read_file", &"search_project", &"list_scripts", &"map_scenes", &"git_status":
 			return true
 	return false
+
 
 var _mcp_client: MCPClient # MCPClient
 var _tool_executor: ToolExecutor # ToolExecutor
@@ -42,11 +44,13 @@ func _enter_tree() -> void:
 	_mcp_client.connected.connect(_on_connected)
 	_mcp_client.disconnected.connect(_on_disconnected)
 	_mcp_client.tool_requested.connect(_on_tool_requested)
-	_mcp_client.visualizer_opened.connect(func(url: String):
-		print_rich("[GMCP] Project visualizer available at [url]%s[/url]" % url)
+	_mcp_client.visualizer_opened.connect(
+		func(url: String):
+			print_rich("[GMCP] Project visualizer available at [url]%s[/url]" % url)
 	)
-	_mcp_client.visualizer_failed.connect(func(err: String):
-		push_error("[GMCP] Visualizer failed: ", err)
+	_mcp_client.visualizer_failed.connect(
+		func(err: String):
+			push_error("[GMCP] Visualizer failed: ", err)
 	)
 
 	# Add status indicator and menu items to editor
@@ -85,12 +89,20 @@ func _exit_tree() -> void:
 
 
 const SETTINGS := {
-	&"godot_mcp/auto_format_scripts": {&"type": TYPE_BOOL, &"default": false,
-		&"hint": PROPERTY_HINT_NONE, &"hint_string": "",
-		&"description": "Automatically format GDScript files after MCP tool edits."},
-	&"godot_mcp/script_formatter_command": {&"type": TYPE_STRING, &"default": "gdscript-formatter",
-		&"hint": PROPERTY_HINT_NONE, &"hint_string": "",
-		&"description": "Command to run for GDScript formatting (e.g., gdscript-formatter, gdformat)."},
+	&"godot_mcp/auto_format_scripts": {
+		&"type": TYPE_BOOL,
+		&"default": false,
+		&"hint": PROPERTY_HINT_NONE,
+		&"hint_string": "",
+		&"description": "Automatically format GDScript files after MCP tool edits.",
+	},
+	&"godot_mcp/script_formatter_command": {
+		&"type": TYPE_STRING,
+		&"default": "gdscript-formatter",
+		&"hint": PROPERTY_HINT_NONE,
+		&"hint_string": "",
+		&"description": "Command to run for GDScript formatting (e.g., gdscript-formatter, gdformat).",
+	},
 }
 
 
@@ -101,10 +113,14 @@ func _register_settings() -> void:
 			ProjectSettings.set_setting(path, info[&"default"])
 		ProjectSettings.set_initial_value(path, info[&"default"])
 		ProjectSettings.set_as_basic(path, true)
-		ProjectSettings.add_property_info({
-			&"name": path, &"type": info[&"type"],
-			&"hint": info[&"hint"], &"hint_string": info[&"hint_string"],
-		})
+		ProjectSettings.add_property_info(
+			{
+				&"name": path,
+				&"type": info[&"type"],
+				&"hint": info[&"hint"],
+				&"hint_string": info[&"hint_string"],
+			},
+		)
 
 
 func _unregister_settings() -> void:
@@ -198,13 +214,14 @@ func _on_map_project_pressed() -> void:
 		return
 	# Run map_project on a background thread to avoid blocking the editor
 	var thread := Thread.new()
-	thread.start(func():
-		var result: Dictionary = _tool_executor.execute_tool(&"map_project", {})
-		if result[&"ok"]:
-			_send_visualizer_data.call_deferred(result[&"project_map"], thread)
-		else:
-			push_error("[GMCP] Map project failed: ", result[&"error"])
-			_cleanup_thread.call_deferred(thread)
+	thread.start(
+		func():
+			var result: Dictionary = _tool_executor.execute_tool(&"map_project", { })
+			if result[&"ok"]:
+				_send_visualizer_data.call_deferred(result[&"project_map"], thread)
+			else:
+				push_error("[GMCP] Map project failed: ", result[&"error"])
+				_cleanup_thread.call_deferred(thread)
 	)
 
 

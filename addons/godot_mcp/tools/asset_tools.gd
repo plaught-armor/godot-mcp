@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+
 class_name AssetTools
 ## Asset generation tools for MCP.
 ## Handles: generate_2d_asset
@@ -7,11 +8,14 @@ class_name AssetTools
 var _editor_plugin: EditorPlugin = null
 var _utils: ToolUtils
 
+
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
+
 func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
+
 
 # =============================================================================
 # generate_2d_asset - Generate PNG from SVG code
@@ -22,9 +26,9 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var save_path: String = str(args.get(&"save_path", "res://assets/generated/"))
 
 	if svg_code.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'svg_code'"}
+		return { &"ok": false, &"error": "Missing 'svg_code'" }
 	if filename.strip_edges().is_empty():
-		return {&"ok": false, &"error": "Missing 'filename'"}
+		return { &"ok": false, &"error": "Missing 'filename'" }
 
 	# Ensure .png extension
 	if not filename.ends_with(".png"):
@@ -33,7 +37,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	# Ensure save path
 	save_path = _utils.validate_res_path(save_path)
 	if save_path.is_empty():
-		return {&"ok": false, &"error": "Save path escapes project root"}
+		return { &"ok": false, &"error": "Save path escapes project root" }
 	if not save_path.ends_with("/"):
 		save_path += "/"
 
@@ -67,7 +71,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var temp_svg_path := "user://temp_asset.svg"
 	var svg_file := FileAccess.open(temp_svg_path, FileAccess.WRITE)
 	if not svg_file:
-		return {&"ok": false, &"error": "Failed to create temp SVG file"}
+		return { &"ok": false, &"error": "Failed to create temp SVG file" }
 	svg_file.store_string(svg_code)
 	svg_file.close()
 
@@ -76,7 +80,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	if err != OK:
 		# Fallback: try loading SVG data directly
 		image = Image.create(width, height, false, Image.FORMAT_RGBA8)
-		image.fill(Color(1, 0, 1, 1))  # Magenta fallback = something went wrong
+		image.fill(Color(1, 0, 1, 1)) # Magenta fallback = something went wrong
 		print("[GMCP] Warning: Could not render SVG, created fallback image")
 
 	# Clean up temp file
@@ -87,13 +91,13 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var global_path := ProjectSettings.globalize_path(full_path)
 	err = image.save_png(global_path)
 	if err != OK:
-		return {&"ok": false, &"error": "Failed to save PNG: " + str(err)}
+		return { &"ok": false, &"error": "Failed to save PNG: " + str(err) }
 
 	_utils.refresh_filesystem()
 
 	return {
 		&"ok": true,
 		&"resource_path": full_path,
-		&"dimensions": {&"width": width, &"height": height},
-		&"message": "Generated %s (%dx%d)" % [full_path, width, height]
+		&"dimensions": { &"width": width, &"height": height },
+		&"message": "Generated %s (%dx%d)" % [full_path, width, height],
 	}

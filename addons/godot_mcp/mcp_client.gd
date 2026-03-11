@@ -1,5 +1,6 @@
 @tool
 extends Node
+
 class_name MCPClient
 ## WebSocket client for communication with the MCP server.
 ## Handles connection, reconnection, and message routing.
@@ -90,10 +91,12 @@ func send_tool_result(request_id: String, success: bool, result = null, error: S
 
 
 func send_visualizer_request(project_map: Dictionary) -> void:
-	_send_message({
-		&"type": &"open_visualizer",
-		&"result": project_map,
-	})
+	_send_message(
+		{
+			&"type": &"open_visualizer",
+			&"result": project_map,
+		},
+	)
 
 
 func is_connected_to_server() -> bool:

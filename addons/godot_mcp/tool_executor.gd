@@ -1,5 +1,6 @@
 @tool
 extends RefCounted
+
 class_name ToolExecutor
 ## Routes tool invocations to the appropriate handler.
 
@@ -32,11 +33,11 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	"""Execute a tool by name with the given arguments."""
 	var handler := _get_handler(tool_name)
 	if handler == null:
-		return {&"ok": false, &"error": "Unknown tool: " + tool_name}
+		return { &"ok": false, &"error": "Unknown tool: " + tool_name }
 
 	if not handler.has_method(tool_name):
 		push_error("[GMCP] Handler has no method '%s'" % tool_name)
-		return {&"ok": false, &"error": "Handler missing method: " + tool_name}
+		return { &"ok": false, &"error": "Handler missing method: " + tool_name }
 
 	var result = handler.call(tool_name, args)
 
@@ -45,10 +46,10 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	# gets a proper error response instead of a 30s timeout.
 	if result == null:
 		push_error("[GMCP] Tool '%s' returned null (likely a runtime error — check console above)" % tool_name)
-		return {&"ok": false, &"error": "Tool crashed or returned null: " + tool_name}
+		return { &"ok": false, &"error": "Tool crashed or returned null: " + tool_name }
 	if result is not Dictionary:
 		push_error("[GMCP] Tool '%s' returned non-Dictionary: %s" % [tool_name, typeof(result)])
-		return {&"ok": false, &"error": "Tool returned invalid type: " + tool_name}
+		return { &"ok": false, &"error": "Tool returned invalid type: " + tool_name }
 	return result
 
 
@@ -56,36 +57,19 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 	"""Match a tool name to its handler."""
 	match tool_name:
 		# File tools
-		&"list_dir", &"read_file", &"create_file", &"search_project", \
-		&"create_folder", &"delete_file", &"delete_folder", \
-		&"rename_file", &"replace_in_files":
+		&"list_dir", &"read_file", &"create_file", &"search_project", &"create_folder", &"delete_file", &"delete_folder", &"rename_file", &"replace_in_files":
 			return _file_tools
 
 		# Scene tools
-		&"create_scene", &"read_scene", &"add_node", &"remove_node", \
-		&"modify_node_property", &"rename_node", &"move_node", \
-		&"attach_script", &"detach_script", \
-		&"set_collision_shape", &"set_sprite_texture", \
-		&"get_scene_hierarchy", &"get_scene_node_properties", \
-		&"set_scene_node_property", \
-		&"duplicate_node", &"reorder_node":
+		&"create_scene", &"read_scene", &"add_node", &"remove_node", &"modify_node_property", &"rename_node", &"move_node", &"attach_script", &"detach_script", &"set_collision_shape", &"set_sprite_texture", &"get_scene_hierarchy", &"get_scene_node_properties", &"set_scene_node_property", &"duplicate_node", &"reorder_node":
 			return _scene_tools
 
 		# Script tools
-		&"create_script", &"edit_script", &"validate_script", &"list_scripts", \
-		&"create_script_file", &"modify_variable", &"modify_signal", \
-		&"modify_function", &"modify_function_delete", \
-		&"delete_script", &"rename_script", &"format_script":
+		&"create_script", &"edit_script", &"validate_script", &"list_scripts", &"create_script_file", &"modify_variable", &"modify_signal", &"modify_function", &"modify_function_delete", &"delete_script", &"rename_script", &"format_script":
 			return _script_tools
 
 		# Project/debug tools
-		&"get_project_settings", &"set_project_setting", \
-		&"get_input_map", &"configure_input_map", &"get_collision_layers", \
-		&"get_node_properties", &"get_console_log", &"get_errors", \
-		&"get_debug_errors", &"clear_console_log", &"open_in_godot", \
-		&"scene_tree_dump", \
-		&"play_project", &"stop_project", &"is_project_running", \
-		&"git_status", &"git_commit":
+		&"get_project_settings", &"set_project_setting", &"get_input_map", &"configure_input_map", &"get_collision_layers", &"get_node_properties", &"get_console_log", &"get_errors", &"get_debug_errors", &"clear_console_log", &"open_in_godot", &"scene_tree_dump", &"play_project", &"stop_project", &"is_project_running", &"git_status", &"git_commit":
 			return _project_tools
 
 		# Asset tools
