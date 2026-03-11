@@ -7,7 +7,10 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -79,15 +82,26 @@ func New(port int, timeout time.Duration) *GodotBridge {
 }
 
 // Start begins listening for Godot WebSocket connections.
+// If the port is already in use (zombie server), it kills the old process first.
 func (b *GodotBridge) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		b.handleUpgrade(ctx, w, r)
 	})
 
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", b.port))
+	addr := fmt.Sprintf(":%d", b.port)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("listen on port %d: %w", b.port, err)
+		log.Printf("[GodotBridge] Port %d in use, killing zombie process...", b.port)
+		if killErr := killProcessOnPort(b.port); killErr != nil {
+			return fmt.Errorf("port %d in use and could not kill owner: %w", b.port, killErr)
+		}
+		time.Sleep(200 * time.Millisecond)
+		ln, err = net.Listen("tcp", addr)
+		if err != nil {
+			return fmt.Errorf("listen on port %d after kill: %w", b.port, err)
+		}
+		log.Printf("[GodotBridge] Reclaimed port %d", b.port)
 	}
 
 	b.httpServer = &http.Server{Handler: mux}
@@ -438,4 +452,42 @@ func (b *GodotBridge) notifyConnectionChange(connected bool, info ...*GodotInfo)
 		}()
 		cb(connected, gi)
 	}()
+}
+
+// killProcessOnPort finds and kills the process occupying the given TCP port.
+func killProcessOnPort(port int) error {
+	portStr := strconv.Itoa(port)
+	switch runtime.GOOS {
+	case "linux":
+		out, err := exec.Command("fuser", "-k", portStr+"/tcp").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("fuser -k %s/tcp: %s (%w)", portStr, out, err)
+		}
+		return nil
+	case "darwin":
+		// macOS has no fuser — use lsof to find PID, then kill
+		out, err := exec.Command("lsof", "-ti", ":"+portStr).Output()
+		if err != nil {
+			return fmt.Errorf("lsof -ti :%s: %w", portStr, err)
+		}
+		pid := strings.TrimSpace(string(out))
+		if pid == "" {
+			return fmt.Errorf("no process found on port %s", portStr)
+		}
+		if err := exec.Command("kill", pid).Run(); err != nil {
+			return fmt.Errorf("kill %s: %w", pid, err)
+		}
+		return nil
+	case "windows":
+		// Find PID via netstat, then taskkill
+		out, err := exec.Command("cmd", "/c",
+			fmt.Sprintf("for /f \"tokens=5\" %%a in ('netstat -aon ^| findstr :%s') do taskkill /F /PID %%a", portStr),
+		).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("taskkill for port %s: %s (%w)", portStr, out, err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
+	}
 }

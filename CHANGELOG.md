@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0] - 2026-03-11
+
+### Added
+- **Auto-clear zombie port** — MCP server auto-kills stale processes occupying port 6505 on startup, then retries. Supports Linux (`fuser`), macOS (`lsof`), and Windows (`netstat`/`taskkill`)
+
+### Changed
+- **Reconnect backoff reduced** — Godot plugin max reconnect delay lowered from 30s to 15s
+- **GDScript CI workflow** — auto-format on push with commit, lint step removed
+
 ## [0.7.3] - 2026-03-11
 
 ### Fixed

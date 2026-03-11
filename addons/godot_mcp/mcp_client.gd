@@ -13,7 +13,7 @@ signal visualizer_failed(error: String)
 
 const DEFAULT_URL := "ws://127.0.0.1:6505"
 const RECONNECT_DELAY := 3.0 # seconds
-const MAX_RECONNECT_DELAY := 30.0 # max backoff
+const MAX_RECONNECT_DELAY := 15.0 # max backoff
 const MAX_PACKETS_PER_FRAME := 32
 
 var socket: WebSocketPeer = WebSocketPeer.new()
