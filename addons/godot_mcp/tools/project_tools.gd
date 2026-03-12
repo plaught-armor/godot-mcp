@@ -788,8 +788,10 @@ func play_project(args: Dictionary) -> Dictionary:
 	var ei = _editor_plugin.get_editor_interface()
 	var scene_path: String = str(args.get(&"scene_path", ""))
 
+	# Defer play calls so the tool response is sent via WebSocket before
+	# Godot launches the game (which can freeze the editor momentarily).
 	if scene_path == "current":
-		ei.play_current_scene()
+		ei.play_current_scene.call_deferred()
 		return { &"ok": true, &"message": "Playing current scene" }
 	elif not scene_path.is_empty():
 		scene_path = _utils.validate_res_path(scene_path)
@@ -797,10 +799,10 @@ func play_project(args: Dictionary) -> Dictionary:
 			return { &"ok": false, &"error": "Path escapes project root" }
 		if not FileAccess.file_exists(scene_path):
 			return { &"ok": false, &"error": "Scene not found: " + scene_path }
-		ei.play_custom_scene(scene_path)
+		ei.play_custom_scene.call_deferred(scene_path)
 		return { &"ok": true, &"message": "Playing scene: " + scene_path }
 	else:
-		ei.play_main_scene()
+		ei.play_main_scene.call_deferred()
 		return { &"ok": true, &"message": "Playing main scene" }
 
 

@@ -101,10 +101,13 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 			args = make(map[string]any)
 		}
 
+		// Check connection before invoking — only use mocks when Godot
+		// was never connected, not when it crashes mid-invocation.
+		wasConnected := b.IsConnected()
 		raw, err := b.InvokeTool(ctx, td.Name, args)
 		if err != nil {
-			if !b.IsConnected() {
-				// Godot not connected — fall back to mock
+			if !wasConnected && !b.IsConnected() {
+				// Godot was not connected before the call — fall back to mock
 				return textResult(td.MockFn(args))
 			}
 			return errorResult(td.Name, args, err, "live")

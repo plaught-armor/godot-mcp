@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.1] - 2026-03-12
+
+### Fixed
+- **`play_project` no longer crashes Godot** — play/stop calls now use `call_deferred()` so the WebSocket tool response is sent before Godot freezes to launch the game
+- **Mock fallback no longer triggers on mid-call crash** — Go server captures connection state before invoking a tool; if Godot was connected but crashes during execution, a proper error is returned instead of fake mock data
+
 ## [0.8.0] - 2026-03-11
 
 ### Added
