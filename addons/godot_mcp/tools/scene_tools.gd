@@ -36,8 +36,8 @@ func _reload_scene_in_editor(scene_path: String) -> void:
 		ei.reload_scene_from_path(scene_path)
 
 
+## Returns [code][scene_root, error_dict][/code]. If error_dict is not empty, scene_root is null.
 func _load_scene(scene_path: String) -> Array:
-	"""Returns [scene_root, error_dict]. If error_dict is not empty, scene_root is null."""
 	if not FileAccess.file_exists(scene_path):
 		return [null, { &"ok": false, &"error": "Scene does not exist: " + scene_path }]
 
@@ -52,8 +52,8 @@ func _load_scene(scene_path: String) -> Array:
 	return [root, { }]
 
 
+## Pack and save a scene. Returns error dict or empty on success.
 func _save_scene(scene_root: Node, scene_path: String) -> Dictionary:
-	"""Pack and save a scene. Returns error dict or empty on success."""
 	var packed = PackedScene.new()
 	var pack_result = packed.pack(scene_root)
 	if pack_result != OK:
@@ -76,8 +76,8 @@ func _find_node(scene_root: Node, node_path: String) -> Node:
 	return scene_root.get_node_or_null(node_path)
 
 
+## Convert dictionary-encoded types to Godot types.
 func _parse_value(value: Variant) -> Variant:
-	"""Convert dictionary-encoded types to Godot types."""
 	if value is Dictionary:
 		var t: String = value.get(&"type", "")
 		match t:
@@ -795,8 +795,8 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 # =============================================================================
 # get_scene_hierarchy (for visualizer)
 # =============================================================================
+## Get the full scene hierarchy with node information for the visualizer.
 func get_scene_hierarchy(args: Dictionary) -> Dictionary:
-	"""Get the full scene hierarchy with node information for the visualizer."""
 	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
 
 	if scene_path.is_empty() or scene_path == "res://":
@@ -813,8 +813,8 @@ func get_scene_hierarchy(args: Dictionary) -> Dictionary:
 	return { &"ok": true, &"scene_path": scene_path, &"hierarchy": hierarchy }
 
 
+## Build node hierarchy with all info needed for visualizer.
 func _build_hierarchy_recursive(node: Node, path: String) -> Dictionary:
-	"""Build node hierarchy with all info needed for visualizer."""
 	var data := {
 		&"name": str(node.name),
 		&"type": node.get_class(),
@@ -845,8 +845,8 @@ func _build_hierarchy_recursive(node: Node, path: String) -> Dictionary:
 # =============================================================================
 # get_scene_node_properties (dynamic property fetching)
 # =============================================================================
+## Get all properties of a specific node in a scene with their current values.
 func get_scene_node_properties(args: Dictionary) -> Dictionary:
-	"""Get all properties of a specific node in a scene with their current values."""
 	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 
@@ -935,8 +935,8 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 	}
 
 
+## Determine which class in the hierarchy defines this property.
 func _get_property_category(node: Node, prop_name: String) -> String:
-	"""Determine which class in the hierarchy defines this property."""
 	var cls: String = node.get_class()
 	while cls != "":
 		# Check if this class defines the property (not inherited)
@@ -951,8 +951,8 @@ func _get_property_category(node: Node, prop_name: String) -> String:
 # =============================================================================
 # set_scene_node_property (for visualizer inline editing)
 # =============================================================================
+## Set a property on a node in a scene (supports complex types).
 func set_scene_node_property(args: Dictionary) -> Dictionary:
-	"""Set a property on a node in a scene (supports complex types)."""
 	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
 	var node_path: String = str(args.get(&"node_path", "."))
 	var property_name: String = str(args.get(&"property_name", ""))
@@ -996,8 +996,8 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 	}
 
 
+## Parse a value based on its type hint.
 func _parse_typed_value(value: Variant, type_hint: int) -> Variant:
-	"""Parse a value based on its type hint."""
 	if type_hint == -1:
 		return _parse_value(value)
 

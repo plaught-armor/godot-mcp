@@ -23,8 +23,8 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 # =============================================================================
 
 
+## Tell Godot to rescan the filesystem.
 func refresh_filesystem() -> void:
-	"""Tell Godot to rescan the filesystem."""
 	if _editor_plugin:
 		_editor_plugin.get_editor_interface().get_resource_filesystem().scan()
 	elif Engine.is_editor_hint():
@@ -39,8 +39,8 @@ func ensure_res_path(path: String) -> String:
 	return path
 
 
+## Return a safe [code]res://[/code] path, or empty string if it escapes the project root.
 func validate_res_path(path: String) -> String:
-	"""Return a safe res:// path, or empty string if it escapes the project root."""
 	path = ensure_res_path(path)
 	var abs := ProjectSettings.globalize_path(path)
 	var root := ProjectSettings.globalize_path("res://")
@@ -53,8 +53,8 @@ func validate_res_path(path: String) -> String:
 # =============================================================================
 
 
+## Serialize Godot types to JSON-friendly dictionaries.
 func serialize_value(value: Variant) -> Variant:
-	"""Serialize Godot types to JSON-friendly dictionaries."""
 	match typeof(value):
 		TYPE_VECTOR2:
 			return { &"type": &"Vector2", &"x": value.x, &"y": value.y }
@@ -80,8 +80,8 @@ func serialize_value(value: Variant) -> Variant:
 # =============================================================================
 
 
+## Convert Godot type ID to human-readable name.
 func type_id_to_name(type_id: int) -> String:
-	"""Convert Godot type ID to human-readable name."""
 	match type_id:
 		TYPE_NIL:
 			return "null"
@@ -167,8 +167,8 @@ func type_id_to_name(type_id: int) -> String:
 # =============================================================================
 
 
+## Recursively find first child node matching the given class name.
 func find_node_by_class(root: Node, cls_name: String) -> Node:
-	"""Recursively find first child node matching the given class name."""
 	if root.get_class() == cls_name:
 		return root
 	for child: Node in root.get_children():
@@ -178,8 +178,8 @@ func find_node_by_class(root: Node, cls_name: String) -> Node:
 	return null
 
 
+## Recursively find first [RichTextLabel] descendant.
 func find_child_rtl(node: Node) -> RichTextLabel:
-	"""Recursively find first RichTextLabel descendant."""
 	for child: Node in node.get_children():
 		if child is RichTextLabel:
 			return child

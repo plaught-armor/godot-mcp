@@ -222,8 +222,8 @@ func search_project(args: Dictionary) -> Dictionary:
 	}
 
 
+## Recursively collect all searchable files.
 func _collect_files(path: String, glob_filter: String) -> PackedStringArray:
-	"""Recursively collect all searchable files."""
 	var result: PackedStringArray = []
 	_collect_files_recursive(path, glob_filter, result)
 	return result
@@ -257,8 +257,8 @@ func _collect_files_recursive(path: String, glob_filter: String, out: PackedStri
 	dir.list_dir_end()
 
 
+## Simple glob matching: [code]*.gd[/code], [code]**/*.tscn[/code], [code]**/dirname/**[/code], etc.
 func _matches_glob(path: String, pattern: String) -> bool:
-	"""Simple glob matching: *.gd, **/*.tscn, **/dirname/**, etc."""
 	if pattern.begins_with("**/"):
 		var rest := pattern.substr(3) # Remove **/
 		# Handle **/dirname/** — directory exclusion

@@ -29,8 +29,8 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 			tool_node.set_editor_plugin(plugin)
 
 
+## Execute a tool by name with the given arguments.
 func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
-	"""Execute a tool by name with the given arguments."""
 	var handler := _get_handler(tool_name)
 	if handler == null:
 		return { &"ok": false, &"error": "Unknown tool: " + tool_name }
@@ -53,8 +53,8 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	return result
 
 
+## Match a tool name to its handler.
 func _get_handler(tool_name: StringName) -> RefCounted:
-	"""Match a tool name to its handler."""
 	match tool_name:
 		# File tools
 		&"list_dir", &"read_file", &"create_file", &"search_project", &"create_folder", &"delete_file", &"delete_folder", &"rename_file", &"replace_in_files":
@@ -83,8 +83,8 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 	return null
 
 
+## Initialize all tool handlers. Called from [method set_editor_plugin].
 func _init_tools() -> void:
-	"""Initialize all tool handlers. Called from set_editor_plugin."""
 	if _initialized:
 		return
 	_initialized = true

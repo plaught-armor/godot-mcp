@@ -23,8 +23,8 @@ func _init() -> void:
 	_re_identifier = RegEx.create_from_string("^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
+## Validate that a name is a legal GDScript identifier (prevents regex injection).
 func _is_valid_identifier(name: String) -> bool:
-	"""Validate that a name is a legal GDScript identifier (prevents regex injection)."""
 	return not name.is_empty() and _re_identifier.search(name) != null
 
 
@@ -39,8 +39,8 @@ func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
 
 
+## Run the configured formatter on a script file if auto-format is enabled.
 func _auto_format(path: String) -> void:
-	"""Run the configured formatter on a script file if auto-format is enabled."""
 	if not ProjectSettings.get_setting(&"godot_mcp/auto_format_scripts", false):
 		return
 	var cmd: String = ProjectSettings.get_setting(&"godot_mcp/script_formatter_command", "gdscript-formatter")
@@ -51,8 +51,8 @@ func _auto_format(path: String) -> void:
 	OS.execute(cmd, [abs_path], output)
 
 
+## Reject commands with shell metacharacters or path traversal.
 static func _is_safe_command(cmd: String) -> bool:
-	"""Reject commands with shell metacharacters or path traversal."""
 	if cmd.is_empty():
 		return false
 	# Only allow simple command names or absolute paths to executables.
@@ -211,10 +211,10 @@ func validate_script(args: Dictionary) -> Dictionary:
 	}
 
 
+## Grab recent SCRIPT ERROR / Parse Error lines from the editor Output panel
+## that mention the given script path. Best-effort — returns [code][][/code] if
+## the panel cannot be accessed.
 func _collect_recent_script_errors(script_path: String) -> Array:
-	"""Grab recent SCRIPT ERROR / Parse Error lines from the editor Output panel
-	that mention the given script path.  Best-effort — returns [] if the panel
-	cannot be accessed."""
 	var errors: Array = []
 	if not _editor_plugin:
 		return errors
@@ -396,8 +396,8 @@ func format_script(args: Dictionary) -> Dictionary:
 # =============================================================================
 
 
+## Create a new script file with a basic template.
 func create_script_file(args: Dictionary) -> Dictionary:
-	"""Create a new script file with a basic template."""
 	var script_path: String = args.get(&"path", "")
 	var extends_type: String = args.get(&"extends", "Node")
 	var class_name_str: String = args.get(&"class_name", "")
@@ -442,8 +442,8 @@ func create_script_file(args: Dictionary) -> Dictionary:
 	return { &"ok": true, &"path": script_path }
 
 
+## Add, update, or delete a variable in a script file.
 func modify_variable(args: Dictionary) -> Dictionary:
-	"""Add, update, or delete a variable in a script file."""
 	var script_path: String = args.get(&"path", "")
 	var action: String = args.get(&"action", "")
 	var old_name: String = args.get(&"old_name", "")
@@ -514,8 +514,8 @@ func modify_variable(args: Dictionary) -> Dictionary:
 	return { &"ok": false, &"error": "Variable not found: " + old_name }
 
 
+## Add, update, or delete a signal in a script file.
 func modify_signal(args: Dictionary) -> Dictionary:
-	"""Add, update, or delete a signal in a script file."""
 	var script_path: String = args.get(&"path", "")
 	var action: String = args.get(&"action", "")
 	var old_name: String = args.get(&"old_name", "")
@@ -586,8 +586,8 @@ func modify_signal(args: Dictionary) -> Dictionary:
 	return { &"ok": false, &"error": "Signal not found: " + old_name }
 
 
+## Update a function's body in a script file.
 func modify_function(args: Dictionary) -> Dictionary:
-	"""Update a function's body in a script file."""
 	var script_path: String = args.get(&"path", "")
 	var func_name: String = args.get(&"name", "")
 	var new_body: String = args.get(&"body", "")
@@ -631,8 +631,8 @@ func modify_function(args: Dictionary) -> Dictionary:
 	return { &"ok": true, &"function": func_name }
 
 
+## Delete a function from a script file.
 func modify_function_delete(args: Dictionary) -> Dictionary:
-	"""Delete a function from a script file."""
 	var script_path: String = args.get(&"path", "")
 	var func_name: String = args.get(&"name", "")
 
@@ -673,8 +673,8 @@ func modify_function_delete(args: Dictionary) -> Dictionary:
 	return { &"ok": true, &"deleted": func_name }
 
 
+## Find the start and end line indices of a function. Returns [code][start, end][/code] or [code][][/code] if not found.
 func _find_function_range(lines: Array, func_name: String) -> Array:
-	"""Find the start and end line indices of a function. Returns [start, end] or [] if not found."""
 	var re_func := RegEx.new()
 	re_func.compile("^func\\s+" + func_name + "\\s*\\(")
 
@@ -703,8 +703,8 @@ func _find_function_range(lines: Array, func_name: String) -> Array:
 	return [func_start, func_end]
 
 
+## Delete a script file from the project.
 func delete_script(args: Dictionary) -> Dictionary:
-	"""Delete a script file from the project."""
 	var path: String = args.get(&"path", "")
 
 	if path.is_empty():
@@ -730,8 +730,8 @@ func delete_script(args: Dictionary) -> Dictionary:
 	return { &"ok": true, &"path": path }
 
 
+## Rename/move a script file, optionally updating references.
 func rename_script(args: Dictionary) -> Dictionary:
-	"""Rename/move a script file, optionally updating references."""
 	var old_path: String = args.get(&"old_path", "")
 	var new_path: String = args.get(&"new_path", "")
 	var update_refs: bool = args.get(&"update_references", true)
@@ -795,8 +795,8 @@ func _build_var_line(var_name: String, type: String, default: String, exported: 
 	return line
 
 
+## Find the best position to insert a new variable.
 func _find_var_insert_position(lines: Array, exported: bool) -> int:
-	"""Find the best position to insert a new variable."""
 	var last_var_line := -1
 	var first_func_line := -1
 	var after_class_decl := 0
@@ -818,8 +818,8 @@ func _find_var_insert_position(lines: Array, exported: bool) -> int:
 	return max(after_class_decl, 2)
 
 
+## Find the best position to insert a new signal.
 func _find_signal_insert_position(lines: Array) -> int:
-	"""Find the best position to insert a new signal."""
 	var last_signal_line := -1
 	var first_var_line := -1
 	var after_class_decl := 0
@@ -840,8 +840,8 @@ func _find_signal_insert_position(lines: Array) -> int:
 	return max(after_class_decl, 2)
 
 
+## Update all references to [param old_path] in project files.
 func _update_script_references(old_path: String, new_path: String) -> Array:
-	"""Update all references to old_path in project files."""
 	var updated: Array = []
 	var files: Array = []
 	_collect_files_by_ext("res://", ["gd", "tscn", "tres"], files)
@@ -867,8 +867,8 @@ func _update_script_references(old_path: String, new_path: String) -> Array:
 	return updated
 
 
+## Recursively collect files with the given extensions.
 func _collect_files_by_ext(root: String, extensions: Array, out: Array) -> void:
-	"""Recursively collect files with the given extensions."""
 	var dir := DirAccess.open(root)
 	if dir == null:
 		return

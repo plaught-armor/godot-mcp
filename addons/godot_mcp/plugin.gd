@@ -129,8 +129,8 @@ func _unregister_settings() -> void:
 			ProjectSettings.set_setting(path, null)
 
 
+## Add a small status label to the editor toolbar.
 func _setup_status_indicator() -> void:
-	"""Add a small status label to the editor toolbar."""
 	_status_label = Label.new()
 	_status_label.text = "GMCP: Connecting..."
 	_status_label.add_theme_color_override(&"font_color", Color.YELLOW)
@@ -152,8 +152,8 @@ func _on_disconnected() -> void:
 		_status_label.add_theme_color_override(&"font_color", Color.RED)
 
 
+## Handle incoming tool request from MCP server.
 func _on_tool_requested(request_id: String, tool_name: String, args: Dictionary) -> void:
-	"""Handle incoming tool request from MCP server."""
 	print("[GMCP] Executing tool: ", tool_name)
 
 	# Only pure-read tools go to the background thread; everything else

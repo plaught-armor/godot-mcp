@@ -52,8 +52,8 @@ func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
 
 
+## Crawl the entire project and build a structural map of all scripts.
 func map_project(args: Dictionary) -> Dictionary:
-	"""Crawl the entire project and build a structural map of all scripts."""
 	var root_path: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
 	var include_addons: bool = bool(args.get(&"include_addons", false))
 
@@ -112,8 +112,8 @@ func map_project(args: Dictionary) -> Dictionary:
 const MAX_TRAVERSAL_DEPTH := 20
 
 
+## Recursively collect all [code].gd[/code] files.
 func _collect_scripts(path: String, results: PackedStringArray, include_addons: bool, depth: int = 0) -> void:
-	"""Recursively collect all .gd files."""
 	if depth >= MAX_TRAVERSAL_DEPTH:
 		return
 	var dir := DirAccess.open(path)
@@ -141,8 +141,8 @@ func _collect_scripts(path: String, results: PackedStringArray, include_addons: 
 	dir.list_dir_end()
 
 
+## Parse a GDScript file and extract its structure.
 func _parse_script(path: String) -> Dictionary:
-	"""Parse a GDScript file and extract its structure."""
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return {
@@ -337,8 +337,8 @@ func _parse_script(path: String) -> Dictionary:
 	}
 
 
+## Try to infer GDScript type from a default value.
 func _infer_type(default_val: String) -> String:
-	"""Try to infer GDScript type from a default value."""
 	if default_val == "true" or default_val == "false":
 		return "bool"
 	if default_val.is_valid_int():
@@ -364,8 +364,8 @@ func _infer_type(default_val: String) -> String:
 	return ""
 
 
+## Crawl the project and build a map of all scenes.
 func map_scenes(args: Dictionary) -> Dictionary:
-	"""Crawl the project and build a map of all scenes."""
 	var root_path: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
 	var include_addons: bool = bool(args.get(&"include_addons", false))
 
@@ -402,8 +402,8 @@ func map_scenes(args: Dictionary) -> Dictionary:
 	}
 
 
+## Recursively collect all [code].tscn[/code] files.
 func _collect_scenes(path: String, results: PackedStringArray, include_addons: bool, depth: int = 0) -> void:
-	"""Recursively collect all .tscn files."""
 	if depth >= MAX_TRAVERSAL_DEPTH:
 		return
 	var dir := DirAccess.open(path)
@@ -431,8 +431,8 @@ func _collect_scenes(path: String, results: PackedStringArray, include_addons: b
 	dir.list_dir_end()
 
 
+## Parse a scene file and extract its structure.
 func _parse_scene(path: String) -> Dictionary:
-	"""Parse a scene file and extract its structure."""
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return { &"path": path, &"error": "Cannot open file", &"instances": [] }

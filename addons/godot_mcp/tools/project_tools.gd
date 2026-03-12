@@ -417,8 +417,8 @@ func get_node_properties(args: Dictionary) -> Dictionary:
 # =============================================================================
 
 
+## Find (and cache) the [RichTextLabel] inside the editor's Output panel.
 func _get_editor_log_rtl() -> RichTextLabel:
-	"""Find (and cache) the RichTextLabel inside the editor's Output panel."""
 	if is_instance_valid(_editor_log_rtl):
 		return _editor_log_rtl
 	if not _editor_plugin:
@@ -430,8 +430,8 @@ func _get_editor_log_rtl() -> RichTextLabel:
 	return _editor_log_rtl
 
 
+## Return all non-empty lines from the editor Output panel (after clear offset).
 func _read_output_panel_lines() -> Array:
-	"""Return all non-empty lines from the editor Output panel (after clear offset)."""
 	var rtl := _get_editor_log_rtl()
 	if not rtl:
 		return []
@@ -655,8 +655,8 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 	}
 
 
+## Find (and cache) the error [Tree] inside the Debugger panel.
 func _get_debugger_error_tree() -> Tree:
-	"""Find (and cache) the error Tree inside the Debugger panel."""
 	if is_instance_valid(_debugger_error_tree):
 		return _debugger_error_tree
 	if not _editor_plugin:
@@ -670,8 +670,8 @@ func _get_debugger_error_tree() -> Tree:
 	return _debugger_error_tree
 
 
+## Find the error [Tree] (2 columns) inside [code]ScriptEditorDebugger[/code].
 func _find_error_tree(node: Node) -> Tree:
-	"""Find the error Tree (2 columns) inside ScriptEditorDebugger."""
 	for child: Node in node.get_children():
 		if child is Tree and child.get_columns() == 2:
 			# Check if this tree or any ancestor has "error" in its name
