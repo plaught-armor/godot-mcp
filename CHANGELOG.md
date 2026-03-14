@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.9.0] - 2026-03-14
+
+### Added
+- **Runtime bridge** — new `mcp_runtime.gd` autoload connects the running game to the MCP server via WebSocket, enabling live game inspection and control
+- **`capture_screenshot`** — grab the game viewport as a PNG image, returned as MCP `ImageContent`
+- **`inspect_runtime_tree`** — walk the live scene tree with configurable depth and root path
+- **`get_runtime_property` / `set_runtime_property`** — read and write node properties on running game nodes
+- **`call_runtime_method`** — invoke methods on live nodes with serialized arguments
+- **`get_runtime_metrics`** — live FPS, frame time, memory usage, object counts, and render stats via `Performance.get_monitor()`
+- **`inject_action`** — simulate input actions (e.g. "jump", "ui_accept") with configurable strength
+- **`inject_key`** — send keyboard events by Godot key name with modifier support
+- **`inject_mouse_click`** — simulate mouse clicks at specific viewport coordinates
+- **`inject_mouse_motion`** — simulate mouse movement with relative and absolute positioning
+- **`watch_signal` / `unwatch_signal`** — subscribe to signals on live nodes, buffer emissions with serialized args
+- **`get_signal_emissions`** — poll buffered signal emissions with optional key filter and clear control
+- **`query_class_info`** — ClassDB introspection: methods, properties, signals, enums for any Godot class
+- **`query_classes`** — list/filter ClassDB classes by name, category, and instantiability
+- **Batch file tools** — `read_files`, `bulk_edit`, `find_references`, `list_resources`
+- **Batch script tools** — `validate_scripts`, `get_script_symbols`, `find_class_definition`
+- **Git tools** — `git_diff`, `git_log`, `git_stash`
+- **`run_shell_command`** — execute shell commands from the editor
+- **`get_uid`** — get Godot UID for a resource path
+
+### Changed
+- **Dual WebSocket connections** — Go bridge now accepts both editor (`godot_ready`) and runtime (`runtime_ready`) connections on the same port (6505)
+- **`Runtime` flag on `ToolDef`** — runtime tools route to the game process instead of the editor; no mock fallback (error if game not running)
+- File Operations: 9 → 13, Script Operations: 5 → 8, Project Tools: 16 → 25, total tools: 42 → 72 (including 13 new runtime tools and `get_godot_status`)
+
 ## [0.8.2] - 2026-03-13
 
 ### Added

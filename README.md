@@ -6,7 +6,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 42 tools · Interactive project visualizer · MIT license
+> Godot 4.x · 72 tools · Runtime bridge · Interactive project visualizer · MIT license
 
 ---
 
@@ -96,17 +96,20 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ## What Can It Do?
 
-### 42 Tools Across 5 Categories
+### 72 Tools Across 7 Categories
 
 | Category | Tools | Examples |
 |----------|-------|---------|
-| **File Operations** | 9 | Browse directories, read/create/search files, create folders, rename/delete files and folders, bulk find-and-replace |
+| **File Operations** | 13 | Browse directories, read/create/search files, bulk read/edit, find references, list resources, rename/delete files and folders |
 | **Scene Operations** | 11 | Create scenes, add/remove/move nodes, set properties, attach scripts, assign collision shapes and textures |
-| **Script Operations** | 5 | Create/edit/validate/format scripts, list all scripts |
-| **Project Tools** | 16 | Get/set project settings, configure input map, collision layers, console log, runtime debug errors, scene tree dumps, play/stop project, git status and commits |
+| **Script Operations** | 8 | Create/edit/validate/format scripts, list scripts, get symbols, find class definitions, batch validate |
+| **Project Tools** | 25 | Get/set project settings, input map, collision layers, console log, debug errors, scene tree dumps, play/stop project, git operations, shell commands, ClassDB introspection |
+| **Runtime Tools** | 13 | Screenshots, live scene tree inspection, get/set properties on running nodes, call methods, performance metrics, input injection (actions, keys, mouse), signal watching |
 | **Asset Generation** | 1 | Generate 2D sprites from SVG |
+| **Status** | 1 | Check Godot editor and runtime connection status |
 
 > `format_script` requires [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter) on PATH. If not found, the tool is hidden from AI clients automatically.
+> Runtime tools require the game to be running (`play_project` first). They operate on the live game process, not the editor.
 
 ### Interactive Visualizer
 
@@ -151,9 +154,9 @@ The Godot plugin adds settings under **Project → Project Settings → Godot MC
 ┌─────────────┐    MCP (stdio)    ┌─────────────┐   WebSocket    ┌──────────────┐
 │  AI Client   │◄────────────────►│  MCP Server  │◄─────────────►│ Godot Editor │
 │  (Claude,    │                  │  (Go binary) │   port 6505   │  (Plugin)    │
-│   Cursor)    │                  │              │               │              │
-└─────────────┘                  │  Visualizer  │               │  42 tool     │
-                                 │  HTTP :6510  │               │  handlers    │
+│   Cursor)    │                  │              │◄─────────────►│              │
+└─────────────┘                  │  Visualizer  │  (same port)  │ Running Game │
+                                 │  HTTP :6510  │               │  (Autoload)  │
                                  └──────┬───────┘               └──────────────┘
                                         │
                                  ┌──────▼───────┐
@@ -161,6 +164,8 @@ The Godot plugin adds settings under **Project → Project Settings → Godot MC
                                  │  Visualizer   │
                                  └──────────────┘
 ```
+
+The Go server maintains two WebSocket connections on port 6505: one to the editor plugin (for scene/script/project tools) and one to the running game's autoload (for runtime tools like screenshots, input injection, and live inspection).
 
 ---
 
