@@ -311,38 +311,61 @@ func add_node(args: Dictionary) -> Dictionary:
 # =============================================================================
 func remove_node(args: Dictionary) -> Dictionary:
 	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", ""))
 
 	if scene_path.is_empty() or scene_path == "res://":
 		return { &"ok": false, &"error": "Missing 'scene_path'" }
-	if node_path.strip_edges().is_empty() or node_path == ".":
-		return { &"ok": false, &"error": "Cannot remove root node" }
+
+	# Support bulk removal via node_paths array, or single via node_path
+	var paths: Array = args.get(&"node_paths", [])
+	var single: String = str(args.get(&"node_path", ""))
+	if paths.is_empty() and not single.strip_edges().is_empty():
+		paths = [single]
+	if paths.is_empty():
+		return { &"ok": false, &"error": "Missing 'node_path' or 'node_paths'" }
+
+	for p: String in paths:
+		if p.strip_edges().is_empty() or p == ".":
+			return { &"ok": false, &"error": "Cannot remove root node" }
 
 	var result := _load_scene(scene_path)
 	if not result[1].is_empty():
 		return result[1]
 
 	var root: Node = result[0]
-	var target = root.get_node_or_null(node_path)
-	if not target:
-		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+	var removed: Array = []
+	var not_found: Array = []
 
-	var n_name = target.name
-	var n_type = target.get_class()
-	target.get_parent().remove_child(target)
-	target.queue_free()
+	for p: String in paths:
+		var target = root.get_node_or_null(p)
+		if not target:
+			not_found.append(p)
+			continue
+		var info := "%s (%s)" % [target.name, target.get_class()]
+		target.get_parent().remove_child(target)
+		target.queue_free()
+		removed.append({ &"path": p, &"info": info })
+
+	if removed.is_empty():
+		root.queue_free()
+		return { &"ok": false, &"error": "No nodes found: " + ", ".join(not_found) }
 
 	var err := _save_scene(root, scene_path)
 	if not err.is_empty():
 		return err
 
-	return {
+	var out: Dictionary = {
 		&"ok": true,
 		&"scene_path": scene_path,
-		&"removed_node": node_path,
-		&"message": "Removed %s (%s)" % [n_name, n_type],
+		&"removed_count": removed.size(),
+		&"removed": removed,
+		&"message": "Removed %d node(s)" % removed.size(),
 	}
+	# Backward compat: single removal keeps removed_node key
+	if removed.size() == 1:
+		out[&"removed_node"] = removed[0][&"path"]
+	if not not_found.is_empty():
+		out[&"not_found"] = not_found
+	return out
 
 
 # =============================================================================

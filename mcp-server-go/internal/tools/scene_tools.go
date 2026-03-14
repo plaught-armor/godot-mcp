@@ -62,17 +62,18 @@ var sceneTools = []ToolDef{
 	},
 	{
 		Name:        "remove_node",
-		Description: "Remove a node from an existing scene file.",
+		Description: "Remove one or more nodes from a scene file. Use node_path for a single node or node_paths for bulk removal in one operation.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
 				"scene_path": {Type: "string", Description: "Path to the scene file"},
-				"node_path":  {Type: "string", Description: "Path to the node to remove (cannot be root, use relative path)"},
+				"node_path":  {Type: "string", Description: "Path to a single node to remove (cannot be root)"},
+				"node_paths": {Type: "array", Description: "Array of node paths to remove in bulk (cannot include root)", Items: &Schema{Type: "string"}},
 			},
-			Required: []string{"scene_path", "node_path"},
+			Required: []string{"scene_path"},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{"ok": true, "message": "Mock: Would remove node at " + str(args["node_path"])})
+			return mockNote(map[string]any{"ok": true, "message": "Mock: Would remove node(s)", "removed_count": 1})
 		},
 	},
 	{

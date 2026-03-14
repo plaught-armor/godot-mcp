@@ -519,8 +519,18 @@ func get_errors(args: Dictionary) -> Dictionary:
 				var prev: Dictionary = all_errors[all_errors.size() - 1]
 				var loc := _extract_file_line(line)
 				if not loc.is_empty():
-					prev[&"file"] = loc.get(&"file", "")
-					prev[&"line"] = loc.get(&"line", 0)
+					# Set file/line from first frame if not already set
+					if not prev.has(&"file"):
+						prev[&"file"] = loc.get(&"file", "")
+						prev[&"line"] = loc.get(&"line", 0)
+					# Collect as stack frame
+					var frame := { &"text": line }
+					frame[&"file"] = loc.get(&"file", "")
+					if loc.has(&"line"):
+						frame[&"line"] = loc[&"line"]
+					if not prev.has(&"stack"):
+						prev[&"stack"] = []
+					prev[&"stack"].append(frame)
 			continue
 
 		if not is_error:

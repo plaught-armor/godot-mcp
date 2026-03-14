@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.2] - 2026-03-13
+
+### Added
+- **Bulk `remove_node`** — pass `node_paths` array to remove multiple nodes in a single load/save cycle instead of calling the tool N times. Single `node_path` still works for backward compatibility
+- **Stack traces in `get_errors`** — Output panel errors now collect `at:` continuation lines into a `stack` array with file and line info, matching `get_debug_errors` behavior
+
 ## [0.8.1] - 2026-03-12
 
 ### Fixed
