@@ -11,7 +11,7 @@ const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
 # Everything else runs on the main thread (filesystem refresh, editor UI, etc.).
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
-		&"list_dir", &"read_file", &"search_project", &"list_scripts", &"map_scenes", &"git_status":
+		&"list_dir", &"read_file", &"read_files", &"search_project", &"find_references", &"list_resources", &"list_scripts", &"get_script_symbols", &"find_class_definition", &"get_autoloads", &"get_uid", &"query_class_info", &"query_classes", &"map_scenes", &"git_status", &"git_diff", &"git_log":
 			return true
 	return false
 
@@ -57,6 +57,9 @@ func _enter_tree() -> void:
 	_setup_status_indicator()
 	add_tool_menu_item("GMCP: Map Project", _on_map_project_pressed)
 
+	# Register runtime autoload (persists in project.godot)
+	add_autoload_singleton("MCPRuntime", "res://addons/godot_mcp/mcp_runtime.gd")
+
 	# Start connection
 	_mcp_client.connect_to_server()
 
@@ -83,6 +86,7 @@ func _exit_tree() -> void:
 		_status_label.queue_free()
 
 	remove_tool_menu_item("GMCP: Map Project")
+	remove_autoload_singleton("MCPRuntime")
 	_unregister_settings()
 
 	print("[GMCP] Plugin unloaded")

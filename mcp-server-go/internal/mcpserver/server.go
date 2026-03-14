@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 
@@ -49,14 +50,15 @@ func New(b *bridge.GodotBridge) *mcp.Server {
 }
 
 type statusResponse struct {
-	Connected       bool   `json:"connected"`
-	ServerVersion   string `json:"server_version"`
-	WebSocketPort   int    `json:"websocket_port"`
-	Mode            string `json:"mode"`
-	ProjectPath     string `json:"project_path"`
-	ConnectedAt     string `json:"connected_at,omitempty"`
-	PendingRequests int    `json:"pending_requests"`
-	Message         string `json:"message"`
+	Connected        bool   `json:"connected"`
+	RuntimeConnected bool   `json:"runtime_connected"`
+	ServerVersion    string `json:"server_version"`
+	WebSocketPort    int    `json:"websocket_port"`
+	Mode             string `json:"mode"`
+	ProjectPath      string `json:"project_path"`
+	ConnectedAt      string `json:"connected_at,omitempty"`
+	PendingRequests  int    `json:"pending_requests"`
+	Message          string `json:"message"`
 }
 
 func statusHandler(b *bridge.GodotBridge) mcp.ToolHandler {
@@ -74,13 +76,14 @@ func statusHandler(b *bridge.GodotBridge) mcp.ToolHandler {
 		}
 
 		result := statusResponse{
-			Connected:       status.Connected,
-			ServerVersion:   serverVersion,
-			WebSocketPort:   status.Port,
-			Mode:            mode,
-			ProjectPath:     status.ProjectPath,
-			PendingRequests: status.PendingRequests,
-			Message:         msg,
+			Connected:        status.Connected,
+			RuntimeConnected: status.RuntimeConnected,
+			ServerVersion:    serverVersion,
+			WebSocketPort:    status.Port,
+			Mode:             mode,
+			ProjectPath:      status.ProjectPath,
+			PendingRequests:  status.PendingRequests,
+			Message:          msg,
 		}
 		if status.ConnectedAt != nil {
 			result.ConnectedAt = status.ConnectedAt.Format("2006-01-02T15:04:05.000Z")
@@ -101,6 +104,10 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 			args = make(map[string]any)
 		}
 
+		if td.Runtime {
+			return runtimeToolHandler(b, td, ctx, args)
+		}
+
 		// Check connection before invoking — only use mocks when Godot
 		// was never connected, not when it crashes mid-invocation.
 		wasConnected := b.IsConnected()
@@ -116,6 +123,56 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 		// raw is already valid JSON from Godot — pass through without re-marshaling
 		return rawTextResult(raw), nil
 	}
+}
+
+func runtimeToolHandler(b *bridge.GodotBridge, td *tools.ToolDef, ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+	if !b.IsRuntimeConnected() {
+		return errorResult(td.Name, args,
+			fmt.Errorf("game is not running — use play_project first"), "runtime")
+	}
+
+	raw, err := b.InvokeRuntimeTool(ctx, td.Name, args)
+	if err != nil {
+		return errorResult(td.Name, args, err, "runtime")
+	}
+
+	// Special case: capture_screenshot returns image data
+	if td.Name == "capture_screenshot" {
+		return screenshotResult(raw)
+	}
+
+	return rawTextResult(raw), nil
+}
+
+func screenshotResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
+	var img struct {
+		OK    bool   `json:"ok"`
+		Error string `json:"error"`
+		Image string `json:"image_base64"`
+		Width int    `json:"width"`
+		Height int   `json:"height"`
+	}
+	if err := json.Unmarshal(raw, &img); err != nil {
+		return rawTextResult(raw), nil // fallback to text
+	}
+	if !img.OK {
+		return rawTextResult(raw), nil
+	}
+	// Decode base64 string from GDScript into raw bytes.
+	// Go's json.Marshal will re-encode []byte as base64 for the MCP wire format.
+	pngData, err := base64.StdEncoding.DecodeString(img.Image)
+	if err != nil {
+		return rawTextResult(raw), nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: fmt.Sprintf("Screenshot captured: %dx%d", img.Width, img.Height)},
+			&mcp.ImageContent{
+				MIMEType: "image/png",
+				Data:     pngData,
+			},
+		},
+	}, nil
 }
 
 func textResult(v any) (*mcp.CallToolResult, error) {

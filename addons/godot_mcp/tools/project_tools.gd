@@ -3,12 +3,14 @@ extends RefCounted
 
 class_name ProjectTools
 ## Project configuration and debug tools for MCP.
-## Handles: get_project_settings, set_project_setting, get_input_map,
-##          configure_input_map, get_collision_layers, get_node_properties,
-##          get_console_log,
+## Handles: get_project_settings, set_project_setting, get_autoloads,
+##          get_input_map, configure_input_map, get_collision_layers,
+##          get_node_properties, get_console_log,
 ##          get_errors, clear_console_log, open_in_godot, scene_tree_dump,
 ##          play_project, stop_project, is_project_running,
-##          git_status, git_commit
+##          git_status, git_commit, git_diff, git_log, git_stash,
+##          run_shell_command, get_uid,
+##          query_class_info, query_classes
 
 var _editor_plugin: EditorPlugin = null
 
@@ -95,6 +97,32 @@ func set_project_setting(args: Dictionary) -> Dictionary:
 		&"setting": setting,
 		&"old_value": _utils.serialize_value(old_value),
 		&"new_value": _utils.serialize_value(new_value),
+	}
+
+
+# =============================================================================
+# get_autoloads - List all registered autoloads
+# =============================================================================
+## Return all registered autoloads with their paths and singleton status.
+func get_autoloads(_args: Dictionary) -> Dictionary:
+	var autoloads: Array = []
+	for prop: Dictionary in ProjectSettings.get_property_list():
+		var name: String = prop[&"name"]
+		if not name.begins_with("autoload/"):
+			continue
+		var value: String = str(ProjectSettings.get_setting(name))
+		var autoload_name := name.substr(9) # Strip "autoload/"
+		var is_singleton := value.begins_with("*")
+		var path := value.substr(1) if is_singleton else value
+		autoloads.append({
+			&"name": autoload_name,
+			&"path": path,
+			&"singleton": is_singleton,
+		})
+	return {
+		&"ok": true,
+		&"autoloads": autoloads,
+		&"count": autoloads.size(),
 	}
 
 
@@ -452,6 +480,8 @@ func _read_output_panel_lines() -> Array:
 # =============================================================================
 func get_console_log(args: Dictionary) -> Dictionary:
 	var max_lines: int = int(args.get(&"max_lines", 50))
+	var filter_text: String = str(args.get(&"filter", ""))
+	var severity: String = str(args.get(&"severity", "all"))
 
 	var rtl := _get_editor_log_rtl()
 	if not rtl:
@@ -461,6 +491,33 @@ func get_console_log(args: Dictionary) -> Dictionary:
 		}
 
 	var all_lines := _read_output_panel_lines()
+
+	# Filter by severity
+	if severity != "all":
+		var filtered: Array = []
+		for line: String in all_lines:
+			var upper := line.to_upper()
+			match severity:
+				"error":
+					if "ERROR" in upper or "SCRIPT ERROR" in upper:
+						filtered.append(line)
+				"warning":
+					if "WARNING" in upper:
+						filtered.append(line)
+				"info":
+					if "ERROR" not in upper and "WARNING" not in upper:
+						filtered.append(line)
+		all_lines = filtered
+
+	# Filter by substring
+	if not filter_text.is_empty():
+		var filtered: Array = []
+		var lower_filter := filter_text.to_lower()
+		for line: String in all_lines:
+			if line.to_lower().find(lower_filter) != -1:
+				filtered.append(line)
+		all_lines = filtered
+
 	var start := maxi(0, all_lines.size() - max_lines)
 	var lines := all_lines.slice(start)
 	return {
@@ -622,30 +679,29 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 			&"severity": "warning" if is_warning else "error",
 		}
 
-		# Extract file:line from detail column (format: "at: res://path.gd:123")
-		var loc := _extract_file_line(detail)
-		if loc.is_empty():
-			loc = _extract_file_line(msg)
-		if not loc.is_empty():
-			error_info[&"file"] = loc.get(&"file", "")
-			if loc.has(&"line"):
-				error_info[&"line"] = loc[&"line"]
+		# Extract file:line from item metadata (Godot stores [file, line] array)
+		var meta: Variant = item.get_metadata(0)
+		if meta is Array and meta.size() >= 2:
+			error_info[&"file"] = str(meta[0])
+			error_info[&"line"] = int(meta[1])
 
 		# Collect stack frames from child items
+		# Children are: <Error> (optional), <Source>, then <Stack Trace> frames
 		var stack: Array = []
 		var child := item.get_first_child()
 		while child:
-			var frame_text: String = child.get_text(0).strip_edges()
+			var label: String = child.get_text(0).strip_edges()
 			var frame_detail: String = child.get_text(1).strip_edges() if tree.get_columns() > 1 else ""
-			if not frame_text.is_empty() or not frame_detail.is_empty():
-				var frame := { &"text": frame_text }
-				if not frame_detail.is_empty():
-					frame[&"detail"] = frame_detail
-				var frame_loc := _extract_file_line(frame_detail)
-				if not frame_loc.is_empty():
-					frame[&"file"] = frame_loc.get(&"file", "")
-					if frame_loc.has(&"line"):
-						frame[&"line"] = frame_loc[&"line"]
+			# Stack trace items: first has "<Stack Trace>" in col 0, rest have empty col 0
+			# Skip <Error> and <Source> children (they have labels like "<GDScript Error>", "<GDScript Source>")
+			var child_meta: Variant = child.get_metadata(0)
+			var is_stack_frame := label.contains("Stack Trace") or (label.is_empty() and child_meta is Array)
+			if is_stack_frame and child_meta is Array and child_meta.size() >= 2:
+				var frame: Dictionary = {
+					&"function": frame_detail,
+					&"file": str(child_meta[0]),
+					&"line": int(child_meta[1]),
+				}
 				stack.append(frame)
 			child = child.get_next()
 		if not stack.is_empty():
@@ -951,4 +1007,324 @@ func git_commit(args: Dictionary) -> Dictionary:
 		&"message": message,
 		&"commit": commit_hash,
 		&"output": output_text.strip_edges(),
+	}
+
+
+# =============================================================================
+# git_diff - Show uncommitted changes
+# =============================================================================
+## Show git diff output. Supports single file and staged mode.
+func git_diff(args: Dictionary) -> Dictionary:
+	var file_path: String = str(args.get(&"file", ""))
+	var staged: bool = bool(args.get(&"staged", false))
+
+	var git_args: PackedStringArray = ["-C", _project_path, "diff"]
+	if staged:
+		git_args.append("--staged")
+	if not file_path.is_empty():
+		if file_path.begins_with("res://"):
+			file_path = file_path.substr(6)
+		if ".." in file_path or file_path.begins_with("/"):
+			return { &"ok": false, &"error": "File path escapes project: " + file_path }
+		git_args.append("--")
+		git_args.append(file_path)
+
+	var output: Array = []
+	var exit_code := OS.execute("git", git_args, output)
+	if exit_code != 0:
+		return { &"ok": false, &"error": "git diff failed (exit %d)" % exit_code }
+
+	var diff_text: String = output[0] if output.size() > 0 else ""
+
+	# Count files changed from "diff --git" lines
+	var files_changed := 0
+	for line: String in diff_text.split("\n"):
+		if line.begins_with("diff --git"):
+			files_changed += 1
+
+	return {
+		&"ok": true,
+		&"diff": diff_text.strip_edges(),
+		&"files_changed": files_changed,
+		&"staged": staged,
+	}
+
+
+# =============================================================================
+# git_log - Recent commit history
+# =============================================================================
+## Show recent git commit history.
+func git_log(args: Dictionary) -> Dictionary:
+	var max_count: int = int(args.get(&"max_count", 10))
+	var file_path: String = str(args.get(&"file", ""))
+
+	max_count = clampi(max_count, 1, 100)
+
+	var git_args: PackedStringArray = ["-C", _project_path, "log", "--oneline", "--no-decorate", "-n", str(max_count)]
+	if not file_path.is_empty():
+		if file_path.begins_with("res://"):
+			file_path = file_path.substr(6)
+		if ".." in file_path or file_path.begins_with("/"):
+			return { &"ok": false, &"error": "File path escapes project: " + file_path }
+		git_args.append("--")
+		git_args.append(file_path)
+
+	var output: Array = []
+	var exit_code := OS.execute("git", git_args, output)
+	if exit_code != 0:
+		return { &"ok": false, &"error": "git log failed (exit %d)" % exit_code }
+
+	var raw: String = output[0] if output.size() > 0 else ""
+	var commits: Array = []
+	for line: String in raw.split("\n"):
+		line = line.strip_edges()
+		if line.is_empty():
+			continue
+		var space_idx := line.find(" ")
+		if space_idx == -1:
+			commits.append({ &"hash": line, &"message": "" })
+		else:
+			commits.append({ &"hash": line.substr(0, space_idx), &"message": line.substr(space_idx + 1) })
+
+	return {
+		&"ok": true,
+		&"commits": commits,
+		&"count": commits.size(),
+	}
+
+
+# =============================================================================
+# git_stash - Stash management
+# =============================================================================
+## Git stash operations: push, pop, or list.
+func git_stash(args: Dictionary) -> Dictionary:
+	var action: String = str(args.get(&"action", ""))
+	var message: String = str(args.get(&"message", ""))
+
+	match action:
+		"push":
+			var git_args: PackedStringArray = ["-C", _project_path, "stash", "push"]
+			if not message.is_empty():
+				git_args.append("-m")
+				git_args.append(message)
+			var output: Array = []
+			var exit_code := OS.execute("git", git_args, output)
+			if exit_code != 0:
+				return { &"ok": false, &"error": "git stash push failed (exit %d)" % exit_code }
+			return { &"ok": true, &"action": "push", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
+
+		"pop":
+			var output: Array = []
+			var exit_code := OS.execute("git", ["-C", _project_path, "stash", "pop"], output)
+			if exit_code != 0:
+				return { &"ok": false, &"error": "git stash pop failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
+			return { &"ok": true, &"action": "pop", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
+
+		"list":
+			var output: Array = []
+			var exit_code := OS.execute("git", ["-C", _project_path, "stash", "list"], output)
+			if exit_code != 0:
+				return { &"ok": false, &"error": "git stash list failed (exit %d)" % exit_code }
+			var raw: String = output[0] if output.size() > 0 else ""
+			var stashes: Array = []
+			for line: String in raw.split("\n"):
+				line = line.strip_edges()
+				if not line.is_empty():
+					stashes.append(line)
+			return { &"ok": true, &"action": "list", &"stashes": stashes, &"count": stashes.size() }
+
+		_:
+			return { &"ok": false, &"error": "Invalid action '%s'. Use 'push', 'pop', or 'list'." % action }
+
+
+# =============================================================================
+# run_shell_command - Execute a shell command in the project directory
+# =============================================================================
+const _BLOCKED_COMMANDS: PackedStringArray = ["rm", "sudo", "chmod", "chown", "mkfs", "dd", "kill", "killall", "pkill", "shutdown", "reboot", "init", "systemctl"]
+
+## Execute a shell command in the project directory.
+## Uses [code]OS.execute()[/code] with separate args (no shell injection).
+func run_shell_command(args: Dictionary) -> Dictionary:
+	var command: String = str(args.get(&"command", ""))
+	var cmd_args: Array = args.get(&"args", [])
+
+	if command.strip_edges().is_empty():
+		return { &"ok": false, &"error": "Missing 'command'" }
+
+	# Block dangerous commands (get_file strips path: /usr/bin/rm → rm)
+	var base_cmd := command.get_file()
+	if base_cmd in _BLOCKED_COMMANDS:
+		return { &"ok": false, &"error": "Command '%s' is blocked for safety" % base_cmd }
+
+	var exec_args: PackedStringArray = []
+	for a: Variant in cmd_args:
+		var s := str(a)
+		if ".." in s or s.begins_with("/"):
+			return { &"ok": false, &"error": "Arg escapes project directory: " + s }
+		exec_args.append(s)
+
+	var output: Array = []
+	var exit_code := OS.execute(command, exec_args, output)
+	var stdout: String = output[0] if output.size() > 0 else ""
+
+	return {
+		&"ok": true,
+		&"command": command,
+		&"args": cmd_args,
+		&"exit_code": exit_code,
+		&"stdout": stdout.strip_edges(),
+	}
+
+
+# =============================================================================
+# get_uid - Get the UID for a resource path
+# =============================================================================
+## Return the UID for a given resource path.
+func get_uid(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get(&"path", ""))
+	if path.strip_edges().is_empty():
+		return { &"ok": false, &"error": "Missing 'path'" }
+
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return { &"ok": false, &"error": "Path escapes project root" }
+
+	if not ResourceLoader.exists(path):
+		return { &"ok": false, &"error": "Resource not found: " + path }
+
+	var uid_int := ResourceLoader.get_resource_uid(path)
+	if uid_int == -1:
+		return { &"ok": false, &"error": "No UID assigned to: " + path }
+
+	var uid_text := ResourceUID.id_to_text(uid_int)
+	return {
+		&"ok": true,
+		&"path": path,
+		&"uid": uid_text,
+	}
+
+
+# =============================================================================
+# query_class_info — Full ClassDB introspection for a single class
+# =============================================================================
+func query_class_info(args: Dictionary) -> Dictionary:
+	var class_name_str: String = str(args.get(&"class_name", ""))
+	if class_name_str.is_empty():
+		return { &"ok": false, &"error": "Missing 'class_name'" }
+	if not ClassDB.class_exists(class_name_str):
+		return { &"ok": false, &"error": "Class not found: " + class_name_str }
+
+	var include_inherited: bool = bool(args.get(&"include_inherited", false))
+	var no_exclude := not include_inherited # ClassDB uses "no_inheritance" flag
+
+	var result: Dictionary = {
+		&"ok": true,
+		&"class_name": class_name_str,
+		&"parent_class": ClassDB.get_parent_class(class_name_str),
+		&"can_instantiate": ClassDB.can_instantiate(class_name_str),
+	}
+
+	# Methods
+	var methods: Array = []
+	for m: Dictionary in ClassDB.class_get_method_list(class_name_str, no_exclude):
+		var mname: String = m[&"name"]
+		if mname.begins_with("_"):
+			continue
+		var method_args: Array = []
+		for a: Dictionary in m.get(&"args", []):
+			method_args.append({
+				&"name": a[&"name"],
+				&"type": _utils.type_id_to_name(a[&"type"]),
+			})
+		methods.append({
+			&"name": mname,
+			&"args": method_args,
+			&"return_type": _utils.type_id_to_name(m.get(&"return", {}).get(&"type", TYPE_NIL)),
+		})
+	result[&"methods"] = methods
+
+	# Properties
+	var properties: Array = []
+	for p: Dictionary in ClassDB.class_get_property_list(class_name_str, no_exclude):
+		var usage: int = p.get(&"usage", 0)
+		# Skip category/group headers
+		if usage & PROPERTY_USAGE_CATEGORY or usage & PROPERTY_USAGE_GROUP or usage & PROPERTY_USAGE_SUBGROUP:
+			continue
+		properties.append({
+			&"name": p[&"name"],
+			&"type": _utils.type_id_to_name(p[&"type"]),
+		})
+	result[&"properties"] = properties
+
+	# Signals
+	var signals: Array = []
+	for s: Dictionary in ClassDB.class_get_signal_list(class_name_str, no_exclude):
+		var sig_args: Array = []
+		for a: Dictionary in s.get(&"args", []):
+			sig_args.append({
+				&"name": a[&"name"],
+				&"type": _utils.type_id_to_name(a[&"type"]),
+			})
+		signals.append({
+			&"name": s[&"name"],
+			&"args": sig_args,
+		})
+	result[&"signals"] = signals
+
+	# Enums
+	var enums: Dictionary = {}
+	for enum_name: String in ClassDB.class_get_enum_list(class_name_str, no_exclude):
+		var constants: Dictionary = {}
+		for const_name: String in ClassDB.class_get_enum_constants(class_name_str, enum_name, no_exclude):
+			constants[const_name] = ClassDB.class_get_integer_constant(class_name_str, const_name)
+		enums[enum_name] = constants
+	result[&"enums"] = enums
+
+	return result
+
+
+# =============================================================================
+# query_classes — List/filter classes from ClassDB
+# =============================================================================
+const _CATEGORY_BASES: Dictionary = {
+	"node": "Node",
+	"node2d": "Node2D",
+	"node3d": "Node3D",
+	"control": "Control",
+	"resource": "Resource",
+	"physics2d": "PhysicsBody2D",
+	"physics3d": "PhysicsBody3D",
+	"audio": "AudioStream",
+	"animation": "AnimationMixer",
+}
+
+func query_classes(args: Dictionary) -> Dictionary:
+	var filter: String = str(args.get(&"filter", ""))
+	var category: String = str(args.get(&"category", ""))
+	var instantiable_only: bool = bool(args.get(&"instantiable_only", false))
+
+	var base_class: String = ""
+	if not category.is_empty():
+		base_class = _CATEGORY_BASES.get(category.to_lower(), "")
+		if base_class.is_empty():
+			return { &"ok": false, &"error": "Unknown category: " + category + ". Valid: " + ", ".join(_CATEGORY_BASES.keys()) }
+
+	var all_classes: PackedStringArray = ClassDB.get_class_list()
+	var filtered: Array = []
+
+	for cls: String in all_classes:
+		if instantiable_only and not ClassDB.can_instantiate(cls):
+			continue
+		if not filter.is_empty() and not cls.to_lower().contains(filter.to_lower()):
+			continue
+		if not base_class.is_empty():
+			if cls != base_class and not ClassDB.is_parent_class(cls, base_class):
+				continue
+		filtered.append(cls)
+
+	filtered.sort()
+	return {
+		&"ok": true,
+		&"classes": filtered,
+		&"count": filtered.size(),
 	}

@@ -3,12 +3,14 @@ extends RefCounted
 
 class_name FileTools
 ## File operation tools for MCP.
-## Handles: list_dir, read_file, create_file, search_project,
-##          create_folder, delete_file, delete_folder, rename_file
+## Handles: list_dir, read_file, read_files, create_file, search_project,
+##          create_folder, delete_file, delete_folder, rename_file,
+##          replace_in_files, bulk_edit, find_references, list_resources
 
 const DEFAULT_MAX_BYTES := 200_000
 const DEFAULT_MAX_RESULTS := 200
 const MAX_TRAVERSAL_DEPTH := 20
+const MAX_BULK_FILES := 20
 
 var _editor_plugin: EditorPlugin = null
 var _utils: ToolUtils
@@ -30,6 +32,18 @@ func list_dir(args: Dictionary) -> Dictionary:
 	if root.is_empty():
 		return { &"ok": false, &"error": "Path escapes project root" }
 	var include_hidden: bool = bool(args.get(&"include_hidden", false))
+	var recursive: bool = bool(args.get(&"recursive", false))
+	var glob_filter: String = str(args.get(&"glob", ""))
+
+	if recursive:
+		var all_files := _collect_files(root, glob_filter)
+		return {
+			&"ok": true,
+			&"path": root,
+			&"files": all_files,
+			&"total": all_files.size(),
+			&"recursive": true,
+		}
 
 	var dir := DirAccess.open(root)
 	if dir == null:
@@ -54,7 +68,8 @@ func list_dir(args: Dictionary) -> Dictionary:
 		if dir.current_is_dir():
 			folders.append(name)
 		else:
-			files.append(name)
+			if glob_filter.is_empty() or _matches_glob(root.path_join(name), glob_filter):
+				files.append(name)
 
 		name = dir.get_next()
 	dir.list_dir_end()
@@ -127,6 +142,115 @@ func read_file(args: Dictionary) -> Dictionary:
 
 
 # =============================================================================
+# read_files - Read multiple files in one call
+# =============================================================================
+## Read multiple files in a single call. More efficient than calling
+## [method read_file] repeatedly. Maximum [const MAX_BULK_FILES] files per call.
+func read_files(args: Dictionary) -> Dictionary:
+	var paths: Array = args.get(&"paths", [])
+	var max_bytes: int = int(args.get(&"max_bytes", DEFAULT_MAX_BYTES))
+
+	if paths.is_empty():
+		return { &"ok": false, &"error": "Missing 'paths' array" }
+	if paths.size() > MAX_BULK_FILES:
+		return { &"ok": false, &"error": "Too many files (%d). Maximum is %d" % [paths.size(), MAX_BULK_FILES] }
+
+	var files: Array = []
+	for p: Variant in paths:
+		var result := read_file({ &"path": str(p), &"max_bytes": max_bytes })
+		if result[&"ok"]:
+			files.append({ &"path": result[&"path"], &"content": result[&"content"], &"line_count": result[&"line_count"] })
+		else:
+			files.append({ &"path": str(p), &"error": result[&"error"] })
+
+	return {
+		&"ok": true,
+		&"files": files,
+		&"count": files.size(),
+	}
+
+
+# =============================================================================
+# bulk_edit - Multiple text replacements across files
+# =============================================================================
+## Apply multiple text replacements across files in a single call.
+## Each edit specifies a file, old text to find, and new text to replace it with.
+func bulk_edit(args: Dictionary) -> Dictionary:
+	var edits: Array = args.get(&"edits", [])
+	if edits.is_empty():
+		return { &"ok": false, &"error": "Missing 'edits' array" }
+
+	var results: Array = []
+	var success_count := 0
+	var error_count := 0
+
+	for edit: Variant in edits:
+		if edit is not Dictionary:
+			results.append({ &"error": "Invalid edit entry (not a dictionary)" })
+			error_count += 1
+			continue
+
+		var file_path: String = str(edit.get(&"file", ""))
+		if file_path.is_empty():
+			results.append({ &"error": "Missing 'file' in edit entry" })
+			error_count += 1
+			continue
+
+		file_path = _utils.validate_res_path(file_path)
+		if file_path.is_empty():
+			results.append({ &"file": str(edit.get(&"file", "")), &"replaced": false, &"error": "Path escapes project root" })
+			error_count += 1
+			continue
+
+		if not FileAccess.file_exists(file_path):
+			results.append({ &"file": file_path, &"replaced": false, &"error": "File not found" })
+			error_count += 1
+			continue
+
+		var old_text: String = str(edit.get(&"old", ""))
+		var new_text: String = str(edit.get(&"new", ""))
+		if old_text.is_empty():
+			results.append({ &"file": file_path, &"replaced": false, &"error": "Missing 'old' text" })
+			error_count += 1
+			continue
+
+		var file := FileAccess.open(file_path, FileAccess.READ)
+		if file == null:
+			results.append({ &"file": file_path, &"replaced": false, &"error": "Cannot open file" })
+			error_count += 1
+			continue
+		var content := file.get_as_text()
+		file.close()
+
+		if content.find(old_text) == -1:
+			results.append({ &"file": file_path, &"replaced": false, &"error": "old text not found in file" })
+			error_count += 1
+			continue
+
+		var new_content := content.replace(old_text, new_text)
+		file = FileAccess.open(file_path, FileAccess.WRITE)
+		if file == null:
+			results.append({ &"file": file_path, &"replaced": false, &"error": "Cannot write file" })
+			error_count += 1
+			continue
+		file.store_string(new_content)
+		file.close()
+
+		results.append({ &"file": file_path, &"replaced": true })
+		success_count += 1
+
+	if success_count > 0:
+		_utils.refresh_filesystem()
+
+	return {
+		&"ok": true,
+		&"results": results,
+		&"success_count": success_count,
+		&"error_count": error_count,
+	}
+
+
+# =============================================================================
 # create_file - Create or overwrite a text file
 # =============================================================================
 func create_file(args: Dictionary) -> Dictionary:
@@ -173,12 +297,22 @@ func search_project(args: Dictionary) -> Dictionary:
 	var glob_filter: String = str(args.get(&"glob", ""))
 	var max_results: int = int(args.get(&"max_results", DEFAULT_MAX_RESULTS))
 	var case_sensitive: bool = bool(args.get(&"case_sensitive", false))
+	var use_regex: bool = bool(args.get(&"regex", false))
+	var exclude_dirs := _parse_exclude_dirs(args)
 
 	if query.strip_edges().is_empty():
 		return { &"ok": false, &"error": "Missing 'query' parameter" }
 
+	# Compile regex if requested
+	var compiled_regex: RegEx = null
+	if use_regex:
+		compiled_regex = RegEx.new()
+		var err := compiled_regex.compile(query)
+		if err != OK:
+			return { &"ok": false, &"error": "Invalid regex pattern: " + query }
+
 	var search_query := query if case_sensitive else query.to_lower()
-	var files := _collect_files("res://", glob_filter)
+	var files := _collect_files("res://", glob_filter, exclude_dirs)
 	var matches: Array = []
 
 	for file_path: String in files:
@@ -189,20 +323,27 @@ func search_project(args: Dictionary) -> Dictionary:
 		if file == null:
 			continue
 
-		# Bulk read — single syscall instead of one per line
 		var content := file.get_as_text()
 		file.close()
 
 		# Quick whole-file check to skip non-matching files entirely
-		var search_content := content if case_sensitive else content.to_lower()
-		if search_content.find(search_query) == -1:
-			continue
+		if use_regex:
+			if compiled_regex.search(content) == null:
+				continue
+		else:
+			var search_content := content if case_sensitive else content.to_lower()
+			if search_content.find(search_query) == -1:
+				continue
 
-		# Only split files that actually contain the query
 		var lines := content.split("\n")
-		var search_lines := lines if case_sensitive else search_content.split("\n")
 		for i: int in range(lines.size()):
-			if search_lines[i].find(search_query) != -1:
+			var matched := false
+			if use_regex:
+				matched = compiled_regex.search(lines[i]) != null
+			else:
+				var check_line := lines[i] if case_sensitive else lines[i].to_lower()
+				matched = check_line.find(search_query) != -1
+			if matched:
 				matches.append(
 					{
 						&"file": file_path,
@@ -222,14 +363,23 @@ func search_project(args: Dictionary) -> Dictionary:
 	}
 
 
+## Parse [code]exclude_dirs[/code] array from tool args.
+func _parse_exclude_dirs(args: Dictionary) -> PackedStringArray:
+	var raw: Array = args.get(&"exclude_dirs", [])
+	var out: PackedStringArray = []
+	for d: Variant in raw:
+		out.append(str(d))
+	return out
+
+
 ## Recursively collect all searchable files.
-func _collect_files(path: String, glob_filter: String) -> PackedStringArray:
+func _collect_files(path: String, glob_filter: String, exclude_dirs: PackedStringArray = []) -> PackedStringArray:
 	var result: PackedStringArray = []
-	_collect_files_recursive(path, glob_filter, result)
+	_collect_files_recursive(path, glob_filter, result, 0, exclude_dirs)
 	return result
 
 
-func _collect_files_recursive(path: String, glob_filter: String, out: PackedStringArray, depth: int = 0) -> void:
+func _collect_files_recursive(path: String, glob_filter: String, out: PackedStringArray, depth: int = 0, exclude_dirs: PackedStringArray = []) -> void:
 	if depth >= MAX_TRAVERSAL_DEPTH:
 		return
 	var dir := DirAccess.open(path)
@@ -247,7 +397,11 @@ func _collect_files_recursive(path: String, glob_filter: String, out: PackedStri
 		var full_path := path.path_join(file_name)
 
 		if dir.current_is_dir():
-			_collect_files_recursive(full_path, glob_filter, out, depth + 1)
+			# Skip excluded directories by name
+			if not exclude_dirs.is_empty() and file_name in exclude_dirs:
+				file_name = dir.get_next()
+				continue
+			_collect_files_recursive(full_path, glob_filter, out, depth + 1, exclude_dirs)
 		else:
 			if not _is_binary_ext(file_name.get_extension()):
 				if glob_filter.is_empty() or _matches_glob(full_path, glob_filter):
@@ -284,6 +438,7 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 	var replace: String = str(args.get(&"replace", ""))
 	var glob_filter: String = str(args.get(&"glob", ""))
 	var exclude_patterns: Array = args.get(&"exclude", [])
+	var exclude_dirs := _parse_exclude_dirs(args)
 	var case_sensitive: bool = bool(args.get(&"case_sensitive", true))
 	var preview: bool = bool(args.get(&"preview", false))
 
@@ -292,7 +447,7 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 	if search == replace:
 		return { &"ok": false, &"error": "'search' and 'replace' are identical" }
 
-	var files := _collect_files("res://", glob_filter)
+	var files := _collect_files("res://", glob_filter, exclude_dirs)
 	var search_term := search if case_sensitive else search.to_lower()
 	var modified_files: PackedStringArray = []
 	var total_replacements := 0
@@ -557,4 +712,97 @@ func rename_file(args: Dictionary) -> Dictionary:
 		&"old_path": old_path,
 		&"new_path": new_path,
 		&"message": "Renamed %s to %s" % [old_path, new_path],
+	}
+
+
+# =============================================================================
+# find_references - Find all references to a symbol with word boundaries
+# =============================================================================
+## Find all references to a symbol using word-boundary regex matching.
+func find_references(args: Dictionary) -> Dictionary:
+	var symbol: String = str(args.get(&"symbol", ""))
+	var glob_filter: String = str(args.get(&"glob", ""))
+	var max_results: int = int(args.get(&"max_results", DEFAULT_MAX_RESULTS))
+	var exclude_dirs := _parse_exclude_dirs(args)
+
+	if symbol.strip_edges().is_empty():
+		return { &"ok": false, &"error": "Missing 'symbol' parameter" }
+
+	# Escape regex metacharacters in the symbol name, then wrap with word boundaries
+	var escaped := symbol
+	for ch: String in ["\\", ".", "+", "*", "?", "^", "$", "{", "}", "(", ")", "[", "]", "|"]:
+		escaped = escaped.replace(ch, "\\" + ch)
+	var regex := RegEx.new()
+	var err := regex.compile("\\b" + escaped + "\\b")
+	if err != OK:
+		return { &"ok": false, &"error": "Cannot compile regex for symbol: " + symbol }
+
+	var files := _collect_files("res://", glob_filter, exclude_dirs)
+	var matches: Array = []
+
+	for file_path: String in files:
+		if matches.size() >= max_results:
+			break
+
+		var file := FileAccess.open(file_path, FileAccess.READ)
+		if file == null:
+			continue
+		var content := file.get_as_text()
+		file.close()
+
+		if regex.search(content) == null:
+			continue
+
+		var lines := content.split("\n")
+		for i: int in range(lines.size()):
+			if regex.search(lines[i]) != null:
+				matches.append({
+					&"file": file_path,
+					&"line": i + 1,
+					&"content": lines[i].strip_edges(),
+				})
+				if matches.size() >= max_results:
+					break
+
+	return {
+		&"ok": true,
+		&"symbol": symbol,
+		&"matches": matches,
+		&"total_matches": matches.size(),
+		&"truncated": matches.size() >= max_results,
+	}
+
+
+# =============================================================================
+# list_resources - Find .tres files, optionally filtered by type
+# =============================================================================
+## Find all [code].tres[/code] resource files, optionally filtered by resource class.
+func list_resources(args: Dictionary) -> Dictionary:
+	var type_filter: String = str(args.get(&"type", ""))
+	var glob_filter: String = str(args.get(&"glob", ""))
+	var exclude_dirs := _parse_exclude_dirs(args)
+
+	# Collect .tres files
+	var effective_glob := "**/*.tres" if glob_filter.is_empty() else glob_filter
+	var files := _collect_files("res://", effective_glob, exclude_dirs)
+	var resources: Array = []
+
+	for file_path: String in files:
+		if not file_path.ends_with(".tres"):
+			continue
+		if type_filter.is_empty():
+			resources.append({ &"path": file_path })
+		else:
+			# Load and check type
+			var res := ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+			if res != null:
+				var cls := res.get_class()
+				if cls == type_filter or res.is_class(type_filter):
+					resources.append({ &"path": file_path, &"type": cls })
+
+	return {
+		&"ok": true,
+		&"resources": resources,
+		&"count": resources.size(),
+		&"type_filter": type_filter if not type_filter.is_empty() else "all",
 	}

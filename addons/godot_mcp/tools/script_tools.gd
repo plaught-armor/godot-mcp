@@ -3,7 +3,8 @@ extends RefCounted
 
 class_name ScriptTools
 ## GDScript tools for MCP.
-## Handles: create_script, edit_script, validate_script, list_scripts
+## Handles: create_script, edit_script, validate_script, validate_scripts,
+##          list_scripts, get_script_symbols, find_class_definition
 
 var _editor_plugin: EditorPlugin = null
 
@@ -244,6 +245,185 @@ func _collect_recent_script_errors(script_path: String) -> Array:
 	if errors.size() > 10:
 		errors = errors.slice(errors.size() - 10)
 	return errors
+
+
+# =============================================================================
+# validate_scripts - Batch validate multiple scripts
+# =============================================================================
+const MAX_VALIDATE_BATCH := 50
+
+## Validate multiple GDScript files in a single call.
+func validate_scripts(args: Dictionary) -> Dictionary:
+	var paths: Array = args.get(&"paths", [])
+	if paths.is_empty():
+		return { &"ok": false, &"error": "Missing 'paths' array" }
+	if paths.size() > MAX_VALIDATE_BATCH:
+		return { &"ok": false, &"error": "Too many paths (%d). Maximum is %d" % [paths.size(), MAX_VALIDATE_BATCH] }
+
+	var results: Array = []
+	var valid_count := 0
+	var error_count := 0
+
+	for p: Variant in paths:
+		var result := validate_script({ &"path": str(p) })
+		var entry: Dictionary = { &"path": str(p) }
+		if not result[&"ok"]:
+			entry[&"valid"] = false
+			entry[&"error"] = result[&"error"]
+			error_count += 1
+		elif result.get(&"valid", false):
+			entry[&"valid"] = true
+			valid_count += 1
+		else:
+			entry[&"valid"] = false
+			entry[&"errors"] = result.get(&"errors", [result.get(&"message", "Unknown error")])
+			error_count += 1
+		results.append(entry)
+
+	return {
+		&"ok": true,
+		&"results": results,
+		&"valid_count": valid_count,
+		&"error_count": error_count,
+	}
+
+
+# =============================================================================
+# get_script_symbols - Extract methods/variables/signals from a script
+# =============================================================================
+## Return all user-defined methods, variables, and signals from a GDScript file.
+func get_script_symbols(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get(&"path", ""))
+	if path.strip_edges().is_empty():
+		return { &"ok": false, &"error": "Missing 'path'" }
+
+	path = _utils.validate_res_path(path)
+	if path.is_empty():
+		return { &"ok": false, &"error": "Path escapes project root" }
+
+	if not FileAccess.file_exists(path):
+		return { &"ok": false, &"error": "File not found: " + path }
+
+	# Load script to introspect
+	var script := ResourceLoader.load(path, "GDScript", ResourceLoader.CACHE_MODE_IGNORE)
+	if script == null or not script is GDScript:
+		return { &"ok": false, &"error": "Cannot load script: " + path }
+
+	# Get the base class methods/properties/signals to filter them out
+	var base_methods: Dictionary = {}
+	var base_properties: Dictionary = {}
+	var base_signals: Dictionary = {}
+	var base_script = script.get_base_script()
+	if base_script == null:
+		# Native base class — get its methods to exclude
+		var instance = script.new() if script.can_instantiate() else null
+		if instance:
+			var base_class: String = instance.get_class()
+			for m: Dictionary in ClassDB.class_get_method_list(base_class, true):
+				base_methods[m[&"name"]] = true
+			for p: Dictionary in ClassDB.class_get_property_list(base_class, true):
+				base_properties[p[&"name"]] = true
+			for s: Dictionary in ClassDB.class_get_signal_list(base_class, true):
+				base_signals[s[&"name"]] = true
+			if instance is Node:
+				instance.queue_free()
+
+	# Methods
+	var methods: Array = []
+	for m: Dictionary in script.get_script_method_list():
+		var mname: String = m[&"name"]
+		if mname.begins_with("@") or mname in base_methods:
+			continue
+		var method_args: Array = []
+		for a: Dictionary in m.get(&"args", []):
+			method_args.append({
+				&"name": a[&"name"],
+				&"type": _utils.type_id_to_name(a[&"type"]),
+			})
+		methods.append({
+			&"name": mname,
+			&"args": method_args,
+			&"return_type": _utils.type_id_to_name(m.get(&"return", {}).get(&"type", TYPE_NIL)),
+		})
+
+	# Variables (properties)
+	var variables: Array = []
+	for p: Dictionary in script.get_script_property_list():
+		var pname: String = p[&"name"]
+		if pname.begins_with("@") or pname in base_properties:
+			continue
+		variables.append({
+			&"name": pname,
+			&"type": _utils.type_id_to_name(p[&"type"]),
+		})
+
+	# Signals
+	var signals: Array = []
+	for s: Dictionary in script.get_script_signal_list():
+		var sname: String = s[&"name"]
+		if sname in base_signals:
+			continue
+		var sig_args: Array = []
+		for a: Dictionary in s.get(&"args", []):
+			sig_args.append({
+				&"name": a[&"name"],
+				&"type": _utils.type_id_to_name(a[&"type"]),
+			})
+		signals.append({
+			&"name": sname,
+			&"args": sig_args,
+		})
+
+	return {
+		&"ok": true,
+		&"path": path,
+		&"methods": methods,
+		&"variables": variables,
+		&"signals": signals,
+	}
+
+
+# =============================================================================
+# find_class_definition - Find the file that defines a class
+# =============================================================================
+## Search all [code].gd[/code] files for [code]class_name ClassName[/code].
+func find_class_definition(args: Dictionary) -> Dictionary:
+	var cls_name: String = str(args.get(&"class_name", ""))
+	if cls_name.strip_edges().is_empty():
+		return { &"ok": false, &"error": "Missing 'class_name'" }
+
+	if not _is_valid_identifier(cls_name):
+		return { &"ok": false, &"error": "Invalid class name: " + cls_name }
+
+	var regex := RegEx.new()
+	regex.compile("^class_name\\s+" + cls_name + "\\b")
+
+	var scripts: PackedStringArray = []
+	_collect_scripts("res://", scripts)
+
+	for script_path: String in scripts:
+		var file := FileAccess.open(script_path, FileAccess.READ)
+		if file == null:
+			continue
+		var content := file.get_as_text()
+		file.close()
+
+		var lines := content.split("\n")
+		for i: int in range(lines.size()):
+			if regex.search(lines[i]) != null:
+				return {
+					&"ok": true,
+					&"class_name": cls_name,
+					&"file": script_path,
+					&"line": i + 1,
+				}
+
+	return {
+		&"ok": true,
+		&"class_name": cls_name,
+		&"file": "",
+		&"message": "Class '%s' not found in any .gd file" % cls_name,
+	}
 
 
 # =============================================================================

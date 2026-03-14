@@ -9,6 +9,8 @@ var fileTools = []ToolDef{
 			Properties: map[string]*Schema{
 				"root":           {Type: "string", Description: "Starting path like res://addons/ai_assistant or res://"},
 				"include_hidden": {Type: "boolean", Description: "Include hidden files/folders (default: false)"},
+				"recursive":      {Type: "boolean", Description: "Recursively list all files as flat list (default: false)"},
+				"glob":           {Type: "string", Description: "Glob filter (e.g. *.gd, **/*.tscn). Applied in both recursive and non-recursive modes"},
 			},
 			Required: []string{"root"},
 		},
@@ -74,6 +76,8 @@ var fileTools = []ToolDef{
 				"glob":           {Type: "string", Description: "Optional glob filter like **/*.gd to search only GDScript files"},
 				"max_results":    {Type: "number", Description: "Maximum number of results to return (default: 200)"},
 				"case_sensitive": {Type: "boolean", Description: "Case-sensitive search (default: false)"},
+				"regex":          {Type: "boolean", Description: "Treat query as regex pattern instead of literal substring (default: false)"},
+				"exclude_dirs":   {Type: "array", Description: "Directory names to skip entirely (e.g. [\"spacetime_bindings\"])", Items: &Schema{Type: "string"}},
 			},
 			Required: []string{"query"},
 		},
@@ -163,6 +167,7 @@ var fileTools = []ToolDef{
 				"exclude":        {Type: "array", Description: "Glob patterns to skip (e.g. [\"**/addons/**\"])", Items: &Schema{Type: "string"}},
 				"case_sensitive":  {Type: "boolean", Description: "Case-sensitive search (default: true)"},
 				"preview":        {Type: "boolean", Description: "Dry-run — show what would change without writing (default: false)"},
+				"exclude_dirs":   {Type: "array", Description: "Directory names to skip entirely (e.g. [\"spacetime_bindings\"])", Items: &Schema{Type: "string"}},
 			},
 			Required: []string{"search", "replace"},
 		},
@@ -177,6 +182,79 @@ var fileTools = []ToolDef{
 				"preview":           args["preview"],
 				"message":           "Mock: Would replace across files",
 			})
+		},
+	},
+	{
+		Name:        "read_files",
+		Description: "Read multiple text files in a single call. More efficient than calling read_file repeatedly. Maximum 20 files per call.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"paths":     {Type: "array", Description: "Array of res:// paths to read", Items: &Schema{Type: "string"}},
+				"max_bytes": {Type: "number", Description: "Maximum bytes per file (default: 200000)"},
+			},
+			Required: []string{"paths"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":    true,
+				"files": []map[string]any{{"path": "res://scripts/player.gd", "content": "# mock", "line_count": 1}},
+				"count": 1,
+			})
+		},
+	},
+	{
+		Name:        "bulk_edit",
+		Description: "Apply multiple text replacements across files in a single call. Each edit specifies a file, old text to find, and new text to replace it with.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"edits": {Type: "array", Description: `Array of edit objects: [{file: "res://path", old: "old text", new: "new text"}]`, Items: &Schema{
+					Type: "object",
+					Properties: map[string]*Schema{
+						"file": {Type: "string", Description: "res:// path to the file"},
+						"old":  {Type: "string", Description: "Exact text to find and replace"},
+						"new":  {Type: "string", Description: "Replacement text"},
+					},
+					Required: []string{"file", "old", "new"},
+				}},
+			},
+			Required: []string{"edits"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "success_count": 1, "error_count": 0})
+		},
+	},
+	{
+		Name:        "find_references",
+		Description: "Find all references to a symbol using word-boundary matching. More precise than search_project for rename safety checks.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"symbol":       {Type: "string", Description: "Symbol name to find references for"},
+				"glob":         {Type: "string", Description: "Glob filter (e.g. **/*.gd)"},
+				"max_results":  {Type: "number", Description: "Maximum results (default: 200)"},
+				"exclude_dirs": {Type: "array", Description: "Directory names to skip", Items: &Schema{Type: "string"}},
+			},
+			Required: []string{"symbol"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "symbol": args["symbol"], "matches": []any{}, "total_matches": 0})
+		},
+	},
+	{
+		Name:        "list_resources",
+		Description: "Find all .tres resource files in the project, optionally filtered by resource class type.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"type":         {Type: "string", Description: "Filter by resource class name (e.g. BaseSkill, PackedScene)"},
+				"glob":         {Type: "string", Description: "Glob filter for file paths"},
+				"exclude_dirs": {Type: "array", Description: "Directory names to skip", Items: &Schema{Type: "string"}},
+			},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "resources": []any{}, "count": 0})
 		},
 	},
 }

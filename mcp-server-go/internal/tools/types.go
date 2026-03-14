@@ -17,4 +17,5 @@ type ToolDef struct {
 	Description string
 	InputSchema *Schema
 	MockFn      func(args map[string]any) any
+	Runtime     bool // true = route to runtime (game process), not editor
 }

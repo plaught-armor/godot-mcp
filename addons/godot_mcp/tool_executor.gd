@@ -57,7 +57,7 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 func _get_handler(tool_name: StringName) -> RefCounted:
 	match tool_name:
 		# File tools
-		&"list_dir", &"read_file", &"create_file", &"search_project", &"create_folder", &"delete_file", &"delete_folder", &"rename_file", &"replace_in_files":
+		&"list_dir", &"read_file", &"read_files", &"create_file", &"search_project", &"create_folder", &"delete_file", &"delete_folder", &"rename_file", &"replace_in_files", &"bulk_edit", &"find_references", &"list_resources":
 			return _file_tools
 
 		# Scene tools
@@ -65,11 +65,11 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 			return _scene_tools
 
 		# Script tools
-		&"create_script", &"edit_script", &"validate_script", &"list_scripts", &"create_script_file", &"modify_variable", &"modify_signal", &"modify_function", &"modify_function_delete", &"delete_script", &"rename_script", &"format_script":
+		&"create_script", &"edit_script", &"validate_script", &"validate_scripts", &"list_scripts", &"create_script_file", &"modify_variable", &"modify_signal", &"modify_function", &"modify_function_delete", &"delete_script", &"rename_script", &"format_script", &"get_script_symbols", &"find_class_definition":
 			return _script_tools
 
 		# Project/debug tools
-		&"get_project_settings", &"set_project_setting", &"get_input_map", &"configure_input_map", &"get_collision_layers", &"get_node_properties", &"get_console_log", &"get_errors", &"get_debug_errors", &"clear_console_log", &"open_in_godot", &"scene_tree_dump", &"play_project", &"stop_project", &"is_project_running", &"git_status", &"git_commit":
+		&"get_project_settings", &"set_project_setting", &"get_autoloads", &"get_input_map", &"configure_input_map", &"get_collision_layers", &"get_node_properties", &"get_console_log", &"get_errors", &"get_debug_errors", &"clear_console_log", &"open_in_godot", &"scene_tree_dump", &"play_project", &"stop_project", &"is_project_running", &"git_status", &"git_commit", &"git_diff", &"git_log", &"git_stash", &"run_shell_command", &"get_uid", &"query_class_info", &"query_classes":
 			return _project_tools
 
 		# Asset tools

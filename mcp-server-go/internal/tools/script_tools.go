@@ -55,6 +55,54 @@ var scriptTools = []ToolDef{
 			return mockNote(map[string]any{"ok": true, "scripts": []string{"res://scripts/player.gd", "res://scripts/enemy.gd"}, "count": 2})
 		},
 	},
+	{
+		Name:        "validate_scripts",
+		Description: "Validate multiple GDScript files for syntax errors in a single call. More efficient than calling validate_script repeatedly.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"paths": {Type: "array", Description: "Array of res:// paths to GDScript files to validate", Items: &Schema{Type: "string"}},
+			},
+			Required: []string{"paths"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "valid_count": 1, "error_count": 0, "results": []any{}})
+		},
+	},
+	{
+		Name:        "get_script_symbols",
+		Description: "Extract all user-defined methods, variables, and signals from a GDScript file. Useful for auditing, documentation, or understanding a script's API without reading the full source.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"path": {Type: "string", Description: "Path to the GDScript file (e.g., res://scripts/player.gd)"},
+			},
+			Required: []string{"path"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":        true,
+				"path":      args["path"],
+				"methods":   []any{},
+				"variables": []any{},
+				"signals":   []any{},
+			})
+		},
+	},
+	{
+		Name:        "find_class_definition",
+		Description: "Find the file that defines a given class_name. Searches all .gd files for the class_name declaration.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"class_name": {Type: "string", Description: "The class name to search for (e.g., BaseSkill, PlayerController)"},
+			},
+			Required: []string{"class_name"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "class_name": args["class_name"], "file": "", "message": "Mock: would search"})
+		},
+	},
 }
 
 // optionalScriptTools returns tools that depend on external binaries.

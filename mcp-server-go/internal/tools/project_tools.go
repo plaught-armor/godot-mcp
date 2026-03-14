@@ -110,12 +110,25 @@ var projectTools = []ToolDef{
 		},
 	},
 	{
+		Name:        "get_autoloads",
+		Description: "List all registered autoloads in the Godot project with their paths and singleton status.",
+		InputSchema: &Schema{
+			Type:       "object",
+			Properties: map[string]*Schema{},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "autoloads": []any{}, "count": 0})
+		},
+	},
+	{
 		Name:        "get_console_log",
-		Description: "Return the latest lines from the Godot editor output log.",
+		Description: "Return the latest lines from the Godot editor output log. Supports filtering by substring and severity level.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
 				"max_lines": {Type: "number", Description: "Maximum number of lines to include (default: 50)"},
+				"filter":    {Type: "string", Description: "Only include lines containing this substring (case-insensitive)"},
+				"severity":  {Type: "string", Description: "Filter by severity: all, error, warning, info (default: all)", Enum: []string{"all", "error", "warning", "info"}},
 			},
 		},
 		MockFn: func(args map[string]any) any {
@@ -260,6 +273,120 @@ var projectTools = []ToolDef{
 				"message": args["message"],
 				"commit":  "abc1234",
 			})
+		},
+	},
+	{
+		Name:        "git_diff",
+		Description: "Show git diff output for the Godot project. Shows unstaged changes by default, or staged changes with staged=true.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"file":   {Type: "string", Description: "Optional: specific file to diff (res:// or relative path)"},
+				"staged": {Type: "boolean", Description: "Show staged changes instead of unstaged (default: false)"},
+			},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "diff": "diff --git a/scripts/player.gd ...", "files_changed": 1, "staged": false})
+		},
+	},
+	{
+		Name:        "git_log",
+		Description: "Show recent git commit history for the Godot project.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"max_count": {Type: "number", Description: "Number of commits to show (default: 10, max: 100)"},
+				"file":      {Type: "string", Description: "Optional: show only commits affecting this file"},
+			},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":      true,
+				"commits": []map[string]any{{"hash": "abc1234", "message": "Initial commit"}},
+				"count":   1,
+			})
+		},
+	},
+	{
+		Name:        "git_stash",
+		Description: "Git stash management. Push current changes, pop the latest stash, or list all stashes.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"action":  {Type: "string", Description: `Stash operation: "push", "pop", or "list"`, Enum: []string{"push", "pop", "list"}},
+				"message": {Type: "string", Description: "Optional message for push (e.g. \"checkpoint before refactor\")"},
+			},
+			Required: []string{"action"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "action": args["action"], "output": "Mock: stash operation"})
+		},
+	},
+	{
+		Name:        "run_shell_command",
+		Description: "Execute a shell command in the Godot project directory. Uses OS.execute() with separate args (no shell injection). Dangerous commands (rm, sudo, etc.) are blocked.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"command": {Type: "string", Description: "Command to execute (e.g. spacetime, cargo, npm)"},
+				"args":    {Type: "array", Description: "Array of command arguments", Items: &Schema{Type: "string"}},
+			},
+			Required: []string{"command"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "command": args["command"], "exit_code": 0, "stdout": "Mock: command output"})
+		},
+	},
+	{
+		Name:        "get_uid",
+		Description: "Get the Godot UID (unique identifier) for a resource path. Useful for understanding UID references in .tscn and .tres files.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"path": {Type: "string", Description: "Resource path (e.g. res://scripts/player.gd, res://scenes/main.tscn)"},
+			},
+			Required: []string{"path"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "path": args["path"], "uid": "uid://abc123def456"})
+		},
+	},
+	{
+		Name:        "query_class_info",
+		Description: "Get full ClassDB info for a Godot class: methods, properties, signals, enums, parent class, and instantiability. Use this to look up what a node type can do.",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"class_name":        {Type: "string", Description: `Godot class name (e.g. "CharacterBody2D", "AnimationPlayer", "Control")`},
+				"include_inherited": {Type: "boolean", Description: "Include inherited members from parent classes (default: false)"},
+			},
+			Required: []string{"class_name"},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{
+				"ok":         true,
+				"class_name": args["class_name"],
+				"parent_class": "Node",
+				"methods":    []any{},
+				"properties": []any{},
+				"signals":    []any{},
+				"enums":      map[string]any{},
+			})
+		},
+	},
+	{
+		Name:        "query_classes",
+		Description: "List Godot classes from ClassDB, optionally filtered by name substring or category (node, node2d, node3d, control, resource, physics2d, physics3d, audio, animation).",
+		InputSchema: &Schema{
+			Type: "object",
+			Properties: map[string]*Schema{
+				"filter":            {Type: "string", Description: "Case-insensitive substring filter on class name"},
+				"category":          {Type: "string", Description: `Filter by category: "node", "node2d", "node3d", "control", "resource", "physics2d", "physics3d", "audio", "animation"`, Enum: []string{"node", "node2d", "node3d", "control", "resource", "physics2d", "physics3d", "audio", "animation"}},
+				"instantiable_only": {Type: "boolean", Description: "Only include classes that can be instantiated (default: false)"},
+			},
+		},
+		MockFn: func(args map[string]any) any {
+			return mockNote(map[string]any{"ok": true, "classes": []string{"Node", "Node2D", "Node3D"}, "count": 3})
 		},
 	},
 }
