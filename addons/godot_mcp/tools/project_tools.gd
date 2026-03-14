@@ -114,11 +114,13 @@ func get_autoloads(_args: Dictionary) -> Dictionary:
 		var autoload_name := name.substr(9) # Strip "autoload/"
 		var is_singleton := value.begins_with("*")
 		var path := value.substr(1) if is_singleton else value
-		autoloads.append({
-			&"name": autoload_name,
-			&"path": path,
-			&"singleton": is_singleton,
-		})
+		autoloads.append(
+			{
+				&"name": autoload_name,
+				&"path": path,
+				&"singleton": is_singleton,
+			},
+		)
 	return {
 		&"ok": true,
 		&"autoloads": autoloads,
@@ -1112,14 +1114,12 @@ func git_stash(args: Dictionary) -> Dictionary:
 			if exit_code != 0:
 				return { &"ok": false, &"error": "git stash push failed (exit %d)" % exit_code }
 			return { &"ok": true, &"action": "push", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
-
 		"pop":
 			var output: Array = []
 			var exit_code := OS.execute("git", ["-C", _project_path, "stash", "pop"], output)
 			if exit_code != 0:
 				return { &"ok": false, &"error": "git stash pop failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
 			return { &"ok": true, &"action": "pop", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
-
 		"list":
 			var output: Array = []
 			var exit_code := OS.execute("git", ["-C", _project_path, "stash", "list"], output)
@@ -1132,15 +1132,14 @@ func git_stash(args: Dictionary) -> Dictionary:
 				if not line.is_empty():
 					stashes.append(line)
 			return { &"ok": true, &"action": "list", &"stashes": stashes, &"count": stashes.size() }
-
 		_:
 			return { &"ok": false, &"error": "Invalid action '%s'. Use 'push', 'pop', or 'list'." % action }
-
 
 # =============================================================================
 # run_shell_command - Execute a shell command in the project directory
 # =============================================================================
 const _BLOCKED_COMMANDS: PackedStringArray = ["rm", "sudo", "chmod", "chown", "mkfs", "dd", "kill", "killall", "pkill", "shutdown", "reboot", "init", "systemctl"]
+
 
 ## Execute a shell command in the project directory.
 ## Uses [code]OS.execute()[/code] with separate args (no shell injection).
@@ -1232,15 +1231,19 @@ func query_class_info(args: Dictionary) -> Dictionary:
 			continue
 		var method_args: Array = []
 		for a: Dictionary in m.get(&"args", []):
-			method_args.append({
-				&"name": a[&"name"],
-				&"type": _utils.type_id_to_name(a[&"type"]),
-			})
-		methods.append({
-			&"name": mname,
-			&"args": method_args,
-			&"return_type": _utils.type_id_to_name(m.get(&"return", {}).get(&"type", TYPE_NIL)),
-		})
+			method_args.append(
+				{
+					&"name": a[&"name"],
+					&"type": _utils.type_id_to_name(a[&"type"]),
+				},
+			)
+		methods.append(
+			{
+				&"name": mname,
+				&"args": method_args,
+				&"return_type": _utils.type_id_to_name(m.get(&"return", { }).get(&"type", TYPE_NIL)),
+			},
+		)
 	result[&"methods"] = methods
 
 	# Properties
@@ -1250,10 +1253,12 @@ func query_class_info(args: Dictionary) -> Dictionary:
 		# Skip category/group headers
 		if usage & PROPERTY_USAGE_CATEGORY or usage & PROPERTY_USAGE_GROUP or usage & PROPERTY_USAGE_SUBGROUP:
 			continue
-		properties.append({
-			&"name": p[&"name"],
-			&"type": _utils.type_id_to_name(p[&"type"]),
-		})
+		properties.append(
+			{
+				&"name": p[&"name"],
+				&"type": _utils.type_id_to_name(p[&"type"]),
+			},
+		)
 	result[&"properties"] = properties
 
 	# Signals
@@ -1261,27 +1266,30 @@ func query_class_info(args: Dictionary) -> Dictionary:
 	for s: Dictionary in ClassDB.class_get_signal_list(class_name_str, no_exclude):
 		var sig_args: Array = []
 		for a: Dictionary in s.get(&"args", []):
-			sig_args.append({
-				&"name": a[&"name"],
-				&"type": _utils.type_id_to_name(a[&"type"]),
-			})
-		signals.append({
-			&"name": s[&"name"],
-			&"args": sig_args,
-		})
+			sig_args.append(
+				{
+					&"name": a[&"name"],
+					&"type": _utils.type_id_to_name(a[&"type"]),
+				},
+			)
+		signals.append(
+			{
+				&"name": s[&"name"],
+				&"args": sig_args,
+			},
+		)
 	result[&"signals"] = signals
 
 	# Enums
-	var enums: Dictionary = {}
+	var enums: Dictionary = { }
 	for enum_name: String in ClassDB.class_get_enum_list(class_name_str, no_exclude):
-		var constants: Dictionary = {}
+		var constants: Dictionary = { }
 		for const_name: String in ClassDB.class_get_enum_constants(class_name_str, enum_name, no_exclude):
 			constants[const_name] = ClassDB.class_get_integer_constant(class_name_str, const_name)
 		enums[enum_name] = constants
 	result[&"enums"] = enums
 
 	return result
-
 
 # =============================================================================
 # query_classes — List/filter classes from ClassDB
@@ -1297,6 +1305,7 @@ const _CATEGORY_BASES: Dictionary = {
 	"audio": "AudioStream",
 	"animation": "AnimationMixer",
 }
+
 
 func query_classes(args: Dictionary) -> Dictionary:
 	var filter: String = str(args.get(&"filter", ""))

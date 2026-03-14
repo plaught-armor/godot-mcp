@@ -246,11 +246,11 @@ func _collect_recent_script_errors(script_path: String) -> Array:
 		errors = errors.slice(errors.size() - 10)
 	return errors
 
-
 # =============================================================================
 # validate_scripts - Batch validate multiple scripts
 # =============================================================================
 const MAX_VALIDATE_BATCH := 50
+
 
 ## Validate multiple GDScript files in a single call.
 func validate_scripts(args: Dictionary) -> Dictionary:
@@ -310,9 +310,9 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 		return { &"ok": false, &"error": "Cannot load script: " + path }
 
 	# Get the base class methods/properties/signals to filter them out
-	var base_methods: Dictionary = {}
-	var base_properties: Dictionary = {}
-	var base_signals: Dictionary = {}
+	var base_methods: Dictionary = { }
+	var base_properties: Dictionary = { }
+	var base_signals: Dictionary = { }
 	var base_script = script.get_base_script()
 	if base_script == null:
 		# Native base class — get its methods to exclude
@@ -336,15 +336,19 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 			continue
 		var method_args: Array = []
 		for a: Dictionary in m.get(&"args", []):
-			method_args.append({
-				&"name": a[&"name"],
-				&"type": _utils.type_id_to_name(a[&"type"]),
-			})
-		methods.append({
-			&"name": mname,
-			&"args": method_args,
-			&"return_type": _utils.type_id_to_name(m.get(&"return", {}).get(&"type", TYPE_NIL)),
-		})
+			method_args.append(
+				{
+					&"name": a[&"name"],
+					&"type": _utils.type_id_to_name(a[&"type"]),
+				},
+			)
+		methods.append(
+			{
+				&"name": mname,
+				&"args": method_args,
+				&"return_type": _utils.type_id_to_name(m.get(&"return", { }).get(&"type", TYPE_NIL)),
+			},
+		)
 
 	# Variables (properties)
 	var variables: Array = []
@@ -352,10 +356,12 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 		var pname: String = p[&"name"]
 		if pname.begins_with("@") or pname in base_properties:
 			continue
-		variables.append({
-			&"name": pname,
-			&"type": _utils.type_id_to_name(p[&"type"]),
-		})
+		variables.append(
+			{
+				&"name": pname,
+				&"type": _utils.type_id_to_name(p[&"type"]),
+			},
+		)
 
 	# Signals
 	var signals: Array = []
@@ -365,14 +371,18 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 			continue
 		var sig_args: Array = []
 		for a: Dictionary in s.get(&"args", []):
-			sig_args.append({
-				&"name": a[&"name"],
-				&"type": _utils.type_id_to_name(a[&"type"]),
-			})
-		signals.append({
-			&"name": sname,
-			&"args": sig_args,
-		})
+			sig_args.append(
+				{
+					&"name": a[&"name"],
+					&"type": _utils.type_id_to_name(a[&"type"]),
+				},
+			)
+		signals.append(
+			{
+				&"name": sname,
+				&"args": sig_args,
+			},
+		)
 
 	return {
 		&"ok": true,

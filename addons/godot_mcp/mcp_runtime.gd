@@ -11,8 +11,8 @@ var _socket := WebSocketPeer.new()
 var _connected := false
 
 # Signal watching: key = "node_path::signal_name", value = callable used to connect
-var _watched_signals: Dictionary = {}  # {String: Callable}
-var _signal_emissions: Array = []  # [{node_path, signal_name, args, timestamp}]
+var _watched_signals: Dictionary = { } # {String: Callable}
+var _signal_emissions: Array = [] # [{node_path, signal_name, args, timestamp}]
 const MAX_EMISSIONS := 500
 
 
@@ -27,7 +27,7 @@ func _process(_delta: float) -> void:
 	if state == WebSocketPeer.STATE_OPEN:
 		if not _connected:
 			_connected = true
-			_send({"type": "runtime_ready"})
+			_send({ "type": "runtime_ready" })
 			print("[MCPRuntime] Connected to MCP server")
 		while _socket.get_available_packet_count() > 0:
 			_handle_message(_socket.get_packet().get_string_from_utf8())
@@ -46,11 +46,11 @@ func _handle_message(json_string: String) -> void:
 
 	match msg.get("type", ""):
 		"ping":
-			_send({"type": "pong"})
+			_send({ "type": "pong" })
 		"tool_invoke":
 			var id: String = str(msg.get("id", ""))
 			var tool_name: String = str(msg.get("tool", ""))
-			var args: Dictionary = msg.get("args", {}) if msg.get("args") is Dictionary else {}
+			var args: Dictionary = msg.get("args", { }) if msg.get("args") is Dictionary else { }
 			if tool_name == "capture_screenshot":
 				_capture_screenshot_async(id)
 			else:
@@ -84,7 +84,7 @@ func _execute(tool_name: String, args: Dictionary) -> Dictionary:
 			return _unwatch_signal(args)
 		"get_signal_emissions":
 			return _get_signal_emissions(args)
-	return {"ok": false, "error": "Unknown runtime tool: " + tool_name}
+	return { "ok": false, "error": "Unknown runtime tool: " + tool_name }
 
 
 # =============================================================================
@@ -94,26 +94,29 @@ func _capture_screenshot_async(id: String) -> void:
 	await RenderingServer.frame_post_draw
 	var viewport := get_viewport()
 	if viewport == null:
-		_send_result(id, {"ok": false, "error": "No viewport available"})
+		_send_result(id, { "ok": false, "error": "No viewport available" })
 		return
 
 	var img := viewport.get_texture().get_image()
 	if img == null:
-		_send_result(id, {"ok": false, "error": "Failed to capture viewport image"})
+		_send_result(id, { "ok": false, "error": "Failed to capture viewport image" })
 		return
 
 	var png_data := img.save_png_to_buffer()
 	if png_data.is_empty():
-		_send_result(id, {"ok": false, "error": "Failed to encode PNG"})
+		_send_result(id, { "ok": false, "error": "Failed to encode PNG" })
 		return
 
 	var b64 := Marshalls.raw_to_base64(png_data)
-	_send_result(id, {
-		"ok": true,
-		"image_base64": b64,
-		"width": img.get_width(),
-		"height": img.get_height(),
-	})
+	_send_result(
+		id,
+		{
+			"ok": true,
+			"image_base64": b64,
+			"width": img.get_width(),
+			"height": img.get_height(),
+		},
+	)
 
 
 # =============================================================================
@@ -125,9 +128,9 @@ func _inspect_tree(args: Dictionary) -> Dictionary:
 
 	var root := get_tree().root.get_node_or_null(root_path)
 	if root == null:
-		return {"ok": false, "error": "Node not found: " + root_path}
+		return { "ok": false, "error": "Node not found: " + root_path }
 
-	return {"ok": true, "tree": _serialize_node_tree(root, 0, max_depth)}
+	return { "ok": true, "tree": _serialize_node_tree(root, 0, max_depth) }
 
 
 func _serialize_node_tree(node: Node, depth: int, max_depth: int) -> Dictionary:
@@ -162,14 +165,14 @@ func _get_property(args: Dictionary) -> Dictionary:
 	var node_path: String = str(args.get("node_path", ""))
 	var property: String = str(args.get("property", ""))
 	if node_path.is_empty() or property.is_empty():
-		return {"ok": false, "error": "Missing node_path or property"}
+		return { "ok": false, "error": "Missing node_path or property" }
 
 	var node := get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return {"ok": false, "error": "Node not found: " + node_path}
+		return { "ok": false, "error": "Node not found: " + node_path }
 
 	var value: Variant = node.get(property)
-	return {"ok": true, "node_path": node_path, "property": property, "value": _serialize_value(value)}
+	return { "ok": true, "node_path": node_path, "property": property, "value": _serialize_value(value) }
 
 
 # =============================================================================
@@ -179,11 +182,11 @@ func _set_property(args: Dictionary) -> Dictionary:
 	var node_path: String = str(args.get("node_path", ""))
 	var property: String = str(args.get("property", ""))
 	if node_path.is_empty() or property.is_empty():
-		return {"ok": false, "error": "Missing node_path or property"}
+		return { "ok": false, "error": "Missing node_path or property" }
 
 	var node := get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return {"ok": false, "error": "Node not found: " + node_path}
+		return { "ok": false, "error": "Node not found: " + node_path }
 
 	var old_value: Variant = node.get(property)
 	var new_value: Variant = _deserialize_value(args.get("value"))
@@ -205,14 +208,14 @@ func _call_method(args: Dictionary) -> Dictionary:
 	var node_path: String = str(args.get("node_path", ""))
 	var method: String = str(args.get("method", ""))
 	if node_path.is_empty() or method.is_empty():
-		return {"ok": false, "error": "Missing node_path or method"}
+		return { "ok": false, "error": "Missing node_path or method" }
 
 	var node := get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return {"ok": false, "error": "Node not found: " + node_path}
+		return { "ok": false, "error": "Node not found: " + node_path }
 
 	if not node.has_method(method):
-		return {"ok": false, "error": "Method not found: " + method + " on " + node_path}
+		return { "ok": false, "error": "Method not found: " + method + " on " + node_path }
 
 	var call_args: Array = args.get("args", []) if args.get("args") is Array else []
 	var deserialized: Array = []
@@ -220,7 +223,7 @@ func _call_method(args: Dictionary) -> Dictionary:
 		deserialized.append(_deserialize_value(arg))
 
 	var result: Variant = node.callv(method, deserialized)
-	return {"ok": true, "result": _serialize_value(result)}
+	return { "ok": true, "result": _serialize_value(result) }
 
 
 # =============================================================================
@@ -256,20 +259,20 @@ func _get_metrics() -> Dictionary:
 func _inject_action(args: Dictionary) -> Dictionary:
 	var action: String = str(args.get("action", ""))
 	if action.is_empty():
-		return {"ok": false, "error": "Missing action"}
+		return { "ok": false, "error": "Missing action" }
 
 	var pressed: bool = args.get("pressed", true)
 	var strength: float = float(args.get("strength", 1.0))
 
 	if not InputMap.has_action(action):
-		return {"ok": false, "error": "Unknown action: " + action}
+		return { "ok": false, "error": "Unknown action: " + action }
 
 	if pressed:
 		Input.action_press(action, strength)
 	else:
 		Input.action_release(action)
 
-	return {"ok": true, "action": action, "pressed": pressed, "strength": strength}
+	return { "ok": true, "action": action, "pressed": pressed, "strength": strength }
 
 
 # =============================================================================
@@ -278,11 +281,11 @@ func _inject_action(args: Dictionary) -> Dictionary:
 func _inject_key(args: Dictionary) -> Dictionary:
 	var keycode_str: String = str(args.get("keycode", ""))
 	if keycode_str.is_empty():
-		return {"ok": false, "error": "Missing keycode"}
+		return { "ok": false, "error": "Missing keycode" }
 
 	var keycode: int = OS.find_keycode_from_string(keycode_str)
 	if keycode == KEY_NONE:
-		return {"ok": false, "error": "Unknown keycode: " + keycode_str}
+		return { "ok": false, "error": "Unknown keycode: " + keycode_str }
 
 	var pressed: bool = args.get("pressed", true)
 	var ev := InputEventKey.new()
@@ -294,7 +297,7 @@ func _inject_key(args: Dictionary) -> Dictionary:
 	ev.meta_pressed = args.get("meta", false)
 	Input.parse_input_event(ev)
 
-	return {"ok": true, "keycode": keycode_str, "pressed": pressed}
+	return { "ok": true, "keycode": keycode_str, "pressed": pressed }
 
 
 # =============================================================================
@@ -314,7 +317,7 @@ func _inject_mouse_click(args: Dictionary) -> Dictionary:
 		"middle":
 			button_index = MOUSE_BUTTON_MIDDLE
 		_:
-			return {"ok": false, "error": "Unknown button: " + button + " (use left, right, or middle)"}
+			return { "ok": false, "error": "Unknown button: " + button + " (use left, right, or middle)" }
 
 	var pos := Vector2(x, y)
 
@@ -334,7 +337,7 @@ func _inject_mouse_click(args: Dictionary) -> Dictionary:
 	release.pressed = false
 	Input.parse_input_event(release)
 
-	return {"ok": true, "x": x, "y": y, "button": button}
+	return { "ok": true, "x": x, "y": y, "button": button }
 
 
 # =============================================================================
@@ -352,7 +355,7 @@ func _inject_mouse_motion(args: Dictionary) -> Dictionary:
 	ev.global_position = Vector2(pos_x, pos_y)
 	Input.parse_input_event(ev)
 
-	return {"ok": true, "relative": {"x": rel_x, "y": rel_y}, "position": {"x": pos_x, "y": pos_y}}
+	return { "ok": true, "relative": { "x": rel_x, "y": rel_y }, "position": { "x": pos_x, "y": pos_y } }
 
 
 # =============================================================================
@@ -362,18 +365,18 @@ func _watch_signal(args: Dictionary) -> Dictionary:
 	var node_path: String = str(args.get("node_path", ""))
 	var signal_name: String = str(args.get("signal_name", ""))
 	if node_path.is_empty() or signal_name.is_empty():
-		return {"ok": false, "error": "Missing node_path or signal_name"}
+		return { "ok": false, "error": "Missing node_path or signal_name" }
 
 	var node := get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return {"ok": false, "error": "Node not found: " + node_path}
+		return { "ok": false, "error": "Node not found: " + node_path }
 
 	if not node.has_signal(signal_name):
-		return {"ok": false, "error": "Signal not found: " + signal_name + " on " + node_path}
+		return { "ok": false, "error": "Signal not found: " + signal_name + " on " + node_path }
 
 	var key := node_path + "::" + signal_name
 	if _watched_signals.has(key):
-		return {"ok": true, "already_watching": true, "key": key}
+		return { "ok": true, "already_watching": true, "key": key }
 
 	# We need a closure that captures node_path and signal_name,
 	# while accepting any number of signal arguments via a lambda.
@@ -403,7 +406,7 @@ func _watch_signal(args: Dictionary) -> Dictionary:
 	sig.connect(cb)
 	_watched_signals[key] = cb
 
-	return {"ok": true, "watching": key}
+	return { "ok": true, "watching": key }
 
 
 # =============================================================================
@@ -413,11 +416,11 @@ func _unwatch_signal(args: Dictionary) -> Dictionary:
 	var node_path: String = str(args.get("node_path", ""))
 	var signal_name: String = str(args.get("signal_name", ""))
 	if node_path.is_empty() or signal_name.is_empty():
-		return {"ok": false, "error": "Missing node_path or signal_name"}
+		return { "ok": false, "error": "Missing node_path or signal_name" }
 
 	var key := node_path + "::" + signal_name
 	if not _watched_signals.has(key):
-		return {"ok": false, "error": "Not watching: " + key}
+		return { "ok": false, "error": "Not watching: " + key }
 
 	var node := get_tree().root.get_node_or_null(node_path)
 	if node != null:
@@ -427,7 +430,7 @@ func _unwatch_signal(args: Dictionary) -> Dictionary:
 			sig.disconnect(cb)
 
 	_watched_signals.erase(key)
-	return {"ok": true, "unwatched": key}
+	return { "ok": true, "unwatched": key }
 
 
 # =============================================================================
@@ -454,7 +457,7 @@ func _get_signal_emissions(args: Dictionary) -> Dictionary:
 		if clear:
 			_signal_emissions = remaining
 
-	return {"ok": true, "emissions": out, "count": out.size(), "watching": _watched_signals.keys()}
+	return { "ok": true, "emissions": out, "count": out.size(), "watching": _watched_signals.keys() }
 
 
 func _on_signal_fired(node_path: String, signal_name: String, sig_args: Array) -> void:
@@ -463,12 +466,14 @@ func _on_signal_fired(node_path: String, signal_name: String, sig_args: Array) -
 	var serialized_args: Array = []
 	for arg: Variant in sig_args:
 		serialized_args.append(_serialize_value(arg))
-	_signal_emissions.append({
-		"node_path": node_path,
-		"signal_name": signal_name,
-		"args": serialized_args,
-		"timestamp": Time.get_ticks_msec(),
-	})
+	_signal_emissions.append(
+		{
+			"node_path": node_path,
+			"signal_name": signal_name,
+			"args": serialized_args,
+			"timestamp": Time.get_ticks_msec(),
+		},
+	)
 
 
 # =============================================================================
@@ -480,31 +485,31 @@ func _serialize_value(value: Variant) -> Variant:
 	if value is bool or value is int or value is float or value is String:
 		return value
 	if value is Vector2:
-		return {"_type": "Vector2", "x": value.x, "y": value.y}
+		return { "_type": "Vector2", "x": value.x, "y": value.y }
 	if value is Vector2i:
-		return {"_type": "Vector2i", "x": value.x, "y": value.y}
+		return { "_type": "Vector2i", "x": value.x, "y": value.y }
 	if value is Vector3:
-		return {"_type": "Vector3", "x": value.x, "y": value.y, "z": value.z}
+		return { "_type": "Vector3", "x": value.x, "y": value.y, "z": value.z }
 	if value is Vector3i:
-		return {"_type": "Vector3i", "x": value.x, "y": value.y, "z": value.z}
+		return { "_type": "Vector3i", "x": value.x, "y": value.y, "z": value.z }
 	if value is Color:
-		return {"_type": "Color", "r": value.r, "g": value.g, "b": value.b, "a": value.a}
+		return { "_type": "Color", "r": value.r, "g": value.g, "b": value.b, "a": value.a }
 	if value is Rect2:
-		return {"_type": "Rect2", "x": value.position.x, "y": value.position.y, "w": value.size.x, "h": value.size.y}
+		return { "_type": "Rect2", "x": value.position.x, "y": value.position.y, "w": value.size.x, "h": value.size.y }
 	if value is Transform2D:
-		return {"_type": "Transform2D", "origin": _serialize_value(value.origin), "x": _serialize_value(value.x), "y": _serialize_value(value.y)}
+		return { "_type": "Transform2D", "origin": _serialize_value(value.origin), "x": _serialize_value(value.x), "y": _serialize_value(value.y) }
 	if value is Array:
 		var out: Array = []
 		for item: Variant in value:
 			out.append(_serialize_value(item))
 		return out
 	if value is Dictionary:
-		var out: Dictionary = {}
+		var out: Dictionary = { }
 		for key: Variant in value:
 			out[str(key)] = _serialize_value(value[key])
 		return out
 	if value is NodePath:
-		return {"_type": "NodePath", "path": str(value)}
+		return { "_type": "NodePath", "path": str(value) }
 	# Fallback: convert to string
 	return str(value)
 
@@ -546,9 +551,11 @@ func _send(msg: Dictionary) -> void:
 
 
 func _send_result(id: String, result: Dictionary) -> void:
-	_send({
-		"type": "tool_result",
-		"id": id,
-		"success": result.get("ok", false),
-		"result": result,
-	})
+	_send(
+		{
+			"type": "tool_result",
+			"id": id,
+			"success": result.get("ok", false),
+			"result": result,
+		},
+	)

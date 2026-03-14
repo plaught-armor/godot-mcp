@@ -756,11 +756,13 @@ func find_references(args: Dictionary) -> Dictionary:
 		var lines := content.split("\n")
 		for i: int in range(lines.size()):
 			if regex.search(lines[i]) != null:
-				matches.append({
-					&"file": file_path,
-					&"line": i + 1,
-					&"content": lines[i].strip_edges(),
-				})
+				matches.append(
+					{
+						&"file": file_path,
+						&"line": i + 1,
+						&"content": lines[i].strip_edges(),
+					},
+				)
 				if matches.size() >= max_results:
 					break
 
