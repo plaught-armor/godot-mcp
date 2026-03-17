@@ -323,6 +323,13 @@ func search_project(args: Dictionary) -> Dictionary:
 		if file == null:
 			continue
 
+		# Sniff first 512 bytes for null bytes — skip binary files
+		var head := file.get_buffer(mini(512, file.get_length()))
+		if head.has(0):
+			file.close()
+			continue
+		file.seek(0)
+
 		var content := file.get_as_text()
 		file.close()
 
@@ -465,6 +472,11 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 		var file := FileAccess.open(file_path, FileAccess.READ)
 		if file == null:
 			continue
+		var head := file.get_buffer(mini(512, file.get_length()))
+		if head.has(0):
+			file.close()
+			continue
+		file.seek(0)
 		var content := file.get_as_text()
 		file.close()
 
@@ -532,7 +544,13 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 
 static func _is_binary_ext(ext: String) -> bool:
 	match ext:
-		"import", "png", "jpg", "jpeg", "webp", "svg", "exr", "ico", "bmp", "ogg", "wav", "mp3", "oggstr", "escn", "glb", "gltf", "obj", "fbx", "dae", "ttf", "otf", "woff", "woff2", "res", "scn", "ctex", "stex", "uid", "so", "dll", "dylib", "exe", "bin", "zip", "gz", "tar", "pck":
+		"import", "png", "jpg", "jpeg", "webp", "svg", "exr", "ico", "bmp", "tga", "hdr", \
+		"ogg", "wav", "mp3", "oggstr", "sample", "mp4", "ogv", "avi", \
+		"escn", "glb", "gltf", "obj", "fbx", "dae", \
+		"ttf", "otf", "woff", "woff2", \
+		"res", "scn", "ctex", "stex", "uid", "translation", "mesh", "material", \
+		"so", "dll", "dylib", "exe", "bin", "o", "a", "lib", \
+		"zip", "gz", "tar", "pck", "7z", "rar":
 			return true
 	return false
 

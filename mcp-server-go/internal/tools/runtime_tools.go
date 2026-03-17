@@ -52,7 +52,7 @@ var runtimeTools = []ToolDef{
 			Properties: map[string]*Schema{
 				"node_path": {Type: "string", Description: "Absolute node path"},
 				"property":  {Type: "string", Description: "Property name"},
-				"value":     {Description: "New value to set"},
+				"value":     {Description: `New value to set. For Godot types use {"_type": "Vector3", "x": 1, "y": 2, "z": 3} etc.`},
 			},
 			Required: []string{"node_path", "property", "value"},
 		},
@@ -63,13 +63,13 @@ var runtimeTools = []ToolDef{
 	},
 	{
 		Name:        "call_runtime_method",
-		Description: "Call a method on a node in the running game. The game must be running.",
+		Description: "Call a method on a node in the running game. The game must be running. For typed args use {\"_type\": \"<T>\", ...} objects. Supported types: Vector2{x,y}, Vector2i, Vector3{x,y,z}, Vector3i, Vector4{x,y,z,w}, Quaternion{x,y,z,w}, Color{r,g,b,a}, Basis{x,y,z}, Transform2D{x,y,origin}, Transform3D{basis,origin}, Rect2{x,y,w,h}, AABB{position,size}, Plane{normal,d}, NodePath{path}.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
 				"node_path": {Type: "string", Description: "Absolute node path"},
 				"method":    {Type: "string", Description: "Method name to call"},
-				"args":      {Type: "array", Description: "Arguments to pass to the method", Items: &Schema{}},
+				"args":      {Type: "array", Description: `Arguments to pass. Use typed objects for Godot types, e.g. {"_type": "Quaternion", "x": 0, "y": 0, "z": 0.707, "w": 0.707}`, Items: &Schema{}},
 			},
 			Required: []string{"node_path", "method"},
 		},

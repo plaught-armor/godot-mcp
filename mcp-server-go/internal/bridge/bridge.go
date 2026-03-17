@@ -412,7 +412,7 @@ func (b *GodotBridge) acceptEditor(ctx context.Context, conn *websocket.Conn, he
 	log.Printf("[GodotBridge] Editor connected (project: %s)", hello.ProjectPath)
 	b.notifyConnectionChange(true)
 
-	go b.pingLoop(readCtx, conn)
+	go b.pingLoop(readCtx, conn, &b.writeMu)
 	b.readLoop(readCtx, conn)
 	b.handleDisconnect()
 }
@@ -433,7 +433,7 @@ func (b *GodotBridge) acceptRuntime(ctx context.Context, conn *websocket.Conn) {
 
 	log.Printf("[GodotBridge] Runtime connected")
 
-	go b.pingLoop(readCtx, conn)
+	go b.pingLoop(readCtx, conn, &b.runtimeWriteMu)
 	b.runtimeReadLoop(readCtx, conn)
 	b.handleRuntimeDisconnect()
 }
@@ -605,7 +605,7 @@ func (b *GodotBridge) handleDisconnect() {
 	b.notifyConnectionChange(false, info)
 }
 
-func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn) {
+func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn, wmu *sync.Mutex) {
 	ticker := time.NewTicker(pingInterval)
 	defer ticker.Stop()
 
@@ -616,9 +616,9 @@ func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			b.writeMu.Lock()
+			wmu.Lock()
 			err := conn.Write(ctx, websocket.MessageText, ping)
-			b.writeMu.Unlock()
+			wmu.Unlock()
 			if err != nil {
 				return
 			}

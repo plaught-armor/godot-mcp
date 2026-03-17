@@ -856,6 +856,9 @@ func play_project(args: Dictionary) -> Dictionary:
 	var ei = _editor_plugin.get_editor_interface()
 	var scene_path: String = str(args.get(&"scene_path", ""))
 
+	# Signal to mcp_runtime.gd that this launch came from MCP (suppress focus grab).
+	ProjectSettings.set_setting("godot_mcp/mcp_launched", true)
+
 	# Defer play calls so the tool response is sent via WebSocket before
 	# Godot launches the game (which can freeze the editor momentarily).
 	if scene_path == "current":

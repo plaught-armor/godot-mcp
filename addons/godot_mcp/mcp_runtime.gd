@@ -9,6 +9,8 @@ const MAX_DEPTH_LIMIT := 10
 
 var _socket := WebSocketPeer.new()
 var _connected := false
+const WS_OUTBOUND_BUFFER := 10 * 1024 * 1024 # 10 MB — screenshots are large
+const WS_INBOUND_BUFFER := 1 * 1024 * 1024 # 1 MB
 
 # Signal watching: key = "node_path::signal_name", value = callable used to connect
 var _watched_signals: Dictionary = { } # {String: Callable}
@@ -17,6 +19,13 @@ const MAX_EMISSIONS := 500
 
 
 func _ready() -> void:
+	# Prevent game window from stealing focus when launched via MCP play_project.
+	# The editor plugin sets this meta before calling play — cleared after read.
+	if ProjectSettings.has_setting("godot_mcp/mcp_launched"):
+		ProjectSettings.set_setting("godot_mcp/mcp_launched", false)
+		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
+	_socket.inbound_buffer_size = WS_INBOUND_BUFFER
+	_socket.outbound_buffer_size = WS_OUTBOUND_BUFFER
 	_socket.connect_to_url(SERVER_URL)
 
 
@@ -496,8 +505,20 @@ func _serialize_value(value: Variant) -> Variant:
 		return { "_type": "Color", "r": value.r, "g": value.g, "b": value.b, "a": value.a }
 	if value is Rect2:
 		return { "_type": "Rect2", "x": value.position.x, "y": value.position.y, "w": value.size.x, "h": value.size.y }
+	if value is Vector4:
+		return { "_type": "Vector4", "x": value.x, "y": value.y, "z": value.z, "w": value.w }
+	if value is Quaternion:
+		return { "_type": "Quaternion", "x": value.x, "y": value.y, "z": value.z, "w": value.w }
+	if value is Basis:
+		return { "_type": "Basis", "x": _serialize_value(value.x), "y": _serialize_value(value.y), "z": _serialize_value(value.z) }
 	if value is Transform2D:
 		return { "_type": "Transform2D", "origin": _serialize_value(value.origin), "x": _serialize_value(value.x), "y": _serialize_value(value.y) }
+	if value is Transform3D:
+		return { "_type": "Transform3D", "basis": _serialize_value(value.basis), "origin": _serialize_value(value.origin) }
+	if value is AABB:
+		return { "_type": "AABB", "position": _serialize_value(value.position), "size": _serialize_value(value.size) }
+	if value is Plane:
+		return { "_type": "Plane", "normal": _serialize_value(value.normal), "d": value.d }
 	if value is Array:
 		var out: Array = []
 		for item: Variant in value:
@@ -528,8 +549,24 @@ func _deserialize_value(value: Variant) -> Variant:
 				return Vector3(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0))
 			"Vector3i":
 				return Vector3i(int(value.get("x", 0)), int(value.get("y", 0)), int(value.get("z", 0)))
+			"Vector4":
+				return Vector4(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0), value.get("w", 0.0))
+			"Quaternion":
+				return Quaternion(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0), value.get("w", 1.0))
 			"Color":
 				return Color(value.get("r", 0.0), value.get("g", 0.0), value.get("b", 0.0), value.get("a", 1.0))
+			"Basis":
+				return Basis(_deserialize_value(value.get("x", {})), _deserialize_value(value.get("y", {})), _deserialize_value(value.get("z", {})))
+			"Transform3D":
+				return Transform3D(_deserialize_value(value.get("basis", {})), _deserialize_value(value.get("origin", {})))
+			"Transform2D":
+				return Transform2D(0.0, _deserialize_value(value.get("origin", {}))) if not value.has("x") else Transform2D(_deserialize_value(value.get("x", {})), _deserialize_value(value.get("y", {})), _deserialize_value(value.get("origin", {})))
+			"Rect2":
+				return Rect2(value.get("x", 0.0), value.get("y", 0.0), value.get("w", 0.0), value.get("h", 0.0))
+			"AABB":
+				return AABB(_deserialize_value(value.get("position", {})), _deserialize_value(value.get("size", {})))
+			"Plane":
+				return Plane(_deserialize_value(value.get("normal", {})), value.get("d", 0.0))
 			"NodePath":
 				return NodePath(str(value.get("path", "")))
 		# No _type — treat as plain dictionary
