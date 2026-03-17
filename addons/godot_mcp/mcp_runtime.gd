@@ -556,17 +556,17 @@ func _deserialize_value(value: Variant) -> Variant:
 			"Color":
 				return Color(value.get("r", 0.0), value.get("g", 0.0), value.get("b", 0.0), value.get("a", 1.0))
 			"Basis":
-				return Basis(_deserialize_value(value.get("x", {})), _deserialize_value(value.get("y", {})), _deserialize_value(value.get("z", {})))
+				return Basis(_deserialize_value(value.get("x", { })), _deserialize_value(value.get("y", { })), _deserialize_value(value.get("z", { })))
 			"Transform3D":
-				return Transform3D(_deserialize_value(value.get("basis", {})), _deserialize_value(value.get("origin", {})))
+				return Transform3D(_deserialize_value(value.get("basis", { })), _deserialize_value(value.get("origin", { })))
 			"Transform2D":
-				return Transform2D(0.0, _deserialize_value(value.get("origin", {}))) if not value.has("x") else Transform2D(_deserialize_value(value.get("x", {})), _deserialize_value(value.get("y", {})), _deserialize_value(value.get("origin", {})))
+				return Transform2D(0.0, _deserialize_value(value.get("origin", { }))) if not value.has("x") else Transform2D(_deserialize_value(value.get("x", { })), _deserialize_value(value.get("y", { })), _deserialize_value(value.get("origin", { })))
 			"Rect2":
 				return Rect2(value.get("x", 0.0), value.get("y", 0.0), value.get("w", 0.0), value.get("h", 0.0))
 			"AABB":
-				return AABB(_deserialize_value(value.get("position", {})), _deserialize_value(value.get("size", {})))
+				return AABB(_deserialize_value(value.get("position", { })), _deserialize_value(value.get("size", { })))
 			"Plane":
-				return Plane(_deserialize_value(value.get("normal", {})), value.get("d", 0.0))
+				return Plane(_deserialize_value(value.get("normal", { })), value.get("d", 0.0))
 			"NodePath":
 				return NodePath(str(value.get("path", "")))
 		# No _type — treat as plain dictionary
