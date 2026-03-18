@@ -956,7 +956,7 @@ func git_status(_args: Dictionary) -> Dictionary:
 # =============================================================================
 func git_commit(args: Dictionary) -> Dictionary:
 	var message: String = str(args.get(&"message", ""))
-	var files: Array = args.get(&"files", [])  # Variant array from JSON
+	var files: Array = args.get(&"files", []) # Variant array from JSON
 	var stage_all: bool = bool(args.get(&"all", false))
 
 	if message.strip_edges().is_empty():
@@ -1147,7 +1147,7 @@ const _BLOCKED_COMMANDS: PackedStringArray = ["rm", "sudo", "chmod", "chown", "m
 ## Uses [code]OS.execute()[/code] with separate args (no shell injection).
 func run_shell_command(args: Dictionary) -> Dictionary:
 	var command: String = str(args.get(&"command", ""))
-	var cmd_args: Array = args.get(&"args", [])  # Variant array from JSON
+	var cmd_args: Array = args.get(&"args", []) # Variant array from JSON
 
 	if command.strip_edges().is_empty():
 		return { &"ok": false, &"error": "Missing 'command'" }
