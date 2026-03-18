@@ -560,13 +560,7 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 
 static func _is_binary_ext(ext: String) -> bool:
 	match ext:
-		"import", "png", "jpg", "jpeg", "webp", "svg", "exr", "ico", "bmp", "tga", "hdr", \
-		"ogg", "wav", "mp3", "oggstr", "sample", "mp4", "ogv", "avi", \
-		"escn", "glb", "gltf", "obj", "fbx", "dae", \
-		"ttf", "otf", "woff", "woff2", \
-		"res", "scn", "ctex", "stex", "uid", "translation", "mesh", "material", \
-		"so", "dll", "dylib", "exe", "bin", "o", "a", "lib", \
-		"zip", "gz", "tar", "pck", "7z", "rar":
+		"import", "png", "jpg", "jpeg", "webp", "svg", "exr", "ico", "bmp", "tga", "hdr", "ogg", "wav", "mp3", "oggstr", "sample", "mp4", "ogv", "avi", "escn", "glb", "gltf", "obj", "fbx", "dae", "ttf", "otf", "woff", "woff2", "res", "scn", "ctex", "stex", "uid", "translation", "mesh", "material", "so", "dll", "dylib", "exe", "bin", "o", "a", "lib", "zip", "gz", "tar", "pck", "7z", "rar":
 			return true
 	return false
 
