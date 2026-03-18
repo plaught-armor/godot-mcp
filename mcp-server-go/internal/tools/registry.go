@@ -5,10 +5,13 @@ var AllTools []ToolDef
 var toolIndex map[string]*ToolDef
 
 func init() {
+	opt := optionalScriptTools()
+	total := len(fileTools) + len(sceneTools) + len(scriptTools) + len(opt) + len(projectTools) + len(assetTools) + len(runtimeTools)
+	AllTools = make([]ToolDef, 0, total)
 	AllTools = append(AllTools, fileTools...)
 	AllTools = append(AllTools, sceneTools...)
 	AllTools = append(AllTools, scriptTools...)
-	AllTools = append(AllTools, optionalScriptTools()...)
+	AllTools = append(AllTools, opt...)
 	AllTools = append(AllTools, projectTools...)
 	AllTools = append(AllTools, assetTools...)
 	AllTools = append(AllTools, runtimeTools...)

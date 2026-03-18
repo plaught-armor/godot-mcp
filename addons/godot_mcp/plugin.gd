@@ -21,8 +21,8 @@ var _tool_executor: ToolExecutor # ToolExecutor
 var _status_label: Label
 var _thread: Thread
 var _mutex: Mutex
-var _pending_requests: Array = [] # [{id, tool, args}]
-var _thread_running := false
+var _pending_requests: Array[Dictionary] = [] # [{id, tool, args}]
+var _thread_running: bool = false
 
 
 func _enter_tree() -> void:
@@ -192,10 +192,10 @@ func _thread_loop() -> void:
 		# Swap the whole queue out under the lock — O(1) instead of O(n) pop_front
 		_mutex.lock()
 		if _pending_requests.is_empty():
-			_mutex.unlock()
 			_thread_running = false
+			_mutex.unlock()
 			return
-		var batch: Array = _pending_requests
+		var batch: Array[Dictionary] = _pending_requests
 		_pending_requests = []
 		_mutex.unlock()
 
@@ -217,7 +217,7 @@ func _on_map_project_pressed() -> void:
 		push_warning("[GMCP] Cannot map project — not connected to MCP server")
 		return
 	# Run map_project on a background thread to avoid blocking the editor
-	var thread := Thread.new()
+	var thread: Thread = Thread.new()
 	thread.start(
 		func():
 			var result: Dictionary = _tool_executor.execute_tool(&"map_project", { })

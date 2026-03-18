@@ -7,12 +7,18 @@ import (
 
 // openBrowser opens the given URL in the default browser.
 func openBrowser(url string) error {
+	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Start()
+		cmd = exec.Command("open", url)
 	case "windows":
-		return exec.Command("cmd", "/c", "start", url).Start()
+		cmd = exec.Command("cmd", "/c", "start", url)
 	default:
-		return exec.Command("xdg-open", url).Start()
+		cmd = exec.Command("xdg-open", url)
 	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go cmd.Wait() // reap zombie process
+	return nil
 }

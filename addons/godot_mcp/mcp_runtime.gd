@@ -7,8 +7,8 @@ const SERVER_URL := "ws://127.0.0.1:6505"
 const MAX_DEPTH_DEFAULT := 3
 const MAX_DEPTH_LIMIT := 10
 
-var _socket := WebSocketPeer.new()
-var _connected := false
+var _socket: WebSocketPeer = WebSocketPeer.new()
+var _connected: bool = false
 const WS_OUTBOUND_BUFFER := 10 * 1024 * 1024 # 10 MB — screenshots are large
 const WS_INBOUND_BUFFER := 1 * 1024 * 1024 # 1 MB
 
@@ -31,7 +31,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_socket.poll()
-	var state := _socket.get_ready_state()
+	var state: WebSocketPeer.State = _socket.get_ready_state()
 
 	if state == WebSocketPeer.STATE_OPEN:
 		if not _connected:
@@ -63,7 +63,7 @@ func _handle_message(json_string: String) -> void:
 			if tool_name == "capture_screenshot":
 				_capture_screenshot_async(id)
 			else:
-				var result := _execute(tool_name, args)
+				var result: Dictionary = _execute(tool_name, args)
 				_send_result(id, result)
 
 
@@ -101,22 +101,22 @@ func _execute(tool_name: String, args: Dictionary) -> Dictionary:
 # =============================================================================
 func _capture_screenshot_async(id: String) -> void:
 	await RenderingServer.frame_post_draw
-	var viewport := get_viewport()
+	var viewport: Viewport = get_viewport()
 	if viewport == null:
 		_send_result(id, { "ok": false, "error": "No viewport available" })
 		return
 
-	var img := viewport.get_texture().get_image()
+	var img: Image = viewport.get_texture().get_image()
 	if img == null:
 		_send_result(id, { "ok": false, "error": "Failed to capture viewport image" })
 		return
 
-	var png_data := img.save_png_to_buffer()
+	var png_data: PackedByteArray = img.save_png_to_buffer()
 	if png_data.is_empty():
 		_send_result(id, { "ok": false, "error": "Failed to encode PNG" })
 		return
 
-	var b64 := Marshalls.raw_to_base64(png_data)
+	var b64: String = Marshalls.raw_to_base64(png_data)
 	_send_result(
 		id,
 		{
@@ -135,7 +135,7 @@ func _inspect_tree(args: Dictionary) -> Dictionary:
 	var root_path: String = str(args.get("root_path", "/root"))
 	var max_depth: int = clampi(int(args.get("max_depth", MAX_DEPTH_DEFAULT)), 1, MAX_DEPTH_LIMIT)
 
-	var root := get_tree().root.get_node_or_null(root_path)
+	var root: Node = get_tree().root.get_node_or_null(root_path)
 	if root == null:
 		return { "ok": false, "error": "Node not found: " + root_path }
 
@@ -143,14 +143,16 @@ func _inspect_tree(args: Dictionary) -> Dictionary:
 
 
 func _serialize_node_tree(node: Node, depth: int, max_depth: int) -> Dictionary:
-	var result := _serialize_node(node)
-	if depth < max_depth:
+	var result: Dictionary = _serialize_node(node)
+	if depth < max_depth and node.get_child_count() > 0:
 		var children: Array = []
 		for child: Node in node.get_children():
 			children.append(_serialize_node_tree(child, depth + 1, max_depth))
 		result["children"] = children
+	elif depth < max_depth:
+		pass # leaf node — omit children key to save allocation
 	else:
-		var child_count := node.get_child_count()
+		var child_count: int = node.get_child_count()
 		if child_count > 0:
 			result["child_count"] = child_count
 	return result
@@ -176,7 +178,7 @@ func _get_property(args: Dictionary) -> Dictionary:
 	if node_path.is_empty() or property.is_empty():
 		return { "ok": false, "error": "Missing node_path or property" }
 
-	var node := get_tree().root.get_node_or_null(node_path)
+	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
 		return { "ok": false, "error": "Node not found: " + node_path }
 
@@ -193,7 +195,7 @@ func _set_property(args: Dictionary) -> Dictionary:
 	if node_path.is_empty() or property.is_empty():
 		return { "ok": false, "error": "Missing node_path or property" }
 
-	var node := get_tree().root.get_node_or_null(node_path)
+	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
 		return { "ok": false, "error": "Node not found: " + node_path }
 
@@ -219,7 +221,7 @@ func _call_method(args: Dictionary) -> Dictionary:
 	if node_path.is_empty() or method.is_empty():
 		return { "ok": false, "error": "Missing node_path or method" }
 
-	var node := get_tree().root.get_node_or_null(node_path)
+	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
 		return { "ok": false, "error": "Node not found: " + node_path }
 
@@ -297,7 +299,7 @@ func _inject_key(args: Dictionary) -> Dictionary:
 		return { "ok": false, "error": "Unknown keycode: " + keycode_str }
 
 	var pressed: bool = args.get("pressed", true)
-	var ev := InputEventKey.new()
+	var ev: InputEventKey = InputEventKey.new()
 	ev.keycode = keycode
 	ev.pressed = pressed
 	ev.shift_pressed = args.get("shift", false)
@@ -328,10 +330,10 @@ func _inject_mouse_click(args: Dictionary) -> Dictionary:
 		_:
 			return { "ok": false, "error": "Unknown button: " + button + " (use left, right, or middle)" }
 
-	var pos := Vector2(x, y)
+	var pos: Vector2 = Vector2(x, y)
 
 	# Press
-	var press := InputEventMouseButton.new()
+	var press: InputEventMouseButton = InputEventMouseButton.new()
 	press.position = pos
 	press.global_position = pos
 	press.button_index = button_index
@@ -339,7 +341,7 @@ func _inject_mouse_click(args: Dictionary) -> Dictionary:
 	Input.parse_input_event(press)
 
 	# Release
-	var release := InputEventMouseButton.new()
+	var release: InputEventMouseButton = InputEventMouseButton.new()
 	release.position = pos
 	release.global_position = pos
 	release.button_index = button_index
@@ -358,7 +360,7 @@ func _inject_mouse_motion(args: Dictionary) -> Dictionary:
 	var pos_x: float = float(args.get("position_x", 0.0))
 	var pos_y: float = float(args.get("position_y", 0.0))
 
-	var ev := InputEventMouseMotion.new()
+	var ev: InputEventMouseMotion = InputEventMouseMotion.new()
 	ev.relative = Vector2(rel_x, rel_y)
 	ev.position = Vector2(pos_x, pos_y)
 	ev.global_position = Vector2(pos_x, pos_y)
@@ -376,20 +378,20 @@ func _watch_signal(args: Dictionary) -> Dictionary:
 	if node_path.is_empty() or signal_name.is_empty():
 		return { "ok": false, "error": "Missing node_path or signal_name" }
 
-	var node := get_tree().root.get_node_or_null(node_path)
+	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
 		return { "ok": false, "error": "Node not found: " + node_path }
 
 	if not node.has_signal(signal_name):
 		return { "ok": false, "error": "Signal not found: " + signal_name + " on " + node_path }
 
-	var key := node_path + "::" + signal_name
+	var key: String = node_path + "::" + signal_name
 	if _watched_signals.has(key):
 		return { "ok": true, "already_watching": true, "key": key }
 
 	# We need a closure that captures node_path and signal_name,
 	# while accepting any number of signal arguments via a lambda.
-	var sig := Signal(node, signal_name)
+	var sig: Signal = Signal(node, signal_name)
 	var arg_count: int = 0
 	for s: Dictionary in node.get_signal_list():
 		if s["name"] == signal_name:
@@ -427,14 +429,14 @@ func _unwatch_signal(args: Dictionary) -> Dictionary:
 	if node_path.is_empty() or signal_name.is_empty():
 		return { "ok": false, "error": "Missing node_path or signal_name" }
 
-	var key := node_path + "::" + signal_name
+	var key: String = node_path + "::" + signal_name
 	if not _watched_signals.has(key):
 		return { "ok": false, "error": "Not watching: " + key }
 
-	var node := get_tree().root.get_node_or_null(node_path)
+	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node != null:
 		var cb: Callable = _watched_signals[key]
-		var sig := Signal(node, signal_name)
+		var sig: Signal = Signal(node, signal_name)
 		if sig.is_connected(cb):
 			sig.disconnect(cb)
 
@@ -556,17 +558,19 @@ func _deserialize_value(value: Variant) -> Variant:
 			"Color":
 				return Color(value.get("r", 0.0), value.get("g", 0.0), value.get("b", 0.0), value.get("a", 1.0))
 			"Basis":
-				return Basis(_deserialize_value(value.get("x", {})), _deserialize_value(value.get("y", {})), _deserialize_value(value.get("z", {})))
+				return Basis(_deserialize_value(value["x"]), _deserialize_value(value["y"]), _deserialize_value(value["z"]))
 			"Transform3D":
-				return Transform3D(_deserialize_value(value.get("basis", {})), _deserialize_value(value.get("origin", {})))
+				return Transform3D(_deserialize_value(value["basis"]), _deserialize_value(value["origin"]))
 			"Transform2D":
-				return Transform2D(0.0, _deserialize_value(value.get("origin", {}))) if not value.has("x") else Transform2D(_deserialize_value(value.get("x", {})), _deserialize_value(value.get("y", {})), _deserialize_value(value.get("origin", {})))
+				if value.has("x"):
+					return Transform2D(_deserialize_value(value["x"]), _deserialize_value(value["y"]), _deserialize_value(value["origin"]))
+				return Transform2D(0.0, _deserialize_value(value["origin"]))
 			"Rect2":
 				return Rect2(value.get("x", 0.0), value.get("y", 0.0), value.get("w", 0.0), value.get("h", 0.0))
 			"AABB":
-				return AABB(_deserialize_value(value.get("position", {})), _deserialize_value(value.get("size", {})))
+				return AABB(_deserialize_value(value["position"]), _deserialize_value(value["size"]))
 			"Plane":
-				return Plane(_deserialize_value(value.get("normal", {})), value.get("d", 0.0))
+				return Plane(_deserialize_value(value["normal"]), value.get("d", 0.0))
 			"NodePath":
 				return NodePath(str(value.get("path", "")))
 		# No _type — treat as plain dictionary

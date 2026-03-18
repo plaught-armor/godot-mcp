@@ -12,7 +12,7 @@ var _script_tools: ScriptTools
 var _project_tools: ProjectTools
 var _asset_tools: AssetTools
 var _visualizer_tools: VisualizerTools
-var _initialized := false
+var _initialized: bool = false
 
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
@@ -31,7 +31,7 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 
 ## Execute a tool by name with the given arguments.
 func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
-	var handler := _get_handler(tool_name)
+	var handler: RefCounted = _get_handler(tool_name)
 	if handler == null:
 		return { &"ok": false, &"error": "Unknown tool: " + tool_name }
 
@@ -39,7 +39,7 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 		push_error("[GMCP] Handler has no method '%s'" % tool_name)
 		return { &"ok": false, &"error": "Handler missing method: " + tool_name }
 
-	var result = handler.call(tool_name, args)
+	var result: Variant = handler.call(tool_name, args)
 
 	# GDScript runtime errors (null deref, bad type) print to console but
 	# don't throw — they return null. Catch that here so the Go bridge

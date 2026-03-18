@@ -4,6 +4,10 @@ extends RefCounted
 class_name VisualizerTools
 ## Crawls a Godot project and parses all GDScript files to build a project map.
 
+const _EDGE_EXTENDS := "extends"
+const _EDGE_PRELOAD := "preload"
+const _EDGE_SIGNAL := "signal"
+
 var _editor_plugin: EditorPlugin = null
 var _utils: ToolUtils
 
@@ -20,10 +24,9 @@ var _re_connect_direct: RegEx
 
 # Cached RegEx patterns for _parse_scene
 var _re_ext_resource: RegEx
-var _re_ext_id: RegEx
+
 var _re_node: RegEx
 var _re_node_instance: RegEx
-var _re_script_ref: RegEx
 
 
 func _init() -> void:
@@ -38,10 +41,10 @@ func _init() -> void:
 	_re_connect_direct = RegEx.create_from_string("^\\s*(\\w+)\\.connect\\s*\\(")
 
 	_re_ext_resource = RegEx.create_from_string('\\[ext_resource.*path="([^"]+)".*type="([^"]+)"')
-	_re_ext_id = RegEx.create_from_string('id="([^"]+)"')
+
 	_re_node = RegEx.create_from_string('\\[node name="([^"]+)".*type="([^"]+)"')
 	_re_node_instance = RegEx.create_from_string('\\[node name="([^"]+)".*instance=ExtResource\\("([^"]+)"\\)')
-	_re_script_ref = RegEx.create_from_string('script = ExtResource\\("([^"]+)"\\)')
+
 
 
 func set_editor_plugin(plugin: EditorPlugin) -> void:
@@ -68,7 +71,7 @@ func map_project(args: Dictionary) -> Dictionary:
 		return { &"ok": false, &"error": "No GDScript files found in " + root_path }
 
 	# Parse each script
-	var nodes: Array = []
+	var nodes: Array[Dictionary] = []
 	var class_map: Dictionary = { } # class_name -> path
 
 	for path: String in script_paths:
@@ -78,25 +81,25 @@ func map_project(args: Dictionary) -> Dictionary:
 			class_map[info[&"class_name"]] = path
 
 	# Build edges
-	var edges: Array = []
+	var edges: Array[Dictionary] = []
 	for node: Dictionary in nodes:
 		var from_path: String = node[&"path"]
 
 		# extends relationship (resolve class_name to path)
 		var extends_class: String = node[&"extends"]
 		if extends_class in class_map:
-			edges.append({ &"from": from_path, &"to": class_map[extends_class], &"type": "extends" })
+			edges.append({ &"from": from_path, &"to": class_map[extends_class], &"type": _EDGE_EXTENDS })
 
 		# preload/load references
 		for ref: String in node[&"preloads"]:
 			if ref.ends_with(".gd"):
-				edges.append({ &"from": from_path, &"to": ref, &"type": "preload" })
+				edges.append({ &"from": from_path, &"to": ref, &"type": _EDGE_PRELOAD })
 
 		# signal connections
 		for conn: Dictionary in node[&"connections"]:
 			var target: String = conn[&"target"]
 			if target in class_map:
-				edges.append({ &"from": from_path, &"to": class_map[target], &"type": "signal", &"signal_name": conn[&"signal"] })
+				edges.append({ &"from": from_path, &"to": class_map[target], &"type": _EDGE_SIGNAL, &"signal_name": conn[&"signal"] })
 
 	return {
 		&"ok": true,
@@ -116,18 +119,18 @@ const MAX_TRAVERSAL_DEPTH := 20
 func _collect_scripts(path: String, results: PackedStringArray, include_addons: bool, depth: int = 0) -> void:
 	if depth >= MAX_TRAVERSAL_DEPTH:
 		return
-	var dir := DirAccess.open(path)
+	var dir: DirAccess = DirAccess.open(path)
 	if dir == null:
 		return
 
 	dir.list_dir_begin()
-	var name := dir.get_next()
+	var name: String = dir.get_next()
 	while name != "":
 		if name.begins_with("."):
 			name = dir.get_next()
 			continue
 
-		var full_path := path.path_join(name)
+		var full_path: String = path.path_join(name)
 
 		if dir.current_is_dir():
 			if name == "addons" and not include_addons:
@@ -143,7 +146,7 @@ func _collect_scripts(path: String, results: PackedStringArray, include_addons: 
 
 ## Parse a GDScript file and extract its structure.
 func _parse_script(path: String) -> Dictionary:
-	var file := FileAccess.open(path, FileAccess.READ)
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return {
 			&"path": path,
@@ -160,51 +163,55 @@ func _parse_script(path: String) -> Dictionary:
 	var lines: PackedStringArray = content.split("\n")
 	var line_count: int = lines.size()
 
-	var description := ""
-	var extends_class := ""
-	var class_name_str := ""
-	var variables: Array = []
-	var functions: Array = []
-	var signals_list: Array = []
-	var preloads: Array = []
-	var connections: Array = []
+	var description: String = ""
+	var extends_class: String = ""
+	var class_name_str: String = ""
+	var variables: Array[Dictionary] = []
+	var functions: Array[Dictionary] = []
+	var signals_list: Array[Dictionary] = []
+	var preloads: Array[String] = []
+	var connections: Array[Dictionary] = []
 
 	# Map of variable names to their types (for resolving signal connections)
 	var var_type_map: Dictionary = { }
 
 	# First pass: extract metadata and find function boundaries
-	var func_starts: Array = [] # [{line_idx, name}]
+	var func_starts: Array[Dictionary] = [] # [{line_idx, name}]
 
 	for i: int in range(line_count):
 		var line: String = lines[i]
+		if line.is_empty():
+			continue
 		var stripped: String = line.strip_edges()
-		var is_indented: bool = line.begins_with("\t") or line.begins_with(" ")
+		if stripped.is_empty():
+			continue
+		var is_indented: bool = line.unicode_at(0) == 9 or line.unicode_at(0) == 32
 
 		# Top-level declarations only apply to non-indented lines
 		if not is_indented:
 			# Description tag (check first 15 lines)
 			if i < 15 and description.is_empty():
-				var m := _re_desc.search(stripped)
+				var m: RegExMatch = _re_desc.search(stripped)
 				if m:
 					description = m.get_string(1)
 					continue
 
 			# extends
 			if extends_class.is_empty():
-				var m := _re_extends.search(stripped)
+				var m: RegExMatch = _re_extends.search(stripped)
 				if m:
 					extends_class = m.get_string(1)
 					continue
 
 			# class_name
 			if class_name_str.is_empty():
-				var m := _re_class_name.search(stripped)
+				var m: RegExMatch = _re_class_name.search(stripped)
 				if m:
 					class_name_str = m.get_string(1)
 					continue
 
 			# Variables
-			var m_var := _re_var.search(stripped)
+			var m_var: RegExMatch = _re_var.search(stripped)
 			if m_var:
 				var exported: bool = m_var.get_string(1) != ""
 				var onready: bool = m_var.get_string(2) != ""
@@ -229,7 +236,7 @@ func _parse_script(path: String) -> Dictionary:
 				)
 
 			# Functions
-			var m_func := _re_func.search(stripped)
+			var m_func: RegExMatch = _re_func.search(stripped)
 			if m_func:
 				var func_name: String = m_func.get_string(1)
 				var return_type: String = m_func.get_string(3)
@@ -245,7 +252,7 @@ func _parse_script(path: String) -> Dictionary:
 				)
 
 			# Signals
-			var m_sig := _re_signal.search(stripped)
+			var m_sig: RegExMatch = _re_signal.search(stripped)
 			if m_sig:
 				signals_list.append(
 					{
@@ -255,14 +262,15 @@ func _parse_script(path: String) -> Dictionary:
 				)
 
 		# Preload/load and connections can appear anywhere (including inside functions)
-		var m_preload := _re_preload.search(stripped)
-		if m_preload:
-			preloads.append(m_preload.get_string(1))
+		if stripped.contains("load"):
+			var m_preload: RegExMatch = _re_preload.search(stripped)
+			if m_preload:
+				preloads.append(m_preload.get_string(1))
 
 		# Signal connections (Godot 4 style)
 		if stripped.find(".connect") != -1:
 			# Pattern: obj.signal.connect(...) - e.g. wave_manager.wave_started.connect(...)
-			var m_conn_obj := _re_connect_obj.search(stripped)
+			var m_conn_obj: RegExMatch = _re_connect_obj.search(stripped)
 			if m_conn_obj:
 				var obj_name: String = m_conn_obj.get_string(1)
 				var signal_name: String = m_conn_obj.get_string(2)
@@ -277,7 +285,7 @@ func _parse_script(path: String) -> Dictionary:
 				)
 			else:
 				# Pattern: signal.connect(...) - e.g. body_entered.connect(...)
-				var m_conn_direct := _re_connect_direct.search(stripped)
+				var m_conn_direct: RegExMatch = _re_connect_direct.search(stripped)
 				if m_conn_direct:
 					connections.append(
 						{
@@ -380,13 +388,13 @@ func map_scenes(args: Dictionary) -> Dictionary:
 		return { &"ok": true, &"scene_map": { &"scenes": [], &"total_scenes": 0 } }
 
 	# Parse each scene
-	var scenes: Array = []
+	var scenes: Array[Dictionary] = []
 	for path: String in scene_paths:
 		var info: Dictionary = _parse_scene(path)
 		scenes.append(info)
 
 	# Build edges between scenes (instantiation, preloads)
-	var edges: Array = []
+	var edges: Array[Dictionary] = []
 	for scene: Dictionary in scenes:
 		var from_path: String = scene[&"path"]
 		for instance: String in scene[&"instances"]:
@@ -406,18 +414,18 @@ func map_scenes(args: Dictionary) -> Dictionary:
 func _collect_scenes(path: String, results: PackedStringArray, include_addons: bool, depth: int = 0) -> void:
 	if depth >= MAX_TRAVERSAL_DEPTH:
 		return
-	var dir := DirAccess.open(path)
+	var dir: DirAccess = DirAccess.open(path)
 	if dir == null:
 		return
 
 	dir.list_dir_begin()
-	var d_name := dir.get_next()
+	var d_name: String = dir.get_next()
 	while d_name != "":
 		if d_name.begins_with("."):
 			d_name = dir.get_next()
 			continue
 
-		var full_path := path.path_join(d_name)
+		var full_path: String = path.path_join(d_name)
 
 		if dir.current_is_dir():
 			if d_name == "addons" and not include_addons:
@@ -433,7 +441,7 @@ func _collect_scenes(path: String, results: PackedStringArray, include_addons: b
 
 ## Parse a scene file and extract its structure.
 func _parse_scene(path: String) -> Dictionary:
-	var file := FileAccess.open(path, FileAccess.READ)
+	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return { &"path": path, &"error": "Cannot open file", &"instances": [] }
 
@@ -442,32 +450,26 @@ func _parse_scene(path: String) -> Dictionary:
 
 	var scene_name: String = path.get_file().replace(".tscn", "")
 	var root_type: String = ""
-	var nodes: Array = []
-	var instances: Array = []
-	var scripts: Array = []
+	var nodes: Array[Dictionary] = []
+	var instances: Array[String] = []
+	var scripts: Array[String] = []
 
 	# Parse .tscn format
 	var lines: PackedStringArray = content.split("\n")
-	var ext_resources: Dictionary = { } # id -> {path, type}
-
 	for line: String in lines:
 		# External resources
-		var m_ext := _re_ext_resource.search(line)
+		var m_ext: RegExMatch = _re_ext_resource.search(line)
 		if m_ext:
 			var res_path: String = m_ext.get_string(1)
 			var res_type: String = m_ext.get_string(2)
-			# Extract ID from the line
-			var id_match := _re_ext_id.search(line)
-			if id_match:
-				ext_resources[id_match.get_string(1)] = { &"path": res_path, &"type": res_type }
-				if res_type == "PackedScene":
-					instances.append(res_path)
-				elif res_type == "Script":
-					scripts.append(res_path)
+			if res_type == "PackedScene":
+				instances.append(res_path)
+			elif res_type == "Script":
+				scripts.append(res_path)
 			continue
 
 		# Regular nodes
-		var m_node := _re_node.search(line)
+		var m_node: RegExMatch = _re_node.search(line)
 		if m_node:
 			var node_name: String = m_node.get_string(1)
 			var node_type: String = m_node.get_string(2)
@@ -477,7 +479,7 @@ func _parse_scene(path: String) -> Dictionary:
 			continue
 
 		# Instance nodes
-		var m_inst := _re_node_instance.search(line)
+		var m_inst: RegExMatch = _re_node_instance.search(line)
 		if m_inst:
 			var node_name: String = m_inst.get_string(1)
 			nodes.append({ &"name": node_name, &"type": "Instance" })

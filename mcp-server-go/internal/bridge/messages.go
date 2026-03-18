@@ -19,8 +19,3 @@ type ToolInvokeMessage struct {
 	Tool string         `json:"tool"`
 	Args map[string]any `json:"args"`
 }
-
-// PingMessage is sent to Godot as a keepalive.
-type PingMessage struct {
-	Type string `json:"type"`
-}

@@ -13,16 +13,17 @@ signal visualizer_failed(error: String)
 
 const DEFAULT_URL := "ws://127.0.0.1:6505"
 const RECONNECT_DELAY := 3.0 # seconds
+const _PONG_MSG: Dictionary = { &"type": &"pong" }
 const MAX_RECONNECT_DELAY := 15.0 # max backoff
 const MAX_PACKETS_PER_FRAME := 32
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 const OUTBOUND_BUFFER_SIZE := 10 * 1024 * 1024 # 10 MB — matches Go server read limit
 var server_url: String = DEFAULT_URL
-var _is_connected := false
+var _is_connected: bool = false
 var _reconnect_timer: Timer
-var _current_reconnect_delay := RECONNECT_DELAY
-var _should_reconnect := true
+var _current_reconnect_delay: float = RECONNECT_DELAY
+var _should_reconnect: bool = true
 var _project_path: String
 
 
@@ -38,7 +39,7 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	socket.poll()
-	var state := socket.get_ready_state()
+	var state: WebSocketPeer.State = socket.get_ready_state()
 
 	if state == WebSocketPeer.STATE_CLOSED:
 		if _is_connected:
@@ -51,7 +52,7 @@ func _process(_delta: float) -> void:
 	if state == WebSocketPeer.STATE_OPEN:
 		if not _is_connected:
 			_handle_connect()
-		var packets_processed := 0
+		var packets_processed: int = 0
 		while socket.get_available_packet_count() > 0 and packets_processed < MAX_PACKETS_PER_FRAME:
 			_handle_message(socket.get_packet().get_string_from_utf8())
 			packets_processed += 1
@@ -75,8 +76,8 @@ func disconnect_from_server() -> void:
 	_is_connected = false
 
 
-func send_tool_result(request_id: String, success: bool, result = null, error: String = "") -> void:
-	var response := {
+func send_tool_result(request_id: String, success: bool, result: Variant = null, error: String = "") -> void:
+	var response: Dictionary = {
 		&"type": &"tool_result",
 		&"id": request_id,
 		&"success": success,
@@ -109,7 +110,7 @@ func _attempt_connection() -> void:
 
 	print("[GMCP] Connecting to ", server_url, "...")
 	socket.outbound_buffer_size = OUTBOUND_BUFFER_SIZE
-	var err := socket.connect_to_url(server_url)
+	var err: Error = socket.connect_to_url(server_url)
 	if err == OK:
 		set_process(true)
 	else:
@@ -156,15 +157,16 @@ func _on_reconnect_timer() -> void:
 
 
 func _handle_message(json_string: String) -> void:
-	var message = JSON.parse_string(json_string)
-	if message == null:
+	var parsed: Variant = JSON.parse_string(json_string)
+	if parsed is not Dictionary:
 		push_error("[GMCP] Failed to parse message: ", json_string)
 		return
 
+	var message: Dictionary = parsed
 	var msg_type: String = message.get(&"type", "")
 	match msg_type:
 		"ping":
-			_send_message({ &"type": &"pong" })
+			_send_message(_PONG_MSG)
 		"tool_invoke":
 			var request_id: String = message.get(&"id", "")
 			var tool_name: String = message.get(&"tool", "")

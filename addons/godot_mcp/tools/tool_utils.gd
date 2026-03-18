@@ -28,7 +28,7 @@ func refresh_filesystem() -> void:
 	if _editor_plugin:
 		_editor_plugin.get_editor_interface().get_resource_filesystem().scan()
 	elif Engine.is_editor_hint():
-		var editor_interface = Engine.get_singleton("EditorInterface")
+		var editor_interface: Object = Engine.get_singleton("EditorInterface")
 		if editor_interface:
 			editor_interface.get_resource_filesystem().scan()
 
@@ -42,8 +42,8 @@ func ensure_res_path(path: String) -> String:
 ## Return a safe [code]res://[/code] path, or empty string if it escapes the project root.
 func validate_res_path(path: String) -> String:
 	path = ensure_res_path(path)
-	var abs := ProjectSettings.globalize_path(path)
-	var root := ProjectSettings.globalize_path("res://")
+	var abs: String = ProjectSettings.globalize_path(path)
+	var root: String = ProjectSettings.globalize_path("res://")
 	if not abs.begins_with(root):
 		return ""
 	return path
@@ -69,7 +69,7 @@ func serialize_value(value: Variant) -> Variant:
 		TYPE_RECT2:
 			return { &"type": &"Rect2", &"x": value.position.x, &"y": value.position.y, &"width": value.size.x, &"height": value.size.y }
 		TYPE_OBJECT:
-			if value and value is Resource and value.resource_path:
+			if value is Resource and value.resource_path:
 				return { &"type": &"Resource", &"path": value.resource_path }
 			return null
 		_:
@@ -168,11 +168,11 @@ func type_id_to_name(type_id: int) -> String:
 
 
 ## Recursively find first child node matching the given class name.
-func find_node_by_class(root: Node, cls_name: String) -> Node:
+func find_node_by_class(root: Node, cls_name: StringName) -> Node:
 	if root.get_class() == cls_name:
 		return root
 	for child: Node in root.get_children():
-		var found := find_node_by_class(child, cls_name)
+		var found: Node = find_node_by_class(child, cls_name)
 		if found:
 			return found
 	return null
@@ -183,7 +183,7 @@ func find_child_rtl(node: Node) -> RichTextLabel:
 	for child: Node in node.get_children():
 		if child is RichTextLabel:
 			return child
-		var found := find_child_rtl(child)
+		var found: RichTextLabel = find_child_rtl(child)
 		if found:
 			return found
 	return null
