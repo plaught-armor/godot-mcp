@@ -540,7 +540,7 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 	# Generate unique name if not provided
 	if new_name.is_empty():
 		var base_name: StringName = target.name
-		var sibling_names: Dictionary = {}
+		var sibling_names: Dictionary = { }
 		for c: Node in parent.get_children():
 			sibling_names[c.name] = true
 		var counter: int = 2
@@ -951,7 +951,6 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 		&"categories": categories,
 		&"property_count": properties.size(),
 	}
-
 
 
 # =============================================================================

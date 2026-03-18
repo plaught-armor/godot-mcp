@@ -46,7 +46,6 @@ func _init() -> void:
 	_re_node_instance = RegEx.create_from_string('\\[node name="([^"]+)".*instance=ExtResource\\("([^"]+)"\\)')
 
 
-
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
