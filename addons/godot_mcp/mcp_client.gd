@@ -12,29 +12,26 @@ signal visualizer_opened(url: String)
 signal visualizer_failed(error: String)
 
 const DEFAULT_URL := "ws://127.0.0.1:6505"
-const RECONNECT_DELAY := 3.0 # seconds
 const _PONG_MSG: Dictionary = { &"type": &"pong" }
-const MAX_RECONNECT_DELAY := 15.0 # max backoff
 const MAX_PACKETS_PER_FRAME := 32
 
 var socket: WebSocketPeer = WebSocketPeer.new()
 const OUTBOUND_BUFFER_SIZE := 10 * 1024 * 1024 # 10 MB — matches Go server read limit
 var server_url: String = DEFAULT_URL
 var _is_connected: bool = false
-var _reconnect_timer: Timer
-var _current_reconnect_delay: float = RECONNECT_DELAY
 var _should_reconnect: bool = true
+var _reconnect: ReconnectHelper = ReconnectHelper.new()
 var _project_path: String
 
 
 func _ready() -> void:
 	_project_path = ProjectSettings.globalize_path("res://")
-
-	# Create reconnect timer
-	_reconnect_timer = Timer.new()
-	_reconnect_timer.one_shot = true
-	_reconnect_timer.timeout.connect(_on_reconnect_timer)
-	add_child(_reconnect_timer)
+	_reconnect.setup(self)
+	_reconnect.should_connect.connect(_attempt_connection)
+	_reconnect.gave_up.connect(func() -> void:
+		_should_reconnect = false
+		disconnected.emit()
+	)
 
 
 func _process(_delta: float) -> void:
@@ -45,7 +42,7 @@ func _process(_delta: float) -> void:
 		if _is_connected:
 			_handle_disconnect()
 		elif _should_reconnect:
-			_schedule_reconnect()
+			_reconnect.schedule()
 		set_process(false)
 		return
 
@@ -61,14 +58,13 @@ func _process(_delta: float) -> void:
 func connect_to_server(url: String = DEFAULT_URL) -> void:
 	server_url = url
 	_should_reconnect = true
-	_current_reconnect_delay = RECONNECT_DELAY
+	_reconnect.reset()
 	_attempt_connection()
 
 
 func disconnect_from_server() -> void:
 	_should_reconnect = false
-	if _reconnect_timer:
-		_reconnect_timer.stop()
+	_reconnect.reset()
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		socket.close()
 	else:
@@ -115,12 +111,12 @@ func _attempt_connection() -> void:
 		set_process(true)
 	else:
 		push_error("[GMCP] Failed to connect: ", err)
-		_schedule_reconnect()
+		_reconnect.schedule()
 
 
 func _handle_connect() -> void:
 	_is_connected = true
-	_current_reconnect_delay = RECONNECT_DELAY # Reset backoff
+	_reconnect.reset()
 	print("[GMCP] Connected to server")
 
 	# Send godot_ready message with project info
@@ -140,20 +136,7 @@ func _handle_disconnect() -> void:
 	disconnected.emit()
 
 	if _should_reconnect:
-		_schedule_reconnect()
-
-
-func _schedule_reconnect() -> void:
-	if not _reconnect_timer:
-		return
-	print("[GMCP] Reconnecting in ", _current_reconnect_delay, " seconds...")
-	_reconnect_timer.start(_current_reconnect_delay)
-	# Exponential backoff
-	_current_reconnect_delay = min(_current_reconnect_delay * 2, MAX_RECONNECT_DELAY)
-
-
-func _on_reconnect_timer() -> void:
-	_attempt_connection()
+		_reconnect.schedule()
 
 
 func _handle_message(json_string: String) -> void:

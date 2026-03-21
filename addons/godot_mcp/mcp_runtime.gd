@@ -9,6 +9,7 @@ const MAX_DEPTH_LIMIT := 10
 
 var _socket: WebSocketPeer = WebSocketPeer.new()
 var _connected: bool = false
+var _reconnect: ReconnectHelper = ReconnectHelper.new()
 const WS_OUTBOUND_BUFFER := 10 * 1024 * 1024 # 10 MB — screenshots are large
 const WS_INBOUND_BUFFER := 1 * 1024 * 1024 # 1 MB
 
@@ -24,9 +25,9 @@ func _ready() -> void:
 	if ProjectSettings.has_setting("godot_mcp/mcp_launched"):
 		ProjectSettings.set_setting("godot_mcp/mcp_launched", false)
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
-	_socket.inbound_buffer_size = WS_INBOUND_BUFFER
-	_socket.outbound_buffer_size = WS_OUTBOUND_BUFFER
-	_socket.connect_to_url(SERVER_URL)
+	_reconnect.setup(self)
+	_reconnect.should_connect.connect(_attempt_connection)
+	_attempt_connection()
 
 
 func _process(_delta: float) -> void:
@@ -36,6 +37,7 @@ func _process(_delta: float) -> void:
 	if state == WebSocketPeer.STATE_OPEN:
 		if not _connected:
 			_connected = true
+			_reconnect.reset()
 			_send({ "type": "runtime_ready" })
 			print("[MCPRuntime] Connected to MCP server")
 		while _socket.get_available_packet_count() > 0:
@@ -45,7 +47,17 @@ func _process(_delta: float) -> void:
 		if _connected:
 			_connected = false
 			print("[MCPRuntime] Disconnected from MCP server")
+		_reconnect.schedule()
 		set_process(false)
+
+
+func _attempt_connection() -> void:
+	if _socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
+		_socket.close()
+	_socket.inbound_buffer_size = WS_INBOUND_BUFFER
+	_socket.outbound_buffer_size = WS_OUTBOUND_BUFFER
+	_socket.connect_to_url(SERVER_URL)
+	set_process(true)
 
 
 func _handle_message(json_string: String) -> void:
