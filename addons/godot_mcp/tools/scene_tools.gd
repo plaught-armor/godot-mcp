@@ -309,7 +309,10 @@ func remove_node(args: Dictionary) -> Dictionary:
 		return { &"ok": false, &"error": "Missing 'scene_path'" }
 
 	# Support bulk removal via node_paths array, or single via node_path
-	var paths: Array[String] = args.get(&"node_paths", [])
+	var raw_paths: Array = args.get(&"node_paths", [])
+	var paths: Array[String] = []
+	for p: String in raw_paths:
+		paths.append(p)
 	var single: String = str(args.get(&"node_path", ""))
 	if paths.is_empty() and not single.strip_edges().is_empty():
 		paths = [single]
