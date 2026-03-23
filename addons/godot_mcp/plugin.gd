@@ -205,11 +205,11 @@ func _thread_loop() -> void:
 
 
 func _send_result(request_id: String, result: Dictionary) -> void:
-	if result[&"ok"]:
+	if result.get(&"ok", false):
 		result.erase(&"ok")
 		_mcp_client.send_tool_result(request_id, true, result)
 	else:
-		_mcp_client.send_tool_result(request_id, false, null, result[&"error"])
+		_mcp_client.send_tool_result(request_id, false, null, str(result.get(&"error", "Unknown error")))
 
 
 func _on_map_project_pressed() -> void:

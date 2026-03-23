@@ -109,7 +109,8 @@ func create_scene(args: Dictionary) -> Dictionary:
 	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
 	var root_node_name: String = str(args.get(&"root_node_name", "Node"))
 	var root_node_type: String = str(args.get(&"root_node_type", ""))
-	var nodes: Array[Dictionary] = args.get(&"nodes", [])
+	var nodes: Array[Dictionary]
+	nodes.assign(args.get(&"nodes", []))
 	var attach_script_path: String = str(args.get(&"attach_script", ""))
 
 	if scene_path.is_empty() or scene_path == "res://":
@@ -164,7 +165,8 @@ func _create_node_recursive(data: Dictionary, parent: Node, owner: Node) -> int:
 	var n_type: String = str(data.get(&"type", "Node"))
 	var n_script: String = str(data.get(&"script", ""))
 	var props: Dictionary = data.get(&"properties", { })
-	var children: Array[Dictionary] = data.get(&"children", [])
+	var children: Array[Dictionary]
+	children.assign(data.get(&"children", []))
 
 	if not ClassDB.class_exists(n_type):
 		return 0
