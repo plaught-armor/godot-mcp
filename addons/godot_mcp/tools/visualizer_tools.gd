@@ -4,9 +4,9 @@ extends RefCounted
 class_name VisualizerTools
 ## Crawls a Godot project and parses all GDScript files to build a project map.
 
-const _EDGE_EXTENDS := "extends"
-const _EDGE_PRELOAD := "preload"
-const _EDGE_SIGNAL := "signal"
+const _EDGE_EXTENDS: String = "extends"
+const _EDGE_PRELOAD: String = "preload"
+const _EDGE_SIGNAL: String = "signal"
 
 var _editor_plugin: EditorPlugin = null
 var _utils: ToolUtils
@@ -56,18 +56,18 @@ func set_utils(utils: ToolUtils) -> void:
 
 ## Crawl the entire project and build a structural map of all scripts.
 func map_project(args: Dictionary) -> Dictionary:
-	var root_path: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
-	var include_addons: bool = bool(args.get(&"include_addons", false))
+	var root_path: String = _utils.validate_res_path(args.get(&"root", "res://"))
+	var include_addons: bool = args.get(&"include_addons", false)
 
 	if root_path.is_empty():
-		return { &"ok": false, &"error": "Path escapes project root" }
+		return { &"error": "Path escapes project root" }
 
 	# Collect all .gd files
 	var script_paths: PackedStringArray = []
 	_collect_scripts(root_path, script_paths, include_addons)
 
 	if script_paths.is_empty():
-		return { &"ok": false, &"error": "No GDScript files found in " + root_path }
+		return { &"error": "No GDScript files found in " + root_path }
 
 	# Parse each script
 	var nodes: Array[Dictionary] = []
@@ -101,7 +101,6 @@ func map_project(args: Dictionary) -> Dictionary:
 				edges.append({ &"from": from_path, &"to": class_map[target], &"type": _EDGE_SIGNAL, &"signal_name": conn[&"signal"] })
 
 	return {
-		&"ok": true,
 		&"project_map": {
 			&"nodes": nodes,
 			&"edges": edges,
@@ -111,7 +110,7 @@ func map_project(args: Dictionary) -> Dictionary:
 	}
 
 
-const MAX_TRAVERSAL_DEPTH := 20
+const MAX_TRAVERSAL_DEPTH: int = 20
 
 
 ## Recursively collect all [code].gd[/code] files.
@@ -373,18 +372,18 @@ func _infer_type(default_val: String) -> String:
 
 ## Crawl the project and build a map of all scenes.
 func map_scenes(args: Dictionary) -> Dictionary:
-	var root_path: String = _utils.validate_res_path(str(args.get(&"root", "res://")))
-	var include_addons: bool = bool(args.get(&"include_addons", false))
+	var root_path: String = _utils.validate_res_path(args.get(&"root", "res://"))
+	var include_addons: bool = args.get(&"include_addons", false)
 
 	if root_path.is_empty():
-		return { &"ok": false, &"error": "Path escapes project root" }
+		return { &"error": "Path escapes project root" }
 
 	# Collect all .tscn files
 	var scene_paths: PackedStringArray = []
 	_collect_scenes(root_path, scene_paths, include_addons)
 
 	if scene_paths.is_empty():
-		return { &"ok": true, &"scene_map": { &"scenes": [], &"total_scenes": 0 } }
+		return { &"scene_map": { &"scenes": [], &"total_scenes": 0 } }
 
 	# Parse each scene
 	var scenes: Array[Dictionary] = []
@@ -400,7 +399,6 @@ func map_scenes(args: Dictionary) -> Dictionary:
 			edges.append({ &"from": from_path, &"to": instance, &"type": "instance" })
 
 	return {
-		&"ok": true,
 		&"scene_map": {
 			&"scenes": scenes,
 			&"edges": edges,

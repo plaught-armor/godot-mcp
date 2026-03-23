@@ -92,7 +92,7 @@ func _exit_tree() -> void:
 	print("[GMCP] Plugin unloaded")
 
 
-const SETTINGS := {
+const SETTINGS: Dictionary = {
 	&"godot_mcp/auto_format_scripts": {
 		&"type": TYPE_BOOL,
 		&"default": false,
@@ -205,11 +205,10 @@ func _thread_loop() -> void:
 
 
 func _send_result(request_id: String, result: Dictionary) -> void:
-	if result.get(&"ok", false):
-		result.erase(&"ok")
-		_mcp_client.send_tool_result(request_id, true, result)
+	if result.has(&"error"):
+		_mcp_client.send_tool_result(request_id, false, null, result[&"error"])
 	else:
-		_mcp_client.send_tool_result(request_id, false, null, str(result.get(&"error", "Unknown error")))
+		_mcp_client.send_tool_result(request_id, true, result)
 
 
 func _on_map_project_pressed() -> void:
@@ -221,11 +220,11 @@ func _on_map_project_pressed() -> void:
 	thread.start(
 		func():
 			var result: Dictionary = _tool_executor.execute_tool(&"map_project", { })
-			if result[&"ok"]:
-				_send_visualizer_data.call_deferred(result[&"project_map"], thread)
-			else:
+			if result.has(&"error"):
 				push_error("[GMCP] Map project failed: ", result[&"error"])
 				_cleanup_thread.call_deferred(thread)
+			else:
+				_send_visualizer_data.call_deferred(result[&"project_map"], thread)
 	)
 
 

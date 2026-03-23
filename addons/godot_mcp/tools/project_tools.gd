@@ -36,8 +36,8 @@ func set_utils(utils: ToolUtils) -> void:
 # get_project_settings
 # =============================================================================
 func get_project_settings(args: Dictionary) -> Dictionary:
-	var include_render: bool = bool(args.get(&"include_render", true))
-	var include_physics: bool = bool(args.get(&"include_physics", true))
+	var include_render: bool = args.get(&"include_render", true)
+	var include_physics: bool = args.get(&"include_physics", true)
 
 	var out: Dictionary = { }
 	out[&"main_scene"] = str(ProjectSettings.get_setting("application/run/main_scene", ""))
@@ -71,18 +71,18 @@ func get_project_settings(args: Dictionary) -> Dictionary:
 		if vsync != null:
 			out[&"vsync"] = str(vsync)
 
-	return { &"ok": true, &"settings": out }
+	return { &"settings": out }
 
 
 # =============================================================================
 # set_project_setting
 # =============================================================================
 func set_project_setting(args: Dictionary) -> Dictionary:
-	var setting: String = str(args.get(&"setting", ""))
+	var setting: String = args[&"setting"]
 	if setting.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'setting'" }
+		return { &"error": "Missing 'setting'" }
 	if not args.has(&"value"):
-		return { &"ok": false, &"error": "Missing 'value'" }
+		return { &"error": "Missing 'value'" }
 
 	var old_value: Variant = ProjectSettings.get_setting(setting) if ProjectSettings.has_setting(setting) else null
 	var new_value: Variant = args[&"value"]
@@ -90,10 +90,9 @@ func set_project_setting(args: Dictionary) -> Dictionary:
 	ProjectSettings.set_setting(setting, new_value)
 	var save_err: Error = ProjectSettings.save()
 	if save_err != OK:
-		return { &"ok": false, &"error": "Failed to save project settings (error %d)" % save_err }
+		return { &"error": "Failed to save project settings (error %d)" % save_err }
 
 	return {
-		&"ok": true,
 		&"setting": setting,
 		&"old_value": _utils.serialize_value(old_value),
 		&"new_value": _utils.serialize_value(new_value),
@@ -122,7 +121,6 @@ func get_autoloads(_args: Dictionary) -> Dictionary:
 			},
 		)
 	return {
-		&"ok": true,
 		&"autoloads": autoloads,
 		&"count": autoloads.size(),
 	}
@@ -132,7 +130,7 @@ func get_autoloads(_args: Dictionary) -> Dictionary:
 # get_input_map
 # =============================================================================
 func get_input_map(args: Dictionary) -> Dictionary:
-	var include_deadzones: bool = bool(args.get(&"include_deadzones", true))
+	var include_deadzones: bool = args.get(&"include_deadzones", true)
 	var actions: Array[StringName] = InputMap.get_actions()
 	actions.sort()
 
@@ -158,20 +156,20 @@ func get_input_map(args: Dictionary) -> Dictionary:
 			events.append(item)
 		result[action] = events
 
-	return { &"ok": true, &"actions": result, &"count": result.size() }
+	return { &"actions": result, &"count": result.size() }
 
 
 # =============================================================================
 # configure_input_map - Add, remove, or replace input actions
 # =============================================================================
 func configure_input_map(args: Dictionary) -> Dictionary:
-	var action: String = str(args.get(&"action", ""))
-	var operation: String = str(args.get(&"operation", ""))
+	var action: String = args[&"action"]
+	var operation: String = args[&"operation"]
 
 	if action.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'action' name" }
+		return { &"error": "Missing 'action' name" }
 	if operation.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'operation'. Use: add, remove, set" }
+		return { &"error": "Missing 'operation'. Use: add, remove, set" }
 
 	match operation:
 		"add":
@@ -181,12 +179,13 @@ func configure_input_map(args: Dictionary) -> Dictionary:
 		"set":
 			return _input_map_set(action, args)
 		_:
-			return { &"ok": false, &"error": "Unknown operation: %s. Use: add, remove, set" % operation }
+			return { &"error": "Unknown operation: %s. Use: add, remove, set" % operation }
 
 
 func _input_map_add(action: String, args: Dictionary) -> Dictionary:
-	var deadzone: float = float(args.get(&"deadzone", 0.5))
-	var events_data: Array = args.get(&"events", [])
+	var deadzone: float = args.get(&"deadzone", 0.5)
+	var events_data: Array
+	events_data.assign(args.get(&"events", []))
 
 	var created: bool = false
 	if not InputMap.has_action(action):
@@ -213,7 +212,7 @@ func _input_map_add(action: String, args: Dictionary) -> Dictionary:
 	if added_events.size() > 0:
 		msg += " with %d event(s)" % added_events.size()
 
-	var out: Dictionary = { &"ok": true, &"message": msg, &"events_added": added_events }
+	var out: Dictionary = { &"message": msg, &"events_added": added_events }
 	if event_errors.size() > 0:
 		out[&"event_errors"] = event_errors
 	return out
@@ -221,9 +220,9 @@ func _input_map_add(action: String, args: Dictionary) -> Dictionary:
 
 func _input_map_remove(action: String) -> Dictionary:
 	if not InputMap.has_action(action):
-		return { &"ok": false, &"error": "Action not found: " + action }
+		return { &"error": "Action not found: " + action }
 	if action.begins_with("ui_"):
-		return { &"ok": false, &"error": "Refusing to remove built-in action: " + action }
+		return { &"error": "Refusing to remove built-in action: " + action }
 
 	InputMap.erase_action(action)
 	var input_key: String = "input/" + action
@@ -232,12 +231,13 @@ func _input_map_remove(action: String) -> Dictionary:
 	_save_and_refresh()
 	_try_refresh_input_map_ui()
 
-	return { &"ok": true, &"message": "Removed action: " + action }
+	return { &"message": "Removed action: " + action }
 
 
 func _input_map_set(action: String, args: Dictionary) -> Dictionary:
-	var deadzone: float = float(args.get(&"deadzone", 0.5))
-	var events_data: Array = args.get(&"events", [])
+	var deadzone: float = args.get(&"deadzone", 0.5)
+	var events_data: Array
+	events_data.assign(args.get(&"events", []))
 
 	if InputMap.has_action(action):
 		InputMap.erase_action(action)
@@ -260,17 +260,17 @@ func _input_map_set(action: String, args: Dictionary) -> Dictionary:
 	_save_and_refresh()
 	_try_refresh_input_map_ui()
 
-	var out: Dictionary = { &"ok": true, &"message": "Set action '%s' with %d event(s)" % [action, added_events.size()], &"events": added_events }
+	var out: Dictionary = { &"message": "Set action '%s' with %d event(s)" % [action, added_events.size()], &"events": added_events }
 	if event_errors.size() > 0:
 		out[&"event_errors"] = event_errors
 	return out
 
 
 func _create_input_event(desc: Dictionary) -> Dictionary:
-	var type: String = str(desc.get(&"type", ""))
+	var type: String = desc.get(&"type", "")
 	match type:
 		"key":
-			var key_string: String = str(desc.get(&"key", ""))
+			var key_string: String = desc.get(&"key", "")
 			if key_string.is_empty():
 				return { &"error": "Missing 'key' for key event" }
 			var event: InputEventKey = InputEventKey.new()
@@ -280,26 +280,26 @@ func _create_input_event(desc: Dictionary) -> Dictionary:
 			event.physical_keycode = keycode
 			return { &"event": event }
 		"mouse_button":
-			var button_index: int = int(desc.get(&"button_index", 0))
+			var button_index: int = desc.get(&"button_index", 0)
 			if button_index <= 0:
 				return { &"error": "Invalid 'button_index' for mouse_button (must be >= 1)" }
 			var event: InputEventMouseButton = InputEventMouseButton.new()
 			event.button_index = button_index
 			return { &"event": event }
 		"joypad_button":
-			var button_index: int = int(desc.get(&"button_index", -1))
+			var button_index: int = desc.get(&"button_index", -1)
 			if button_index < 0:
 				return { &"error": "Missing or invalid 'button_index' for joypad_button" }
 			var event: InputEventJoypadButton = InputEventJoypadButton.new()
 			event.button_index = button_index
 			return { &"event": event }
 		"joypad_motion":
-			var axis: int = int(desc.get(&"axis", -1))
+			var axis: int = desc.get(&"axis", -1)
 			if axis < 0:
 				return { &"error": "Missing or invalid 'axis' for joypad_motion" }
 			var event: InputEventJoypadMotion = InputEventJoypadMotion.new()
 			event.axis = axis
-			event.axis_value = float(desc.get(&"axis_value", 0.0))
+			event.axis_value = desc.get(&"axis_value", 0.0)
 			return { &"event": event }
 		_:
 			return { &"error": "Unknown event type: '%s'. Use: key, mouse_button, joypad_button, joypad_motion" % type }
@@ -362,7 +362,7 @@ func _describe_event(event: InputEvent) -> String:
 func get_collision_layers(_args: Dictionary) -> Dictionary:
 	var layers_2d: Array[Dictionary] = _collect_layers("layer_names/2d_physics")
 	var layers_3d: Array[Dictionary] = _collect_layers("layer_names/3d_physics")
-	return { &"ok": true, &"layers_2d": layers_2d, &"layers_3d": layers_3d }
+	return { &"layers_2d": layers_2d, &"layers_3d": layers_3d }
 
 
 func _collect_layers(prefix: String) -> Array[Dictionary]:
@@ -386,15 +386,15 @@ const ENUM_HINTS: Dictionary = {
 
 
 func get_node_properties(args: Dictionary) -> Dictionary:
-	var node_type: String = str(args.get(&"node_type", ""))
+	var node_type: String = args[&"node_type"]
 	if node_type.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'node_type'" }
+		return { &"error": "Missing 'node_type'" }
 	if not ClassDB.class_exists(node_type):
-		return { &"ok": false, &"error": "Unknown node type: " + node_type }
+		return { &"error": "Unknown node type: " + node_type }
 
 	var temp: Variant = ClassDB.instantiate(node_type)
 	if not temp:
-		return { &"ok": false, &"error": "Cannot instantiate: " + node_type }
+		return { &"error": "Cannot instantiate: " + node_type }
 
 	var properties: Array[Dictionary] = []
 	for prop: Dictionary in temp.get_property_list():
@@ -436,7 +436,6 @@ func get_node_properties(args: Dictionary) -> Dictionary:
 		cls = ClassDB.get_parent_class(cls)
 
 	return {
-		&"ok": true,
 		&"node_type": node_type,
 		&"inheritance_chain": chain,
 		&"property_count": properties.size(),
@@ -485,14 +484,13 @@ func _read_output_panel_lines() -> Array[String]:
 # get_console_log
 # =============================================================================
 func get_console_log(args: Dictionary) -> Dictionary:
-	var max_lines: int = int(args.get(&"max_lines", 50))
-	var filter_text: String = str(args.get(&"filter", ""))
-	var severity: String = str(args.get(&"severity", "all"))
+	var max_lines: int = args.get(&"max_lines", 50)
+	var filter_text: String = args.get(&"filter", "")
+	var severity: String = args.get(&"severity", "all")
 
 	var rtl: RichTextLabel = _get_editor_log_rtl()
 	if not rtl:
 		return {
-			&"ok": false,
 			&"error": "Could not access the Godot editor Output panel. Make sure the MCP plugin is enabled and running inside the Godot editor.",
 		}
 
@@ -525,7 +523,6 @@ func get_console_log(args: Dictionary) -> Dictionary:
 	var start: int = maxi(0, all_lines.size() - max_lines)
 	var lines: Array[String] = all_lines.slice(start)
 	return {
-		&"ok": true,
 		&"lines": lines,
 		&"line_count": lines.size(),
 		&"content": "\n".join(lines),
@@ -547,13 +544,12 @@ const _ERROR_PREFIXES: PackedStringArray = [
 
 
 func get_errors(args: Dictionary) -> Dictionary:
-	var max_errors: int = int(args.get(&"max_errors", 50))
-	var include_warnings: bool = bool(args.get(&"include_warnings", true))
+	var max_errors: int = args.get(&"max_errors", 50)
+	var include_warnings: bool = args.get(&"include_warnings", true)
 
 	var rtl: RichTextLabel = _get_editor_log_rtl()
 	if not rtl:
 		return {
-			&"ok": false,
 			&"error": "Could not access the Godot editor Output panel. Make sure the MCP plugin is enabled and running inside the Godot editor.",
 		}
 
@@ -582,11 +578,11 @@ func get_errors(args: Dictionary) -> Dictionary:
 				if not loc.is_empty():
 					# Set file/line from first frame if not already set
 					if not prev.has(&"file"):
-						prev[&"file"] = loc.get(&"file", "")
+						prev[&"file"] = loc[&"file"]
 						prev[&"line"] = loc.get(&"line", 0)
 					# Collect as stack frame
 					var frame: Dictionary = { &"text": line }
-					frame[&"file"] = loc.get(&"file", "")
+					frame[&"file"] = loc[&"file"]
 					if loc.has(&"line"):
 						frame[&"line"] = loc[&"line"]
 					if not prev.has(&"stack"):
@@ -602,7 +598,7 @@ func get_errors(args: Dictionary) -> Dictionary:
 		var error_info: Dictionary = { &"message": line, &"severity": severity }
 		var loc: Dictionary = _extract_file_line(line)
 		if not loc.is_empty():
-			error_info[&"file"] = loc.get(&"file", "")
+			error_info[&"file"] = loc[&"file"]
 			error_info[&"line"] = loc.get(&"line", 0)
 		all_errors.append(error_info)
 
@@ -610,7 +606,6 @@ func get_errors(args: Dictionary) -> Dictionary:
 	var start: int = maxi(0, all_errors.size() - max_errors)
 	var errors: Array[Dictionary] = all_errors.slice(start)
 	return {
-		&"ok": true,
 		&"errors": errors,
 		&"error_count": errors.size(),
 		&"summary": "%d error(s) found" % errors.size(),
@@ -641,13 +636,12 @@ var _debugger_error_tree: Tree = null
 
 
 func get_debug_errors(args: Dictionary) -> Dictionary:
-	var max_errors: int = int(args.get(&"max_errors", 50))
-	var include_warnings: bool = bool(args.get(&"include_warnings", true))
+	var max_errors: int = args.get(&"max_errors", 50)
+	var include_warnings: bool = args.get(&"include_warnings", true)
 
 	var tree: Tree = _get_debugger_error_tree()
 	if not tree:
 		return {
-			&"ok": true,
 			&"errors": [],
 			&"error_count": 0,
 			&"summary": "Debugger Errors tab not available (game not running or no errors).",
@@ -657,7 +651,6 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 	var item: TreeItem = tree.get_root()
 	if not item:
 		return {
-			&"ok": true,
 			&"errors": [],
 			&"error_count": 0,
 			&"summary": "No errors in debugger.",
@@ -715,7 +708,6 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 	var start: int = maxi(0, errors.size() - max_errors)
 	errors = errors.slice(start)
 	return {
-		&"ok": true,
 		&"errors": errors,
 		&"error_count": errors.size(),
 		&"summary": "%d debugger error(s) found" % errors.size(),
@@ -763,7 +755,6 @@ func clear_console_log(_args: Dictionary) -> Dictionary:
 	var rtl: RichTextLabel = _get_editor_log_rtl()
 	if not rtl:
 		return {
-			&"ok": false,
 			&"error": "Could not access the Godot editor Output panel. Make sure the MCP plugin is enabled and running inside the Godot editor.",
 		}
 
@@ -771,7 +762,6 @@ func clear_console_log(_args: Dictionary) -> Dictionary:
 	rtl.clear()
 	_clear_char_offset = 0
 	return {
-		&"ok": true,
 		&"message": "Console log cleared.",
 	}
 
@@ -780,18 +770,18 @@ func clear_console_log(_args: Dictionary) -> Dictionary:
 # open_in_godot
 # =============================================================================
 func open_in_godot(args: Dictionary) -> Dictionary:
-	var path: String = str(args.get(&"path", ""))
-	var line: int = int(args.get(&"line", 0))
+	var path: String = args[&"path"]
+	var line: int = args.get(&"line", 0)
 
 	if path.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'path'" }
+		return { &"error": "Missing 'path'" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"ok": false, &"error": "Path escapes project root" }
+		return { &"error": "Path escapes project root" }
 
 	if not _editor_plugin:
-		return { &"ok": false, &"error": "Editor plugin not available" }
+		return { &"error": "Editor plugin not available" }
 
 	var ei: EditorInterface = _editor_plugin.get_editor_interface()
 
@@ -802,7 +792,7 @@ func open_in_godot(args: Dictionary) -> Dictionary:
 			if line > 0:
 				ei.get_script_editor().goto_line(line - 1)
 		else:
-			return { &"ok": false, &"error": "Could not load: " + path }
+			return { &"error": "Could not load: " + path }
 	elif path.ends_with(".tscn") or path.ends_with(".scn"):
 		ei.open_scene_from_path(path)
 	else:
@@ -810,7 +800,7 @@ func open_in_godot(args: Dictionary) -> Dictionary:
 		if res:
 			ei.edit_resource(res)
 
-	return { &"ok": true, &"message": "Opened %s%s" % [path, " at line %d" % line if line > 0 else ""] }
+	return { &"message": "Opened %s%s" % [path, " at line %d" % line if line > 0 else ""] }
 
 
 # =============================================================================
@@ -818,18 +808,18 @@ func open_in_godot(args: Dictionary) -> Dictionary:
 # =============================================================================
 func scene_tree_dump(_args: Dictionary) -> Dictionary:
 	if not _editor_plugin:
-		return { &"ok": false, &"error": "Editor plugin not available" }
+		return { &"error": "Editor plugin not available" }
 
 	var ei: EditorInterface = _editor_plugin.get_editor_interface()
 	var edited_scene: Node = ei.get_edited_scene_root()
 
 	if not edited_scene:
-		return { &"ok": true, &"tree": "(no scene open)", &"message": "No scene is currently open in the editor" }
+		return { &"tree": "(no scene open)", &"message": "No scene is currently open in the editor" }
 
 	var lines: PackedStringArray = []
 	_dump_node(edited_scene, 0, lines)
 
-	return { &"ok": true, &"tree": "\n".join(lines), &"scene_path": edited_scene.scene_file_path }
+	return { &"tree": "\n".join(lines), &"scene_path": edited_scene.scene_file_path }
 
 
 func _dump_node(node: Node, depth: int, out: PackedStringArray) -> void:
@@ -850,10 +840,10 @@ func _dump_node(node: Node, depth: int, out: PackedStringArray) -> void:
 # =============================================================================
 func play_project(args: Dictionary) -> Dictionary:
 	if not _editor_plugin:
-		return { &"ok": false, &"error": "Editor plugin not available" }
+		return { &"error": "Editor plugin not available" }
 
 	var ei: EditorInterface = _editor_plugin.get_editor_interface()
-	var scene_path: String = str(args.get(&"scene_path", ""))
+	var scene_path: String = args.get(&"scene_path", "")
 
 	# Signal to mcp_runtime.gd that this launch came from MCP (suppress focus grab).
 	ProjectSettings.set_setting("godot_mcp/mcp_launched", true)
@@ -862,18 +852,18 @@ func play_project(args: Dictionary) -> Dictionary:
 	# Godot launches the game (which can freeze the editor momentarily).
 	if scene_path == "current":
 		ei.play_current_scene.call_deferred()
-		return { &"ok": true, &"message": "Playing current scene" }
+		return { &"message": "Playing current scene" }
 	elif not scene_path.is_empty():
 		scene_path = _utils.validate_res_path(scene_path)
 		if scene_path.is_empty():
-			return { &"ok": false, &"error": "Path escapes project root" }
+			return { &"error": "Path escapes project root" }
 		if not FileAccess.file_exists(scene_path):
-			return { &"ok": false, &"error": "Scene not found: " + scene_path }
+			return { &"error": "Scene not found: " + scene_path }
 		ei.play_custom_scene.call_deferred(scene_path)
-		return { &"ok": true, &"message": "Playing scene: " + scene_path }
+		return { &"message": "Playing scene: " + scene_path }
 	else:
 		ei.play_main_scene.call_deferred()
-		return { &"ok": true, &"message": "Playing main scene" }
+		return { &"message": "Playing main scene" }
 
 
 # =============================================================================
@@ -881,14 +871,14 @@ func play_project(args: Dictionary) -> Dictionary:
 # =============================================================================
 func stop_project(_args: Dictionary) -> Dictionary:
 	if not _editor_plugin:
-		return { &"ok": false, &"error": "Editor plugin not available" }
+		return { &"error": "Editor plugin not available" }
 
 	var ei: EditorInterface = _editor_plugin.get_editor_interface()
 	if not ei.is_playing_scene():
-		return { &"ok": true, &"message": "No scene is running" }
+		return { &"message": "No scene is running" }
 
 	ei.stop_playing_scene()
-	return { &"ok": true, &"message": "Stopped running scene" }
+	return { &"message": "Stopped running scene" }
 
 
 # =============================================================================
@@ -896,11 +886,11 @@ func stop_project(_args: Dictionary) -> Dictionary:
 # =============================================================================
 func is_project_running(_args: Dictionary) -> Dictionary:
 	if not _editor_plugin:
-		return { &"ok": false, &"error": "Editor plugin not available" }
+		return { &"error": "Editor plugin not available" }
 
 	var ei: EditorInterface = _editor_plugin.get_editor_interface()
 	var running: bool = ei.is_playing_scene()
-	return { &"ok": true, &"running": running }
+	return { &"running": running }
 
 
 # =============================================================================
@@ -911,7 +901,7 @@ func git_status(_args: Dictionary) -> Dictionary:
 	var output: Array = []
 	var exit_code: int = OS.execute("git", ["-C", project_path, "status", "--porcelain"], output)
 	if exit_code != 0:
-		return { &"ok": false, &"error": "git status failed (exit %d). Is this a git repo?" % exit_code }
+		return { &"error": "git status failed (exit %d). Is this a git repo?" % exit_code }
 
 	var raw: String = output[0] if output.size() > 0 else ""
 	var files: Array[Dictionary] = []
@@ -943,7 +933,6 @@ func git_status(_args: Dictionary) -> Dictionary:
 	var branch: String = branch_output[0].strip_edges() if branch_output.size() > 0 else "unknown"
 
 	return {
-		&"ok": true,
 		&"branch": branch,
 		&"files": files,
 		&"file_count": files.size(),
@@ -955,12 +944,12 @@ func git_status(_args: Dictionary) -> Dictionary:
 # git_commit - Stage files and commit
 # =============================================================================
 func git_commit(args: Dictionary) -> Dictionary:
-	var message: String = str(args.get(&"message", ""))
+	var message: String = args[&"message"]
 	var files: Array = args.get(&"files", []) # Variant array from JSON
-	var stage_all: bool = bool(args.get(&"all", false))
+	var stage_all: bool = args.get(&"all", false)
 
 	if message.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'message'" }
+		return { &"error": "Missing 'message'" }
 
 	var project_path: String = _project_path
 
@@ -969,7 +958,7 @@ func git_commit(args: Dictionary) -> Dictionary:
 		var output: Array = []
 		var exit_code: int = OS.execute("git", ["-C", project_path, "add", "-A"], output)
 		if exit_code != 0:
-			return { &"ok": false, &"error": "git add -A failed (exit %d)" % exit_code }
+			return { &"error": "git add -A failed (exit %d)" % exit_code }
 	elif files.size() > 0:
 		var git_args: PackedStringArray = ["-C", project_path, "add", "--"]
 		for f: String in files:
@@ -978,21 +967,21 @@ func git_commit(args: Dictionary) -> Dictionary:
 				f = f.substr(6) # strip "res://"
 			# Block path traversal outside project
 			if ".." in f or f.begins_with("/"):
-				return { &"ok": false, &"error": "File path escapes project: " + f }
+				return { &"error": "File path escapes project: " + f }
 			git_args.append(f)
 		var output: Array = []
 		var exit_code: int = OS.execute("git", git_args, output)
 		if exit_code != 0:
-			return { &"ok": false, &"error": "git add failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
+			return { &"error": "git add failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
 	else:
-		return { &"ok": false, &"error": "No files specified. Provide 'files' array or set 'all' to true." }
+		return { &"error": "No files specified. Provide 'files' array or set 'all' to true." }
 
 	# Commit
 	var commit_output: Array = []
 	var commit_code: int = OS.execute("git", ["-C", project_path, "commit", "-m", message], commit_output)
 	if commit_code != 0:
 		var err_text: String = commit_output[0] if commit_output.size() > 0 else "unknown error"
-		return { &"ok": false, &"error": "git commit failed (exit %d): %s" % [commit_code, err_text.strip_edges()] }
+		return { &"error": "git commit failed (exit %d): %s" % [commit_code, err_text.strip_edges()] }
 
 	# Parse commit hash from output
 	var output_text: String = commit_output[0] if commit_output.size() > 0 else ""
@@ -1007,7 +996,6 @@ func git_commit(args: Dictionary) -> Dictionary:
 			commit_hash = parts[1]
 
 	return {
-		&"ok": true,
 		&"message": message,
 		&"commit": commit_hash,
 		&"output": output_text.strip_edges(),
@@ -1019,8 +1007,8 @@ func git_commit(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Show git diff output. Supports single file and staged mode.
 func git_diff(args: Dictionary) -> Dictionary:
-	var file_path: String = str(args.get(&"file", ""))
-	var staged: bool = bool(args.get(&"staged", false))
+	var file_path: String = args.get(&"file", "")
+	var staged: bool = args.get(&"staged", false)
 
 	var git_args: PackedStringArray = ["-C", _project_path, "diff"]
 	if staged:
@@ -1029,14 +1017,14 @@ func git_diff(args: Dictionary) -> Dictionary:
 		if file_path.begins_with("res://"):
 			file_path = file_path.substr(6)
 		if ".." in file_path or file_path.begins_with("/"):
-			return { &"ok": false, &"error": "File path escapes project: " + file_path }
+			return { &"error": "File path escapes project: " + file_path }
 		git_args.append("--")
 		git_args.append(file_path)
 
 	var output: Array = []
 	var exit_code: int = OS.execute("git", git_args, output)
 	if exit_code != 0:
-		return { &"ok": false, &"error": "git diff failed (exit %d)" % exit_code }
+		return { &"error": "git diff failed (exit %d)" % exit_code }
 
 	var diff_text: String = output[0] if output.size() > 0 else ""
 
@@ -1047,7 +1035,6 @@ func git_diff(args: Dictionary) -> Dictionary:
 			files_changed += 1
 
 	return {
-		&"ok": true,
 		&"diff": diff_text.strip_edges(),
 		&"files_changed": files_changed,
 		&"staged": staged,
@@ -1059,8 +1046,8 @@ func git_diff(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Show recent git commit history.
 func git_log(args: Dictionary) -> Dictionary:
-	var max_count: int = int(args.get(&"max_count", 10))
-	var file_path: String = str(args.get(&"file", ""))
+	var max_count: int = args.get(&"max_count", 10)
+	var file_path: String = args.get(&"file", "")
 
 	max_count = clampi(max_count, 1, 100)
 
@@ -1069,14 +1056,14 @@ func git_log(args: Dictionary) -> Dictionary:
 		if file_path.begins_with("res://"):
 			file_path = file_path.substr(6)
 		if ".." in file_path or file_path.begins_with("/"):
-			return { &"ok": false, &"error": "File path escapes project: " + file_path }
+			return { &"error": "File path escapes project: " + file_path }
 		git_args.append("--")
 		git_args.append(file_path)
 
 	var output: Array = []
 	var exit_code: int = OS.execute("git", git_args, output)
 	if exit_code != 0:
-		return { &"ok": false, &"error": "git log failed (exit %d)" % exit_code }
+		return { &"error": "git log failed (exit %d)" % exit_code }
 
 	var raw: String = output[0] if output.size() > 0 else ""
 	var commits: Array[Dictionary] = []
@@ -1091,7 +1078,6 @@ func git_log(args: Dictionary) -> Dictionary:
 			commits.append({ &"hash": line.substr(0, space_idx), &"message": line.substr(space_idx + 1) })
 
 	return {
-		&"ok": true,
 		&"commits": commits,
 		&"count": commits.size(),
 	}
@@ -1102,8 +1088,8 @@ func git_log(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Git stash operations: push, pop, or list.
 func git_stash(args: Dictionary) -> Dictionary:
-	var action: String = str(args.get(&"action", ""))
-	var message: String = str(args.get(&"message", ""))
+	var action: String = args[&"action"]
+	var message: String = args[&"message"]
 
 	match action:
 		"push":
@@ -1114,28 +1100,28 @@ func git_stash(args: Dictionary) -> Dictionary:
 			var output: Array = []
 			var exit_code: int = OS.execute("git", git_args, output)
 			if exit_code != 0:
-				return { &"ok": false, &"error": "git stash push failed (exit %d)" % exit_code }
-			return { &"ok": true, &"action": "push", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
+				return { &"error": "git stash push failed (exit %d)" % exit_code }
+			return { &"action": "push", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
 		"pop":
 			var output: Array = []
 			var exit_code: int = OS.execute("git", ["-C", _project_path, "stash", "pop"], output)
 			if exit_code != 0:
-				return { &"ok": false, &"error": "git stash pop failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
-			return { &"ok": true, &"action": "pop", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
+				return { &"error": "git stash pop failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
+			return { &"action": "pop", &"output": (output[0] if output.size() > 0 else "").strip_edges() }
 		"list":
 			var output: Array = []
 			var exit_code: int = OS.execute("git", ["-C", _project_path, "stash", "list"], output)
 			if exit_code != 0:
-				return { &"ok": false, &"error": "git stash list failed (exit %d)" % exit_code }
+				return { &"error": "git stash list failed (exit %d)" % exit_code }
 			var raw: String = output[0] if output.size() > 0 else ""
 			var stashes: Array[String] = []
 			for line: String in raw.split("\n"):
 				line = line.strip_edges()
 				if not line.is_empty():
 					stashes.append(line)
-			return { &"ok": true, &"action": "list", &"stashes": stashes, &"count": stashes.size() }
+			return { &"action": "list", &"stashes": stashes, &"count": stashes.size() }
 		_:
-			return { &"ok": false, &"error": "Invalid action '%s'. Use 'push', 'pop', or 'list'." % action }
+			return { &"error": "Invalid action '%s'. Use 'push', 'pop', or 'list'." % action }
 
 # =============================================================================
 # run_shell_command - Execute a shell command in the project directory
@@ -1146,22 +1132,22 @@ const _BLOCKED_COMMANDS: PackedStringArray = ["rm", "sudo", "chmod", "chown", "m
 ## Execute a shell command in the project directory.
 ## Uses [code]OS.execute()[/code] with separate args (no shell injection).
 func run_shell_command(args: Dictionary) -> Dictionary:
-	var command: String = str(args.get(&"command", ""))
+	var command: String = args[&"command"]
 	var cmd_args: Array = args.get(&"args", []) # Variant array from JSON
 
 	if command.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'command'" }
+		return { &"error": "Missing 'command'" }
 
 	# Block dangerous commands (get_file strips path: /usr/bin/rm → rm)
 	var base_cmd: String = command.get_file()
 	if base_cmd in _BLOCKED_COMMANDS:
-		return { &"ok": false, &"error": "Command '%s' is blocked for safety" % base_cmd }
+		return { &"error": "Command '%s' is blocked for safety" % base_cmd }
 
 	var exec_args: PackedStringArray = []
 	for a: Variant in cmd_args:
 		var s: String = str(a)
 		if ".." in s or s.begins_with("/"):
-			return { &"ok": false, &"error": "Arg escapes project directory: " + s }
+			return { &"error": "Arg escapes project directory: " + s }
 		exec_args.append(s)
 
 	var output: Array = []
@@ -1169,7 +1155,6 @@ func run_shell_command(args: Dictionary) -> Dictionary:
 	var stdout: String = output[0] if output.size() > 0 else ""
 
 	return {
-		&"ok": true,
 		&"command": command,
 		&"args": cmd_args,
 		&"exit_code": exit_code,
@@ -1182,24 +1167,23 @@ func run_shell_command(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Return the UID for a given resource path.
 func get_uid(args: Dictionary) -> Dictionary:
-	var path: String = str(args.get(&"path", ""))
+	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'path'" }
+		return { &"error": "Missing 'path'" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"ok": false, &"error": "Path escapes project root" }
+		return { &"error": "Path escapes project root" }
 
 	if not ResourceLoader.exists(path):
-		return { &"ok": false, &"error": "Resource not found: " + path }
+		return { &"error": "Resource not found: " + path }
 
 	var uid_int: int = ResourceLoader.get_resource_uid(path)
 	if uid_int == -1:
-		return { &"ok": false, &"error": "No UID assigned to: " + path }
+		return { &"error": "No UID assigned to: " + path }
 
 	var uid_text: String = ResourceUID.id_to_text(uid_int)
 	return {
-		&"ok": true,
 		&"path": path,
 		&"uid": uid_text,
 	}
@@ -1209,17 +1193,16 @@ func get_uid(args: Dictionary) -> Dictionary:
 # query_class_info — Full ClassDB introspection for a single class
 # =============================================================================
 func query_class_info(args: Dictionary) -> Dictionary:
-	var class_name_str: String = str(args.get(&"class_name", ""))
+	var class_name_str: String = args[&"class_name"]
 	if class_name_str.is_empty():
-		return { &"ok": false, &"error": "Missing 'class_name'" }
+		return { &"error": "Missing 'class_name'" }
 	if not ClassDB.class_exists(class_name_str):
-		return { &"ok": false, &"error": "Class not found: " + class_name_str }
+		return { &"error": "Class not found: " + class_name_str }
 
-	var include_inherited: bool = bool(args.get(&"include_inherited", false))
+	var include_inherited: bool = args.get(&"include_inherited", false)
 	var no_exclude: bool = not include_inherited # ClassDB uses "no_inheritance" flag
 
 	var result: Dictionary = {
-		&"ok": true,
 		&"class_name": class_name_str,
 		&"parent_class": ClassDB.get_parent_class(class_name_str),
 		&"can_instantiate": ClassDB.can_instantiate(class_name_str),
@@ -1310,15 +1293,15 @@ const _CATEGORY_BASES: Dictionary = {
 
 
 func query_classes(args: Dictionary) -> Dictionary:
-	var filter: String = str(args.get(&"filter", ""))
-	var category: String = str(args.get(&"category", ""))
-	var instantiable_only: bool = bool(args.get(&"instantiable_only", false))
+	var filter: String = args.get(&"filter", "")
+	var category: String = args.get(&"category", "")
+	var instantiable_only: bool = args.get(&"instantiable_only", false)
 
 	var base_class: String = ""
 	if not category.is_empty():
 		base_class = _CATEGORY_BASES.get(category.to_lower(), "")
 		if base_class.is_empty():
-			return { &"ok": false, &"error": "Unknown category: " + category + ". Valid: " + ", ".join(_CATEGORY_BASES.keys()) }
+			return { &"error": "Unknown category: " + category + ". Valid: " + ", ".join(_CATEGORY_BASES.keys()) }
 
 	var all_classes: PackedStringArray = ClassDB.get_class_list()
 	var filter_lower: String = filter.to_lower()
@@ -1336,7 +1319,6 @@ func query_classes(args: Dictionary) -> Dictionary:
 
 	filtered.sort()
 	return {
-		&"ok": true,
 		&"classes": filtered,
 		&"count": filtered.size(),
 	}

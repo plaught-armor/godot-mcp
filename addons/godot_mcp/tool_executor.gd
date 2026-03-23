@@ -33,11 +33,11 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	var handler: RefCounted = _get_handler(tool_name)
 	if handler == null:
-		return { &"ok": false, &"error": "Unknown tool: " + tool_name }
+		return { &"error": "Unknown tool: " + tool_name }
 
 	if not handler.has_method(tool_name):
 		push_error("[GMCP] Handler has no method '%s'" % tool_name)
-		return { &"ok": false, &"error": "Handler missing method: " + tool_name }
+		return { &"error": "Handler missing method: " + tool_name }
 
 	var result: Variant = handler.call(tool_name, args)
 
@@ -46,10 +46,10 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 	# gets a proper error response instead of a 30s timeout.
 	if result == null:
 		push_error("[GMCP] Tool '%s' returned null (likely a runtime error — check console above)" % tool_name)
-		return { &"ok": false, &"error": "Tool crashed or returned null: " + tool_name }
+		return { &"error": "Tool crashed or returned null: " + tool_name }
 	if result is not Dictionary:
 		push_error("[GMCP] Tool '%s' returned non-Dictionary: %s" % [tool_name, typeof(result)])
-		return { &"ok": false, &"error": "Tool returned invalid type: " + tool_name }
+		return { &"error": "Tool returned invalid type: " + tool_name }
 	return result
 
 

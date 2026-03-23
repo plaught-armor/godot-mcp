@@ -6,9 +6,9 @@ extends RefCounted
 signal should_connect
 signal gave_up
 
-const INITIAL_DELAY := 0.5
-const MAX_DELAY := 2.0
-const MAX_RETRIES := 5
+const INITIAL_DELAY: float = 0.5
+const MAX_DELAY: float = 2.0
+const MAX_RETRIES: int = 5
 
 var _retry_count: int = 0
 var _delay: float = INITIAL_DELAY

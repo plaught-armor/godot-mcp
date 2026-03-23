@@ -11,12 +11,12 @@ signal tool_requested(request_id: String, tool_name: String, args: Dictionary)
 signal visualizer_opened(url: String)
 signal visualizer_failed(error: String)
 
-const DEFAULT_URL := "ws://127.0.0.1:6505"
+const DEFAULT_URL: String = "ws://127.0.0.1:6505"
 const _PONG_MSG: Dictionary = { &"type": &"pong" }
-const MAX_PACKETS_PER_FRAME := 32
+const MAX_PACKETS_PER_FRAME: int = 32
 
 var socket: WebSocketPeer = WebSocketPeer.new()
-const OUTBOUND_BUFFER_SIZE := 10 * 1024 * 1024 # 10 MB — matches Go server read limit
+const OUTBOUND_BUFFER_SIZE: int = 10 * 1024 * 1024 # 10 MB — matches Go server read limit
 var server_url: String = DEFAULT_URL
 var _is_connected: bool = false
 var _should_reconnect: bool = true
@@ -28,9 +28,10 @@ func _ready() -> void:
 	_project_path = ProjectSettings.globalize_path("res://")
 	_reconnect.setup(self)
 	_reconnect.should_connect.connect(_attempt_connection)
-	_reconnect.gave_up.connect(func() -> void:
-		_should_reconnect = false
-		disconnected.emit()
+	_reconnect.gave_up.connect(
+		func() -> void:
+			_should_reconnect = false
+			disconnected.emit()
 	)
 
 

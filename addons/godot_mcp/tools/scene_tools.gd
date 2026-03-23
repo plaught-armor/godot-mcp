@@ -39,15 +39,15 @@ func _reload_scene_in_editor(scene_path: String) -> void:
 ## Returns [code][scene_root, error_dict][/code]. If error_dict is not empty, scene_root is null.
 func _load_scene(scene_path: String) -> Array:
 	if not FileAccess.file_exists(scene_path):
-		return [null, { &"ok": false, &"error": "Scene does not exist: " + scene_path }]
+		return [null, { &"error": "Scene does not exist: " + scene_path }]
 
 	var packed: PackedScene = load(scene_path) as PackedScene
 	if not packed:
-		return [null, { &"ok": false, &"error": "Failed to load scene: " + scene_path }]
+		return [null, { &"error": "Failed to load scene: " + scene_path }]
 
 	var root: Node = packed.instantiate()
 	if not root:
-		return [null, { &"ok": false, &"error": "Failed to instantiate scene" }]
+		return [null, { &"error": "Failed to instantiate scene" }]
 
 	return [root, { }]
 
@@ -58,13 +58,13 @@ func _save_scene(scene_root: Node, scene_path: String) -> Dictionary:
 	var pack_result: Error = packed.pack(scene_root)
 	if pack_result != OK:
 		scene_root.queue_free()
-		return { &"ok": false, &"error": "Failed to pack scene: " + str(pack_result) }
+		return { &"error": "Failed to pack scene: " + str(pack_result) }
 
 	var save_result: Error = ResourceSaver.save(packed, scene_path)
 	scene_root.queue_free()
 
 	if save_result != OK:
-		return { &"ok": false, &"error": "Failed to save scene: " + str(save_result) }
+		return { &"error": "Failed to save scene: " + str(save_result) }
 
 	_refresh_and_reload(scene_path)
 	return { }
@@ -106,23 +106,23 @@ func _set_node_properties(node: Node, properties: Dictionary) -> void:
 # create_scene
 # =============================================================================
 func create_scene(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var root_node_name: String = str(args.get(&"root_node_name", "Node"))
-	var root_node_type: String = str(args.get(&"root_node_type", ""))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var root_node_name: String = args.get(&"root_node_name", "Node")
+	var root_node_type: String = args[&"root_node_type"]
 	var nodes: Array[Dictionary]
 	nodes.assign(args.get(&"nodes", []))
-	var attach_script_path: String = str(args.get(&"attach_script", ""))
+	var attach_script_path: String = args.get(&"attach_script", "")
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path' parameter" }
+		return { &"error": "Missing 'scene_path' parameter" }
 	if root_node_type.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'root_node_type' parameter" }
+		return { &"error": "Missing 'root_node_type' parameter" }
 	if not scene_path.ends_with(".tscn"):
 		scene_path += ".tscn"
 	if FileAccess.file_exists(scene_path):
-		return { &"ok": false, &"error": "Scene already exists: " + scene_path }
+		return { &"error": "Scene already exists: " + scene_path }
 	if not ClassDB.class_exists(root_node_type):
-		return { &"ok": false, &"error": "Invalid root node type: " + root_node_type }
+		return { &"error": "Invalid root node type: " + root_node_type }
 
 	# Ensure parent directory
 	var dir_path: String = scene_path.get_base_dir()
@@ -131,7 +131,7 @@ func create_scene(args: Dictionary) -> Dictionary:
 
 	var root: Node = ClassDB.instantiate(root_node_type) as Node
 	if not root:
-		return { &"ok": false, &"error": "Failed to create root node of type: " + root_node_type }
+		return { &"error": "Failed to create root node of type: " + root_node_type }
 	root.name = root_node_name
 
 	if not attach_script_path.is_empty():
@@ -151,7 +151,6 @@ func create_scene(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"path": scene_path,
 		&"root_type": root_node_type,
 		&"child_count": node_count,
@@ -161,9 +160,9 @@ func create_scene(args: Dictionary) -> Dictionary:
 
 ## Create node tree recursively. Returns the number of nodes created.
 func _create_node_recursive(data: Dictionary, parent: Node, owner: Node) -> int:
-	var n_name: String = str(data.get(&"name", "Node"))
-	var n_type: String = str(data.get(&"type", "Node"))
-	var n_script: String = str(data.get(&"script", ""))
+	var n_name: String = data.get(&"name", "Node")
+	var n_type: String = data.get(&"type", "Node")
+	var n_script: String = data.get(&"script", "")
 	var props: Dictionary = data.get(&"properties", { })
 	var children: Array[Dictionary]
 	children.assign(data.get(&"children", []))
@@ -198,11 +197,11 @@ func _create_node_recursive(data: Dictionary, parent: Node, owner: Node) -> int:
 # read_scene
 # =============================================================================
 func read_scene(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
 	var include_properties: bool = args.get(&"include_properties", false)
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path' parameter" }
+		return { &"error": "Missing 'scene_path' parameter" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -212,7 +211,7 @@ func read_scene(args: Dictionary) -> Dictionary:
 	var structure: Dictionary = _build_node_structure(root, include_properties)
 	root.queue_free()
 
-	return { &"ok": true, &"scene_path": scene_path, &"root": structure }
+	return { &"scene_path": scene_path, &"root": structure }
 
 
 func _build_node_structure(node: Node, include_props: bool, path: String = ".") -> Dictionary:
@@ -255,18 +254,18 @@ func _build_node_structure(node: Node, include_props: bool, path: String = ".") 
 # add_node
 # =============================================================================
 func add_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_name: String = str(args.get(&"node_name", ""))
-	var node_type: String = str(args.get(&"node_type", "Node"))
-	var parent_path: String = str(args.get(&"parent_path", "."))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_name: String = args[&"node_name"]
+	var node_type: String = args[&"node_type"]
+	var parent_path: String = args.get(&"parent_path", ".")
 	var properties: Dictionary = args.get(&"properties", { })
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if node_name.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'node_name'" }
+		return { &"error": "Missing 'node_name'" }
 	if not ClassDB.class_exists(node_type):
-		return { &"ok": false, &"error": "Invalid node type: " + node_type }
+		return { &"error": "Invalid node type: " + node_type }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -276,12 +275,12 @@ func add_node(args: Dictionary) -> Dictionary:
 	var parent: Node = _find_node(root, parent_path)
 	if not parent:
 		root.queue_free()
-		return { &"ok": false, &"error": "Parent node not found: " + parent_path }
+		return { &"error": "Parent node not found: " + parent_path }
 
 	var new_node: Node = ClassDB.instantiate(node_type) as Node
 	if not new_node:
 		root.queue_free()
-		return { &"ok": false, &"error": "Failed to create node of type: " + node_type }
+		return { &"error": "Failed to create node of type: " + node_type }
 
 	new_node.name = node_name
 	_set_node_properties(new_node, properties)
@@ -293,7 +292,6 @@ func add_node(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"scene_path": scene_path,
 		&"node_name": node_name,
 		&"node_type": node_type,
@@ -305,25 +303,26 @@ func add_node(args: Dictionary) -> Dictionary:
 # remove_node
 # =============================================================================
 func remove_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 
 	# Support bulk removal via node_paths array, or single via node_path
 	var raw_paths: Array = args.get(&"node_paths", [])
 	var paths: Array[String] = []
 	for p: String in raw_paths:
 		paths.append(p)
-	var single: String = str(args.get(&"node_path", ""))
-	if paths.is_empty() and not single.strip_edges().is_empty():
-		paths = [single]
 	if paths.is_empty():
-		return { &"ok": false, &"error": "Missing 'node_path' or 'node_paths'" }
+		var single: String = args[&"node_path"]
+		if not single.strip_edges().is_empty():
+			paths = [single]
+	if paths.is_empty():
+		return { &"error": "Missing 'node_path' or 'node_paths'" }
 
 	for p: String in paths:
 		if p.strip_edges().is_empty() or p == ".":
-			return { &"ok": false, &"error": "Cannot remove root node" }
+			return { &"error": "Cannot remove root node" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -345,14 +344,13 @@ func remove_node(args: Dictionary) -> Dictionary:
 
 	if removed.is_empty():
 		root.queue_free()
-		return { &"ok": false, &"error": "No nodes found: " + ", ".join(not_found) }
+		return { &"error": "No nodes found: " + ", ".join(not_found) }
 
 	var err: Dictionary = _save_scene(root, scene_path)
 	if not err.is_empty():
 		return err
 
 	var out: Dictionary = {
-		&"ok": true,
 		&"scene_path": scene_path,
 		&"removed_count": removed.size(),
 		&"removed": removed,
@@ -370,17 +368,17 @@ func remove_node(args: Dictionary) -> Dictionary:
 # modify_node_property
 # =============================================================================
 func modify_node_property(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
-	var property_name: String = str(args.get(&"property_name", ""))
-	var value: Variant = args.get(&"value")
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var property_name: String = args[&"property_name"]
+	var value: Variant = args[&"value"]
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if property_name.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'property_name'" }
+		return { &"error": "Missing 'property_name'" }
 	if value == null:
-		return { &"ok": false, &"error": "Missing 'value'" }
+		return { &"error": "Missing 'value'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -390,13 +388,13 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	# Check property exists
 	if not (property_name in target):
 		var node_type: String = target.get_class()
 		root.queue_free()
-		return { &"ok": false, &"error": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property_name, node_path, node_type] }
+		return { &"error": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property_name, node_path, node_type] }
 
 	var parsed: Variant = _parse_value(value)
 	var old_value: Variant = target.get(property_name)
@@ -404,7 +402,7 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 	# Validate resource type compatibility
 	if old_value is Resource and not (parsed is Resource):
 		root.queue_free()
-		return { &"ok": false, &"error": "Property '%s' expects a Resource. Use specialized tools (set_collision_shape, set_sprite_texture) instead." % property_name }
+		return { &"error": "Property '%s' expects a Resource. Use specialized tools (set_collision_shape, set_sprite_texture) instead." % property_name }
 
 	target.set(property_name, parsed)
 
@@ -413,7 +411,6 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"scene_path": scene_path,
 		&"node_path": node_path,
 		&"property_name": property_name,
@@ -427,16 +424,16 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 # rename_node
 # =============================================================================
 func rename_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", ""))
-	var new_name: String = str(args.get(&"new_name", ""))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var new_name: String = args[&"new_name"]
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if node_path.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'node_path'" }
+		return { &"error": "Missing 'node_path'" }
 	if new_name.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'new_name'" }
+		return { &"error": "Missing 'new_name'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -446,7 +443,7 @@ func rename_node(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var old_name: StringName = target.name
 	target.name = new_name
@@ -456,7 +453,6 @@ func rename_node(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"old_name": str(old_name),
 		&"new_name": new_name,
 		&"message": "Renamed '%s' to '%s'" % [old_name, new_name],
@@ -467,15 +463,15 @@ func rename_node(args: Dictionary) -> Dictionary:
 # move_node
 # =============================================================================
 func move_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", ""))
-	var new_parent_path: String = str(args.get(&"new_parent_path", "."))
-	var sibling_index: int = int(args.get(&"sibling_index", -1))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var new_parent_path: String = args[&"new_parent_path"]
+	var sibling_index: int = args.get(&"sibling_index", -1)
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if node_path.strip_edges().is_empty() or node_path == ".":
-		return { &"ok": false, &"error": "Cannot move root node" }
+		return { &"error": "Cannot move root node" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -485,17 +481,17 @@ func move_node(args: Dictionary) -> Dictionary:
 	var target: Node = root.get_node_or_null(node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var new_parent: Node = _find_node(root, new_parent_path)
 	if not new_parent:
 		root.queue_free()
-		return { &"ok": false, &"error": "New parent not found: " + new_parent_path }
+		return { &"error": "New parent not found: " + new_parent_path }
 
 	# Prevent circular reference: new parent must not be the target or a descendant of it
 	if new_parent == target or target.is_ancestor_of(new_parent):
 		root.queue_free()
-		return { &"ok": false, &"error": "Cannot move node to its own descendant" }
+		return { &"error": "Cannot move node to its own descendant" }
 
 	target.get_parent().remove_child(target)
 	new_parent.add_child(target)
@@ -508,21 +504,21 @@ func move_node(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"ok": true, &"message": "Moved '%s' to '%s'" % [node_path, new_parent_path] }
+	return { &"message": "Moved '%s' to '%s'" % [node_path, new_parent_path] }
 
 
 # =============================================================================
 # duplicate_node
 # =============================================================================
 func duplicate_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", ""))
-	var new_name: String = str(args.get(&"new_name", ""))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var new_name: String = args[&"new_name"]
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if node_path.strip_edges().is_empty() or node_path == ".":
-		return { &"ok": false, &"error": "Cannot duplicate root node" }
+		return { &"error": "Cannot duplicate root node" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -532,12 +528,12 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 	var target: Node = root.get_node_or_null(node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var parent: Node = target.get_parent()
 	if not parent:
 		root.queue_free()
-		return { &"ok": false, &"error": "Cannot duplicate - no parent" }
+		return { &"error": "Cannot duplicate - no parent" }
 
 	# Duplicate the node
 	var duplicate: Node = target.duplicate()
@@ -569,7 +565,6 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"new_name": new_name,
 		&"message": "Duplicated '%s' as '%s'" % [node_path, new_name],
 	}
@@ -585,14 +580,14 @@ func _set_owner_recursive(node: Node, owner: Node) -> void:
 # reorder_node - simpler function just for changing sibling order
 # =============================================================================
 func reorder_node(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", ""))
-	var new_index: int = int(args.get(&"new_index", -1))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var new_index: int = args.get(&"new_index", -1)
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if node_path.strip_edges().is_empty() or node_path == ".":
-		return { &"ok": false, &"error": "Cannot reorder root node" }
+		return { &"error": "Cannot reorder root node" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -602,12 +597,12 @@ func reorder_node(args: Dictionary) -> Dictionary:
 	var target: Node = root.get_node_or_null(node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var parent: Node = target.get_parent()
 	if not parent:
 		root.queue_free()
-		return { &"ok": false, &"error": "Cannot reorder - no parent" }
+		return { &"error": "Cannot reorder - no parent" }
 
 	var old_index: int = target.get_index()
 	var max_index: int = parent.get_child_count() - 1
@@ -615,7 +610,7 @@ func reorder_node(args: Dictionary) -> Dictionary:
 
 	if old_index == new_index:
 		root.queue_free()
-		return { &"ok": true, &"message": "No change needed" }
+		return { &"message": "No change needed" }
 
 	parent.move_child(target, new_index)
 
@@ -624,7 +619,6 @@ func reorder_node(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"old_index": old_index,
 		&"new_index": new_index,
 		&"message": "Moved '%s' from index %d to %d" % [node_path, old_index, new_index],
@@ -635,17 +629,17 @@ func reorder_node(args: Dictionary) -> Dictionary:
 # attach_script
 # =============================================================================
 func attach_script(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
-	var script_path: String = str(args.get(&"script_path", ""))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var script_path: String = args[&"script_path"]
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if script_path.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'script_path'" }
+		return { &"error": "Missing 'script_path'" }
 	script_path = _utils.validate_res_path(script_path)
 	if script_path.is_empty():
-		return { &"ok": false, &"error": "script_path escapes project root" }
+		return { &"error": "script_path escapes project root" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -655,12 +649,12 @@ func attach_script(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var script_res: Resource = load(script_path)
 	if not script_res:
 		root.queue_free()
-		return { &"ok": false, &"error": "Failed to load script: " + script_path }
+		return { &"error": "Failed to load script: " + script_path }
 
 	target.set_script(script_res)
 
@@ -668,18 +662,18 @@ func attach_script(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"ok": true, &"message": "Attached %s to node '%s'" % [script_path, node_path] }
+	return { &"message": "Attached %s to node '%s'" % [script_path, node_path] }
 
 
 # =============================================================================
 # detach_script
 # =============================================================================
 func detach_script(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -689,7 +683,7 @@ func detach_script(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	target.set_script(null)
 
@@ -697,24 +691,24 @@ func detach_script(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"ok": true, &"message": "Detached script from node '%s'" % node_path }
+	return { &"message": "Detached script from node '%s'" % node_path }
 
 
 # =============================================================================
 # set_collision_shape
 # =============================================================================
 func set_collision_shape(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
-	var shape_type: String = str(args.get(&"shape_type", ""))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var shape_type: String = args[&"shape_type"]
 	var shape_params: Dictionary = args.get(&"shape_params", { })
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if shape_type.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'shape_type'" }
+		return { &"error": "Missing 'shape_type'" }
 	if not ClassDB.class_exists(shape_type):
-		return { &"ok": false, &"error": "Invalid shape type: " + shape_type }
+		return { &"error": "Invalid shape type: " + shape_type }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -724,19 +718,19 @@ func set_collision_shape(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	# Create shape resource
 	var shape: Variant = ClassDB.instantiate(shape_type)
 	if not shape:
 		root.queue_free()
-		return { &"ok": false, &"error": "Failed to create shape: " + shape_type }
+		return { &"error": "Failed to create shape: " + shape_type }
 
 	# Apply shape parameters
 	if shape_params.has(&"radius"):
-		shape.set(&"radius", float(shape_params[&"radius"]))
+		shape.set(&"radius", shape_params[&"radius"])
 	if shape_params.has(&"height"):
-		shape.set(&"height", float(shape_params[&"height"]))
+		shape.set(&"height", shape_params[&"height"])
 	if shape_params.has(&"size"):
 		var size_data: Variant = shape_params[&"size"]
 		if typeof(size_data) == TYPE_DICTIONARY:
@@ -751,22 +745,22 @@ func set_collision_shape(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"ok": true, &"message": "Set %s on node '%s'" % [shape_type, node_path] }
+	return { &"message": "Set %s on node '%s'" % [shape_type, node_path] }
 
 
 # =============================================================================
 # set_sprite_texture
 # =============================================================================
 func set_sprite_texture(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
-	var texture_type: String = str(args.get(&"texture_type", ""))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var texture_type: String = args[&"texture_type"]
 	var texture_params: Dictionary = args.get(&"texture_params", { })
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if texture_type.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'texture_type'" }
+		return { &"error": "Missing 'texture_type'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -776,20 +770,20 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var texture: Texture2D = null
 
 	match texture_type:
 		"ImageTexture":
-			var tex_path: String = _utils.validate_res_path(str(texture_params.get(&"path", "")))
+			var tex_path: String = _utils.validate_res_path(texture_params.get(&"path", ""))
 			if tex_path.is_empty():
 				root.queue_free()
-				return { &"ok": false, &"error": "Missing or invalid 'path' in texture_params for ImageTexture" }
+				return { &"error": "Missing or invalid 'path' in texture_params for ImageTexture" }
 			texture = load(tex_path) as Texture2D
 			if not texture:
 				root.queue_free()
-				return { &"ok": false, &"error": "Failed to load texture: " + tex_path }
+				return { &"error": "Failed to load texture: " + tex_path }
 		"PlaceholderTexture2D":
 			texture = PlaceholderTexture2D.new()
 			var size_data: Variant = texture_params.get(&"size", { &"x": 64, &"y": 64 })
@@ -797,15 +791,15 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 				texture.size = Vector2(size_data.get(&"x", 64), size_data.get(&"y", 64))
 		"GradientTexture2D":
 			texture = GradientTexture2D.new()
-			texture.width = int(texture_params.get(&"width", 64))
-			texture.height = int(texture_params.get(&"height", 64))
+			texture.width = texture_params.get(&"width", 64)
+			texture.height = texture_params.get(&"height", 64)
 		"NoiseTexture2D":
 			texture = NoiseTexture2D.new()
-			texture.width = int(texture_params.get(&"width", 64))
-			texture.height = int(texture_params.get(&"height", 64))
+			texture.width = texture_params.get(&"width", 64)
+			texture.height = texture_params.get(&"height", 64)
 		_:
 			root.queue_free()
-			return { &"ok": false, &"error": "Unknown texture type: " + texture_type }
+			return { &"error": "Unknown texture type: " + texture_type }
 
 	target.set(&"texture", texture)
 
@@ -813,7 +807,7 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"ok": true, &"message": "Set %s texture on node '%s'" % [texture_type, node_path] }
+	return { &"message": "Set %s texture on node '%s'" % [texture_type, node_path] }
 
 
 # =============================================================================
@@ -821,10 +815,10 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Get the full scene hierarchy with node information for the visualizer.
 func get_scene_hierarchy(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -834,7 +828,7 @@ func get_scene_hierarchy(args: Dictionary) -> Dictionary:
 	var hierarchy: Dictionary = _build_hierarchy_recursive(root, ".")
 	root.queue_free()
 
-	return { &"ok": true, &"scene_path": scene_path, &"hierarchy": hierarchy }
+	return { &"scene_path": scene_path, &"hierarchy": hierarchy }
 
 
 ## Build node hierarchy with all info needed for visualizer.
@@ -870,11 +864,11 @@ func _build_hierarchy_recursive(node: Node, path: String) -> Dictionary:
 # =============================================================================
 ## Get all properties of a specific node in a scene with their current values.
 func get_scene_node_properties(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -884,7 +878,7 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	var node_type: String = target.get_class()
 	var properties: Array[Dictionary] = []
@@ -946,7 +940,6 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 	root.queue_free()
 
 	return {
-		&"ok": true,
 		&"scene_path": scene_path,
 		&"node_path": node_path,
 		&"node_type": node_type,
@@ -963,16 +956,16 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Set a property on a node in a scene (supports complex types).
 func set_scene_node_property(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(str(args.get(&"scene_path", "")))
-	var node_path: String = str(args.get(&"node_path", "."))
-	var property_name: String = str(args.get(&"property_name", ""))
-	var value: Variant = args.get(&"value")
-	var value_type: int = int(args.get(&"value_type", -1))
+	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var node_path: String = args[&"node_path"]
+	var property_name: String = args[&"property_name"]
+	var value: Variant = args[&"value"]
+	var value_type: int = args.get(&"value_type", -1)
 
 	if scene_path.is_empty() or scene_path == "res://":
-		return { &"ok": false, &"error": "Missing 'scene_path'" }
+		return { &"error": "Missing 'scene_path'" }
 	if property_name.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'property_name'" }
+		return { &"error": "Missing 'property_name'" }
 
 	var result: Array = _load_scene(scene_path)
 	if not result[1].is_empty():
@@ -982,7 +975,7 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 	var target: Node = _find_node(root, node_path)
 	if not target:
 		root.queue_free()
-		return { &"ok": false, &"error": "Node not found: " + node_path }
+		return { &"error": "Node not found: " + node_path }
 
 	# Parse value based on type
 	var parsed_value: Variant = _parse_typed_value(value, value_type)
@@ -996,7 +989,6 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 		return err
 
 	return {
-		&"ok": true,
 		&"scene_path": scene_path,
 		&"node_path": node_path,
 		&"property_name": property_name,

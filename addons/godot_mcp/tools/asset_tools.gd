@@ -21,14 +21,14 @@ func set_utils(utils: ToolUtils) -> void:
 # generate_2d_asset - Generate PNG from SVG code
 # =============================================================================
 func generate_2d_asset(args: Dictionary) -> Dictionary:
-	var svg_code: String = str(args.get(&"svg_code", ""))
-	var filename: String = str(args.get(&"filename", ""))
-	var save_path: String = str(args.get(&"save_path", "res://assets/generated/"))
+	var svg_code: String = args[&"svg_code"]
+	var filename: String = args[&"filename"]
+	var save_path: String = args.get(&"save_path", "res://assets/generated/")
 
 	if svg_code.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'svg_code'" }
+		return { &"error": "Missing 'svg_code'" }
 	if filename.strip_edges().is_empty():
-		return { &"ok": false, &"error": "Missing 'filename'" }
+		return { &"error": "Missing 'filename'" }
 
 	# Ensure .png extension
 	if not filename.ends_with(".png"):
@@ -37,7 +37,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	# Ensure save path
 	save_path = _utils.validate_res_path(save_path)
 	if save_path.is_empty():
-		return { &"ok": false, &"error": "Save path escapes project root" }
+		return { &"error": "Save path escapes project root" }
 	if not save_path.ends_with("/"):
 		save_path += "/"
 
@@ -71,7 +71,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var temp_svg_path: String = "user://temp_asset.svg"
 	var svg_file: FileAccess = FileAccess.open(temp_svg_path, FileAccess.WRITE)
 	if not svg_file:
-		return { &"ok": false, &"error": "Failed to create temp SVG file" }
+		return { &"error": "Failed to create temp SVG file" }
 	svg_file.store_string(svg_code)
 	svg_file.close()
 
@@ -91,12 +91,11 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var global_path: String = ProjectSettings.globalize_path(full_path)
 	err = image.save_png(global_path)
 	if err != OK:
-		return { &"ok": false, &"error": "Failed to save PNG: " + str(err) }
+		return { &"error": "Failed to save PNG: " + str(err) }
 
 	_utils.refresh_filesystem()
 
 	return {
-		&"ok": true,
 		&"resource_path": full_path,
 		&"dimensions": { &"width": width, &"height": height },
 		&"message": "Generated %s (%dx%d)" % [full_path, width, height],
