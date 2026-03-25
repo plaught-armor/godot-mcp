@@ -19,6 +19,8 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
 
+	lazy := os.Getenv("GODOT_MCP_LAZY") == "1"
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
@@ -64,11 +66,15 @@ func main() {
 		b.SendNotification("visualizer_status", map[string]any{"url": url})
 	})
 
-	log.Printf("[godot-mcp-server] Available tools: %d", len(tools.AllTools)+1)
+	if lazy {
+		log.Printf("[godot-mcp-server] Lazy mode: %d core tools, %d total available", len(tools.ByCategory("core"))+1, len(tools.AllTools)+1)
+	} else {
+		log.Printf("[godot-mcp-server] Tools: %d", len(tools.AllTools)+1)
+	}
 	log.Printf("[godot-mcp-server] Mode: mock (waiting for Godot connection)")
 
 	// Create and run MCP server on stdio
-	srv := mcpserver.New(b)
+	srv := mcpserver.New(b, lazy)
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		log.Printf("[godot-mcp-server] Fatal error: %v", err)
 		os.Exit(1)

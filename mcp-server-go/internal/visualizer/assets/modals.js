@@ -143,12 +143,12 @@ window.submitNewScript = async function () {
       const result = await sendCommand('create_script_file', {
         path, extends: extendsType, class_name: className || ''
       });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       await refreshProject();
     },
     async () => {
       const result = await sendCommand('delete_script', { path });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       await refreshProject();
     }
   );
@@ -165,7 +165,7 @@ async function refreshProject() {
   contextMenu.classList.remove('visible');
   try {
     const result = await sendCommand('map_project', {});
-    if (result.ok && result.project_map) {
+    if (!result.error && result.project_map) {
       // Update nodes and edges
       const newNodes = result.project_map.nodes.map((n, i) => ({
         ...n,
@@ -249,7 +249,7 @@ async function loadSceneView() {
   // Request scene data from Godot
   try {
     const result = await sendCommand('map_scenes', { root: 'res://' });
-    if (result.ok) {
+    if (!result.error) {
       setSceneData(result.scene_map);
       updateStats();
       draw();
@@ -316,7 +316,7 @@ window.confirmDeleteScript = async function () {
     `Delete script '${scriptFilename}'`,
     async () => {
       const result = await sendCommand('delete_script', { path: scriptPath });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       closePanel();
       await refreshProject();
     },
@@ -324,7 +324,7 @@ window.confirmDeleteScript = async function () {
       const result = await sendCommand('create_script_file', {
         path: scriptPath, extends: scriptExtends, class_name: scriptClassName
       });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       await refreshProject();
     }
   );
@@ -426,7 +426,7 @@ window.submitRenameScript = async function () {
       const result = await sendCommand('rename_script', {
         old_path: oldPath, new_path: newPath, update_references: updateRefs
       });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       closePanel();
       await refreshProject();
     },
@@ -434,7 +434,7 @@ window.submitRenameScript = async function () {
       const result = await sendCommand('rename_script', {
         old_path: newPath, new_path: oldPath, update_references: updateRefs
       });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       await refreshProject();
     }
   );

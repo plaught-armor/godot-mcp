@@ -17,5 +17,6 @@ type ToolDef struct {
 	Description string
 	InputSchema *Schema
 	MockFn      func(args map[string]any) any
-	Runtime     bool // true = route to runtime (game process), not editor
+	Runtime     bool   // true = route to runtime (game process), not editor
+	Category    string // tool category for dynamic registration (core, scene, script, file, project, git, runtime, asset)
 }

@@ -1380,7 +1380,7 @@ export async function openSceneNodePanel(scenePath, node) {
       node_path: node.path
     });
 
-    if (result.ok) {
+    if (!result.error) {
       setSceneNodeProperties(result);
       renderSceneNodePanel(result, scenePath, node);
     } else {
@@ -1715,7 +1715,7 @@ async function saveSceneNodeProperty(scenePath, nodePath, propName, value, value
         scene_path: scenePath, node_path: nodePath,
         property_name: propName, value: value, value_type: valueType
       });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
     },
     async () => {
       if (oldValue === undefined) return; // Can't undo without old value
@@ -1723,7 +1723,7 @@ async function saveSceneNodeProperty(scenePath, nodePath, propName, value, value
         scene_path: scenePath, node_path: nodePath,
         property_name: propName, value: oldValue, value_type: valueType
       });
-      if (!result.ok) throw new Error(result.error || 'Unknown error');
+      if (result.error) throw new Error(result.error || 'Unknown error');
       // Re-open the panel to reflect restored value
       if (selectedSceneNode) {
         await openSceneNodePanel(scenePath, selectedSceneNode);

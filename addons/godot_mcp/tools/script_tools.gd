@@ -151,8 +151,6 @@ func edit_script(args: Dictionary) -> Dictionary:
 		&"path": path,
 		&"added": added,
 		&"removed": removed,
-		&"auto_applied": true,
-		&"message": "Applied edit to %s (+%d -%d lines)" % [path, added, removed],
 	}
 
 
@@ -194,20 +192,18 @@ func validate_script(args: Dictionary) -> Dictionary:
 			&"path": path,
 			&"error_code": err,
 			&"errors": errors,
-			&"message": "Script has errors." + (" Details: " + "; ".join(errors) if errors.size() > 0 else " Check Godot console for details."),
 		}
 
 	if not script.can_instantiate():
 		return {
 			&"valid": false,
 			&"path": path,
-			&"message": "Script parsed but cannot be instantiated (may have dependency errors)",
+			&"errors": ["Script parsed but cannot be instantiated (dependency errors)"],
 		}
 
 	return {
 		&"valid": true,
 		&"path": path,
-		&"message": "No syntax errors found",
 	}
 
 
@@ -261,8 +257,6 @@ func validate_scripts(args: Dictionary) -> Dictionary:
 		return { &"error": "Too many paths (%d). Maximum is %d" % [paths.size(), MAX_VALIDATE_BATCH] }
 
 	var results: Array[Dictionary] = []
-	var valid_count: int = 0
-	var error_count: int = 0
 
 	for p: String in paths:
 		var result: Dictionary = validate_script({ &"path": p })
@@ -270,21 +264,14 @@ func validate_scripts(args: Dictionary) -> Dictionary:
 		if result.has(&"error"):
 			entry[&"valid"] = false
 			entry[&"error"] = result[&"error"]
-			error_count += 1
 		elif result[&"valid"]:
 			entry[&"valid"] = true
-			valid_count += 1
 		else:
 			entry[&"valid"] = false
 			entry[&"errors"] = result.get(&"errors", [result[&"message"]])
-			error_count += 1
 		results.append(entry)
 
-	return {
-		&"results": results,
-		&"valid_count": valid_count,
-		&"error_count": error_count,
-	}
+	return { &"results": results }
 
 
 # =============================================================================
@@ -344,7 +331,7 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 		methods.append(
 			{
 				&"name": mname,
-				&"args": method_args,
+				&"args": _utils.tabular(method_args, [&"name", &"type"]),
 				&"return_type": _utils.type_id_to_name(m.get(&"return", { }).get(&"type", TYPE_NIL)),
 			},
 		)
@@ -379,15 +366,15 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 		signals.append(
 			{
 				&"name": sname,
-				&"args": sig_args,
+				&"args": _utils.tabular(sig_args, [&"name", &"type"]),
 			},
 		)
 
 	return {
 		&"path": path,
-		&"methods": methods,
-		&"variables": variables,
-		&"signals": signals,
+		&"methods": _utils.tabular(methods, [&"name", &"args", &"return_type"]),
+		&"variables": _utils.tabular(variables, [&"name", &"type"]),
+		&"signals": _utils.tabular(signals, [&"name", &"args"]),
 	}
 
 
@@ -431,7 +418,6 @@ func find_class_definition(args: Dictionary) -> Dictionary:
 	return {
 		&"class_name": cls_name,
 		&"file": "",
-		&"message": "Class '%s' not found in any .gd file" % cls_name,
 	}
 
 
@@ -442,10 +428,7 @@ func list_scripts(args: Dictionary) -> Dictionary:
 	var scripts: PackedStringArray = []
 	_collect_scripts("res://", scripts)
 
-	return {
-		&"scripts": scripts,
-		&"count": scripts.size(),
-	}
+	return { &"scripts": scripts }
 
 
 const MAX_TRAVERSAL_DEPTH: int = 20
@@ -516,7 +499,6 @@ func create_script(args: Dictionary) -> Dictionary:
 	return {
 		&"path": path,
 		&"size_bytes": content.length(),
-		&"message": "Script created successfully",
 	}
 
 
@@ -574,7 +556,6 @@ func format_script(args: Dictionary) -> Dictionary:
 	return {
 		&"path": path,
 		&"changed": changed,
-		&"message": "Formatted " + path if changed else "No changes needed for " + path,
 	}
 
 # =============================================================================

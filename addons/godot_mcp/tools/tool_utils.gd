@@ -53,27 +53,38 @@ func validate_res_path(path: String) -> String:
 # =============================================================================
 
 
-## Serialize Godot types to JSON-friendly dictionaries.
+## Serialize Godot types to compact string format.
 func serialize_value(value: Variant) -> Variant:
 	match typeof(value):
 		TYPE_VECTOR2:
-			return { &"type": &"Vector2", &"x": value.x, &"y": value.y }
+			return "V2(%s,%s)" % [value.x, value.y]
 		TYPE_VECTOR3:
-			return { &"type": &"Vector3", &"x": value.x, &"y": value.y, &"z": value.z }
+			return "V3(%s,%s,%s)" % [value.x, value.y, value.z]
 		TYPE_COLOR:
-			return { &"type": &"Color", &"r": value.r, &"g": value.g, &"b": value.b, &"a": value.a }
+			return "C(%s,%s,%s,%s)" % [value.r, value.g, value.b, value.a]
 		TYPE_VECTOR2I:
-			return { &"type": &"Vector2i", &"x": value.x, &"y": value.y }
+			return "V2i(%s,%s)" % [value.x, value.y]
 		TYPE_VECTOR3I:
-			return { &"type": &"Vector3i", &"x": value.x, &"y": value.y, &"z": value.z }
+			return "V3i(%s,%s,%s)" % [value.x, value.y, value.z]
 		TYPE_RECT2:
-			return { &"type": &"Rect2", &"x": value.position.x, &"y": value.position.y, &"width": value.size.x, &"height": value.size.y }
+			return "R2(%s,%s,%s,%s)" % [value.position.x, value.position.y, value.size.x, value.size.y]
 		TYPE_OBJECT:
 			if value is Resource and value.resource_path:
-				return { &"type": &"Resource", &"path": value.resource_path }
+				return value.resource_path
 			return null
 		_:
 			return value
+
+
+## Convert an array of uniform dicts to header + rows format for token savings.
+func tabular(items: Array, keys: Array[StringName]) -> Dictionary:
+	var rows: Array[Array] = []
+	for item: Dictionary in items:
+		var row: Array = []
+		for k: StringName in keys:
+			row.append(item.get(k))
+		rows.append(row)
+	return { &"_h": keys, &"rows": rows }
 
 # =============================================================================
 # Type conversion

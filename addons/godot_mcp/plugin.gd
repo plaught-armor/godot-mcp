@@ -11,7 +11,7 @@ const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
 # Everything else runs on the main thread (filesystem refresh, editor UI, etc.).
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
-		&"list_dir", &"read_file", &"read_files", &"search_project", &"find_references", &"list_resources", &"list_scripts", &"get_script_symbols", &"find_class_definition", &"get_autoloads", &"get_uid", &"query_class_info", &"query_classes", &"map_scenes", &"git_status", &"git_diff", &"git_log":
+		&"list_dir", &"read_file", &"read_files", &"search_project", &"find_references", &"list_resources", &"list_scripts", &"get_script_symbols", &"find_class_definition", &"get_autoloads", &"get_uid", &"query_class_info", &"query_classes", &"map_scenes":
 			return true
 	return false
 

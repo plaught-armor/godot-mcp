@@ -207,10 +207,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 // allowedCommands is the set of Godot tools the visualizer is permitted to invoke.
 var allowedCommands = map[string]bool{
-	"add_node":                  true,
+	"scene_edit":                true,
 	"create_script_file":        true,
 	"delete_script":             true,
-	"duplicate_node":            true,
 	"edit_script":               true,
 	"get_scene_hierarchy":       true,
 	"get_scene_node_properties": true,
@@ -220,36 +219,32 @@ var allowedCommands = map[string]bool{
 	"modify_function_delete":    true,
 	"modify_signal":             true,
 	"modify_variable":           true,
-	"remove_node":               true,
-	"rename_node":               true,
 	"rename_script":             true,
-	"reorder_node":              true,
 	"set_scene_node_property":   true,
 }
 
 func (s *Server) handleInternalCommand(ctx context.Context, command string, args map[string]any) map[string]any {
 	if s.bridge == nil {
-		return map[string]any{"ok": false, "error": "Bridge not initialized"}
+		return map[string]any{"error": "Bridge not initialized"}
 	}
 	if !s.bridge.IsConnected() {
-		return map[string]any{"ok": false, "error": "Godot is not connected"}
+		return map[string]any{"error": "Godot is not connected"}
 	}
 	if !allowedCommands[command] {
-		return map[string]any{"ok": false, "error": "Command not allowed: " + command}
+		return map[string]any{"error": "Command not allowed: " + command}
 	}
 
 	log.Printf("[visualizer] Internal command: %s", command)
 
 	raw, err := s.bridge.InvokeTool(ctx, command, args)
 	if err != nil {
-		return map[string]any{"ok": false, "error": err.Error()}
+		return map[string]any{"error": err.Error()}
 	}
 
 	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
-		return map[string]any{"ok": false, "error": "Invalid response from Godot"}
+		return map[string]any{"error": "Invalid response from Godot"}
 	}
-	result["ok"] = true
 	return result
 }
 

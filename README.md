@@ -84,6 +84,21 @@ claude mcp add godot godot-mcp-server
 
 Works with any MCP-compatible client (Cursor, Windsurf, Cline, etc.) — same JSON format.
 
+**Lazy mode (optional)** — starts with only core tools and loads categories on demand via `get_godot_status({"enable": [...]})`. Reduces token usage on clients that support `tools/list_changed` notifications:
+
+```json
+{
+  "mcpServers": {
+    "godot": {
+      "command": "godot-mcp-server",
+      "env": { "GODOT_MCP_LAZY": "1" }
+    }
+  }
+}
+```
+
+> **Note:** Claude Code supports `list_changed` since v2.1.0, but newly enabled tools only appear on the **next turn** — not the turn where `enable` is called ([issue #4118](https://github.com/anthropics/claude-code/issues/4118)). Claude Code already defers tool schema loading internally, so eager mode (the default) gives similar token savings without the one-turn delay.
+
 ### 4. Restart your AI client
 
 Close and reopen Claude Desktop / Cursor / your client so it picks up the new config.

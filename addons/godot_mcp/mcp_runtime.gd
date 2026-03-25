@@ -89,20 +89,10 @@ func _execute(tool_name: String, args: Dictionary) -> Dictionary:
 			return _call_method(args)
 		"get_runtime_metrics":
 			return _get_metrics()
-		"inject_action":
-			return _inject_action(args)
-		"inject_key":
-			return _inject_key(args)
-		"inject_mouse_click":
-			return _inject_mouse_click(args)
-		"inject_mouse_motion":
-			return _inject_mouse_motion(args)
-		"watch_signal":
-			return _watch_signal(args)
-		"unwatch_signal":
-			return _unwatch_signal(args)
-		"get_signal_emissions":
-			return _get_signal_emissions(args)
+		"inject_input":
+			return _dispatch_inject_input(args)
+		"signal_watch":
+			return _dispatch_signal_watch(args)
 	return { "error": "Unknown runtime tool: " + tool_name }
 
 
@@ -271,6 +261,38 @@ func _get_metrics() -> Dictionary:
 			"total_primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
 		},
 	}
+
+
+# =============================================================================
+# inject_input dispatcher
+# =============================================================================
+func _dispatch_inject_input(args: Dictionary) -> Dictionary:
+	var input_type: String = args.get("type", "")
+	match input_type:
+		"action":
+			return _inject_action(args)
+		"key":
+			return _inject_key(args)
+		"mouse_click":
+			return _inject_mouse_click(args)
+		"mouse_motion":
+			return _inject_mouse_motion(args)
+	return { "error": "Unknown input type: " + input_type + " (use action, key, mouse_click, or mouse_motion)" }
+
+
+# =============================================================================
+# signal_watch dispatcher
+# =============================================================================
+func _dispatch_signal_watch(args: Dictionary) -> Dictionary:
+	var sig_action: String = args.get("action", "")
+	match sig_action:
+		"watch":
+			return _watch_signal(args)
+		"unwatch":
+			return _unwatch_signal(args)
+		"get_emissions":
+			return _get_signal_emissions(args)
+	return { "error": "Unknown signal_watch action: " + sig_action + " (use watch, unwatch, or get_emissions)" }
 
 
 # =============================================================================
@@ -477,7 +499,7 @@ func _get_signal_emissions(args: Dictionary) -> Dictionary:
 		if clear:
 			_signal_emissions = remaining
 
-	return { "emissions": out, "count": out.size(), "watching": _watched_signals.keys() }
+	return { "emissions": _tabular(out, ["node_path", "signal_name", "args", "timestamp"]), "watching": _watched_signals.keys() }
 
 
 func _on_signal_fired(node_path: String, signal_name: String, sig_args: Array) -> void:
@@ -505,31 +527,31 @@ func _serialize_value(value: Variant) -> Variant:
 	if value is bool or value is int or value is float or value is String:
 		return value
 	if value is Vector2:
-		return { "_type": "Vector2", "x": value.x, "y": value.y }
+		return "V2(%s,%s)" % [value.x, value.y]
 	if value is Vector2i:
-		return { "_type": "Vector2i", "x": value.x, "y": value.y }
+		return "V2i(%s,%s)" % [value.x, value.y]
 	if value is Vector3:
-		return { "_type": "Vector3", "x": value.x, "y": value.y, "z": value.z }
+		return "V3(%s,%s,%s)" % [value.x, value.y, value.z]
 	if value is Vector3i:
-		return { "_type": "Vector3i", "x": value.x, "y": value.y, "z": value.z }
+		return "V3i(%s,%s,%s)" % [value.x, value.y, value.z]
 	if value is Color:
-		return { "_type": "Color", "r": value.r, "g": value.g, "b": value.b, "a": value.a }
+		return "C(%s,%s,%s,%s)" % [value.r, value.g, value.b, value.a]
 	if value is Rect2:
-		return { "_type": "Rect2", "x": value.position.x, "y": value.position.y, "w": value.size.x, "h": value.size.y }
+		return "R2(%s,%s,%s,%s)" % [value.position.x, value.position.y, value.size.x, value.size.y]
 	if value is Vector4:
-		return { "_type": "Vector4", "x": value.x, "y": value.y, "z": value.z, "w": value.w }
+		return "V4(%s,%s,%s,%s)" % [value.x, value.y, value.z, value.w]
 	if value is Quaternion:
-		return { "_type": "Quaternion", "x": value.x, "y": value.y, "z": value.z, "w": value.w }
+		return "Q(%s,%s,%s,%s)" % [value.x, value.y, value.z, value.w]
 	if value is Basis:
-		return { "_type": "Basis", "x": _serialize_value(value.x), "y": _serialize_value(value.y), "z": _serialize_value(value.z) }
+		return "Bas(%s,%s,%s)" % [_serialize_value(value.x), _serialize_value(value.y), _serialize_value(value.z)]
 	if value is Transform2D:
-		return { "_type": "Transform2D", "origin": _serialize_value(value.origin), "x": _serialize_value(value.x), "y": _serialize_value(value.y) }
+		return "T2D(%s,%s,%s)" % [_serialize_value(value.x), _serialize_value(value.y), _serialize_value(value.origin)]
 	if value is Transform3D:
-		return { "_type": "Transform3D", "basis": _serialize_value(value.basis), "origin": _serialize_value(value.origin) }
+		return "T3D(%s,%s)" % [_serialize_value(value.basis), _serialize_value(value.origin)]
 	if value is AABB:
-		return { "_type": "AABB", "position": _serialize_value(value.position), "size": _serialize_value(value.size) }
+		return "AB(%s,%s)" % [_serialize_value(value.position), _serialize_value(value.size)]
 	if value is Plane:
-		return { "_type": "Plane", "normal": _serialize_value(value.normal), "d": value.d }
+		return "Pl(%s,%s)" % [_serialize_value(value.normal), value.d]
 	if value is Array:
 		var out: Array = []
 		for item: Variant in value:
@@ -541,16 +563,21 @@ func _serialize_value(value: Variant) -> Variant:
 			out[str(key)] = _serialize_value(value[key])
 		return out
 	if value is NodePath:
-		return { "_type": "NodePath", "path": str(value) }
+		return "NP(%s)" % str(value)
 	# Fallback: convert to string
 	return str(value)
 
 
 func _deserialize_value(value: Variant) -> Variant:
-	if value == null or value is bool or value is int or value is float or value is String:
+	if value == null or value is bool or value is int or value is float:
 		return value
+	if value is String:
+		return _parse_compact_type(value)
 	if value is Dictionary:
+		# Legacy dict format fallback + plain dicts
 		var t: String = value.get("_type", "")
+		if t.is_empty():
+			return value
 		match t:
 			"Vector2":
 				return Vector2(value.get("x", 0.0), value.get("y", 0.0))
@@ -566,23 +593,10 @@ func _deserialize_value(value: Variant) -> Variant:
 				return Quaternion(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0), value.get("w", 1.0))
 			"Color":
 				return Color(value.get("r", 0.0), value.get("g", 0.0), value.get("b", 0.0), value.get("a", 1.0))
-			"Basis":
-				return Basis(_deserialize_value(value["x"]), _deserialize_value(value["y"]), _deserialize_value(value["z"]))
-			"Transform3D":
-				return Transform3D(_deserialize_value(value["basis"]), _deserialize_value(value["origin"]))
-			"Transform2D":
-				if value.has("x"):
-					return Transform2D(_deserialize_value(value["x"]), _deserialize_value(value["y"]), _deserialize_value(value["origin"]))
-				return Transform2D(0.0, _deserialize_value(value["origin"]))
 			"Rect2":
 				return Rect2(value.get("x", 0.0), value.get("y", 0.0), value.get("w", 0.0), value.get("h", 0.0))
-			"AABB":
-				return AABB(_deserialize_value(value["position"]), _deserialize_value(value["size"]))
-			"Plane":
-				return Plane(_deserialize_value(value["normal"]), value.get("d", 0.0))
 			"NodePath":
 				return NodePath(value.get("path", ""))
-		# No _type — treat as plain dictionary
 		return value
 	if value is Array:
 		var out: Array = []
@@ -590,6 +604,48 @@ func _deserialize_value(value: Variant) -> Variant:
 			out.append(_deserialize_value(item))
 		return out
 	return value
+
+
+func _parse_compact_type(s: String) -> Variant:
+	if s.begins_with("V2i(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(4, s.length() - 5).split(",")
+		return Vector2i(int(parts[0].to_float()), int(parts[1].to_float()))
+	if s.begins_with("V2(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(3, s.length() - 4).split(",")
+		return Vector2(parts[0].to_float(), parts[1].to_float())
+	if s.begins_with("V3i(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(4, s.length() - 5).split(",")
+		return Vector3i(int(parts[0].to_float()), int(parts[1].to_float()), int(parts[2].to_float()))
+	if s.begins_with("V3(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(3, s.length() - 4).split(",")
+		return Vector3(parts[0].to_float(), parts[1].to_float(), parts[2].to_float())
+	if s.begins_with("V4(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(3, s.length() - 4).split(",")
+		return Vector4(parts[0].to_float(), parts[1].to_float(), parts[2].to_float(), parts[3].to_float())
+	if s.begins_with("C(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(2, s.length() - 3).split(",")
+		return Color(parts[0].to_float(), parts[1].to_float(), parts[2].to_float(), parts[3].to_float())
+	if s.begins_with("R2(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(3, s.length() - 4).split(",")
+		return Rect2(parts[0].to_float(), parts[1].to_float(), parts[2].to_float(), parts[3].to_float())
+	if s.begins_with("Q(") and s.ends_with(")"):
+		var parts: PackedStringArray = s.substr(2, s.length() - 3).split(",")
+		return Quaternion(parts[0].to_float(), parts[1].to_float(), parts[2].to_float(), parts[3].to_float())
+	if s.begins_with("NP(") and s.ends_with(")"):
+		return NodePath(s.substr(3, s.length() - 4))
+	# Not a compact type string — return as plain string
+	return s
+
+
+## Convert an array of uniform dicts to header + rows format.
+func _tabular(items: Array, keys: Array) -> Dictionary:
+	var rows: Array[Array] = []
+	for item: Dictionary in items:
+		var row: Array = []
+		for k: String in keys:
+			row.append(item.get(k))
+		rows.append(row)
+	return { "_h": keys, "rows": rows }
 
 
 # =============================================================================

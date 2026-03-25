@@ -642,7 +642,7 @@ async function expandScene(scenePath) {
     // Fetch the scene hierarchy
     const result = await sendCommand('get_scene_hierarchy', { scene_path: scenePath });
     
-    if (result.ok) {
+    if (!result.error) {
       setExpandedScene(scenePath);
       setExpandedSceneHierarchy(result.hierarchy);
       
@@ -809,18 +809,18 @@ async function sceneNodeAction(action) {
         const command = createCommand(
           `Add node '${nodeName}'`,
           async () => {
-            const result = await sendCommand('add_node', {
-              scene_path: scenePath, parent_path: parentPath,
+            const result = await sendCommand('scene_edit', {
+              action: 'add_node', scene_path: scenePath, parent_path: parentPath,
               node_type: nodeType, node_name: nodeName
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           },
           async () => {
-            const result = await sendCommand('remove_node', {
-              scene_path: scenePath, node_path: childPath
+            const result = await sendCommand('scene_edit', {
+              action: 'remove_node', scene_path: scenePath, node_path: childPath
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           }
         );
@@ -842,17 +842,17 @@ async function sceneNodeAction(action) {
         const command = createCommand(
           `Rename node '${oldName}' to '${newName}'`,
           async () => {
-            const result = await sendCommand('rename_node', {
-              scene_path: scenePath, node_path: oldPath, new_name: newName
+            const result = await sendCommand('scene_edit', {
+              action: 'rename', scene_path: scenePath, node_path: oldPath, new_name: newName
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           },
           async () => {
-            const result = await sendCommand('rename_node', {
-              scene_path: scenePath, node_path: newPath, new_name: oldName
+            const result = await sendCommand('scene_edit', {
+              action: 'rename', scene_path: scenePath, node_path: newPath, new_name: oldName
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           }
         );
@@ -865,10 +865,10 @@ async function sceneNodeAction(action) {
         const command = createCommand(
           `Duplicate node '${node.name}'`,
           async () => {
-            const result = await sendCommand('duplicate_node', {
-              scene_path: scenePath, node_path: node.path
+            const result = await sendCommand('scene_edit', {
+              action: 'duplicate', scene_path: scenePath, node_path: node.path
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           },
           async () => {
@@ -892,17 +892,17 @@ async function sceneNodeAction(action) {
         const command = createCommand(
           `Move node '${node.name}' up`,
           async () => {
-            const result = await sendCommand('reorder_node', {
-              scene_path: scenePath, node_path: node.path, new_index: newIndex
+            const result = await sendCommand('scene_edit', {
+              action: 'reorder', scene_path: scenePath, node_path: node.path, new_index: newIndex
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           },
           async () => {
-            const result = await sendCommand('reorder_node', {
-              scene_path: scenePath, node_path: node.path, new_index: originalIndex
+            const result = await sendCommand('scene_edit', {
+              action: 'reorder', scene_path: scenePath, node_path: node.path, new_index: originalIndex
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           }
         );
@@ -917,17 +917,17 @@ async function sceneNodeAction(action) {
         const command = createCommand(
           `Move node '${node.name}' down`,
           async () => {
-            const result = await sendCommand('reorder_node', {
-              scene_path: scenePath, node_path: node.path, new_index: newIndex
+            const result = await sendCommand('scene_edit', {
+              action: 'reorder', scene_path: scenePath, node_path: node.path, new_index: newIndex
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           },
           async () => {
-            const result = await sendCommand('reorder_node', {
-              scene_path: scenePath, node_path: node.path, new_index: originalIndex
+            const result = await sendCommand('scene_edit', {
+              action: 'reorder', scene_path: scenePath, node_path: node.path, new_index: originalIndex
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           }
         );
@@ -951,21 +951,21 @@ async function sceneNodeAction(action) {
         const command = createCommand(
           `Delete node '${node.name}'`,
           async () => {
-            const result = await sendCommand('remove_node', {
-              scene_path: scenePath, node_path: savedNode.path
+            const result = await sendCommand('scene_edit', {
+              action: 'remove_node', scene_path: scenePath, node_path: savedNode.path
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             closeSceneNodePanel();
             setSelectedSceneNode(null);
             await refreshExpandedScene(scenePath);
           },
           async () => {
             // Re-create the node (top-level only, children not restored)
-            const result = await sendCommand('add_node', {
-              scene_path: scenePath, parent_path: parentPath,
+            const result = await sendCommand('scene_edit', {
+              action: 'add_node', scene_path: scenePath, parent_path: parentPath,
               node_type: savedNode.type || 'Node', node_name: savedNode.name
             });
-            if (!result.ok) throw new Error(result.error || 'Unknown error');
+            if (result.error) throw new Error(result.error || 'Unknown error');
             await refreshExpandedScene(scenePath);
           }
         );
@@ -982,7 +982,7 @@ async function sceneNodeAction(action) {
 async function refreshExpandedScene(scenePath) {
   // Re-fetch the scene hierarchy
   const result = await sendCommand('get_scene_hierarchy', { scene_path: scenePath });
-  if (result.ok && result.hierarchy) {
+  if (!result.error && result.hierarchy) {
     setExpandedSceneHierarchy(result.hierarchy);
     draw();
   }
@@ -1033,17 +1033,17 @@ function startInlineRename(screenX, screenY, node, scenePath) {
       const command = createCommand(
         `Rename node '${oldName}' to '${newName}'`,
         async () => {
-          const result = await sendCommand('rename_node', {
-            scene_path: scenePath, node_path: oldPath, new_name: newName
+          const result = await sendCommand('scene_edit', {
+            action: 'rename', scene_path: scenePath, node_path: oldPath, new_name: newName
           });
-          if (!result.ok) throw new Error(result.error || 'Unknown error');
+          if (result.error) throw new Error(result.error || 'Unknown error');
           await refreshExpandedScene(scenePath);
         },
         async () => {
-          const result = await sendCommand('rename_node', {
-            scene_path: scenePath, node_path: newPath, new_name: oldName
+          const result = await sendCommand('scene_edit', {
+            action: 'rename', scene_path: scenePath, node_path: newPath, new_name: oldName
           });
-          if (!result.ok) throw new Error(result.error || 'Unknown error');
+          if (result.error) throw new Error(result.error || 'Unknown error');
           await refreshExpandedScene(scenePath);
         }
       );

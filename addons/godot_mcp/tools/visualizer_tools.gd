@@ -488,5 +488,4 @@ func _parse_scene(path: String) -> Dictionary:
 		&"nodes": nodes,
 		&"instances": instances,
 		&"scripts": scripts,
-		&"node_count": nodes.size(),
 	}

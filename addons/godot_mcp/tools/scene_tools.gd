@@ -3,9 +3,9 @@ extends RefCounted
 
 class_name SceneTools
 ## Scene operation tools for MCP.
-## Handles: create_scene, read_scene, add_node, remove_node, modify_node_property,
-##          rename_node, move_node, attach_script, detach_script, set_collision_shape,
-##          set_sprite_texture
+## Handles: scene_edit (add/remove/rename/move/duplicate/reorder/set_property),
+##          create_scene, read_scene, attach_script, detach_script,
+##          set_collision_shape, set_sprite_texture
 
 var _editor_plugin: EditorPlugin = null
 var _utils: ToolUtils
@@ -17,6 +17,29 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 
 func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
+
+
+# =============================================================================
+# Consolidated scene edit dispatcher
+# =============================================================================
+func scene_edit(args: Dictionary) -> Dictionary:
+	var action: String = args[&"action"]
+	match action:
+		"add_node":
+			return add_node(args)
+		"remove_node":
+			return remove_node(args)
+		"set_property":
+			return modify_node_property(args)
+		"rename":
+			return rename_node(args)
+		"move":
+			return move_node(args)
+		"duplicate":
+			return duplicate_node(args)
+		"reorder":
+			return reorder_node(args)
+	return {&"error": "Unknown scene_edit action: " + action}
 
 
 # =============================================================================
@@ -154,7 +177,6 @@ func create_scene(args: Dictionary) -> Dictionary:
 		&"path": scene_path,
 		&"root_type": root_node_type,
 		&"child_count": node_count,
-		&"message": "Scene created at " + scene_path,
 	}
 
 
@@ -295,7 +317,6 @@ func add_node(args: Dictionary) -> Dictionary:
 		&"scene_path": scene_path,
 		&"node_name": node_name,
 		&"node_type": node_type,
-		&"message": "Added %s (%s) to scene" % [node_name, node_type],
 	}
 
 
@@ -352,13 +373,8 @@ func remove_node(args: Dictionary) -> Dictionary:
 
 	var out: Dictionary = {
 		&"scene_path": scene_path,
-		&"removed_count": removed.size(),
 		&"removed": removed,
-		&"message": "Removed %d node(s)" % removed.size(),
 	}
-	# Backward compat: single removal keeps removed_node key
-	if removed.size() == 1:
-		out[&"removed_node"] = removed[0][&"path"]
 	if not not_found.is_empty():
 		out[&"not_found"] = not_found
 	return out
@@ -416,7 +432,6 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 		&"property_name": property_name,
 		&"old_value": str(old_value),
 		&"new_value": str(parsed),
-		&"message": "Set %s.%s = %s" % [node_path, property_name, str(parsed)],
 	}
 
 
@@ -455,7 +470,6 @@ func rename_node(args: Dictionary) -> Dictionary:
 	return {
 		&"old_name": str(old_name),
 		&"new_name": new_name,
-		&"message": "Renamed '%s' to '%s'" % [old_name, new_name],
 	}
 
 
@@ -504,7 +518,7 @@ func move_node(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"message": "Moved '%s' to '%s'" % [node_path, new_parent_path] }
+	return { &"node_path": node_path, &"new_parent": new_parent_path }
 
 
 # =============================================================================
@@ -564,10 +578,7 @@ func duplicate_node(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return {
-		&"new_name": new_name,
-		&"message": "Duplicated '%s' as '%s'" % [node_path, new_name],
-	}
+	return { &"new_name": new_name }
 
 
 func _set_owner_recursive(node: Node, owner: Node) -> void:
@@ -610,7 +621,7 @@ func reorder_node(args: Dictionary) -> Dictionary:
 
 	if old_index == new_index:
 		root.queue_free()
-		return { &"message": "No change needed" }
+		return { &"old_index": old_index, &"new_index": old_index }
 
 	parent.move_child(target, new_index)
 
@@ -621,7 +632,6 @@ func reorder_node(args: Dictionary) -> Dictionary:
 	return {
 		&"old_index": old_index,
 		&"new_index": new_index,
-		&"message": "Moved '%s' from index %d to %d" % [node_path, old_index, new_index],
 	}
 
 
@@ -662,7 +672,7 @@ func attach_script(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"message": "Attached %s to node '%s'" % [script_path, node_path] }
+	return { &"script_path": script_path, &"node_path": node_path }
 
 
 # =============================================================================
@@ -691,7 +701,7 @@ func detach_script(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"message": "Detached script from node '%s'" % node_path }
+	return { &"node_path": node_path }
 
 
 # =============================================================================
@@ -745,7 +755,7 @@ func set_collision_shape(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"message": "Set %s on node '%s'" % [shape_type, node_path] }
+	return { &"shape_type": shape_type, &"node_path": node_path }
 
 
 # =============================================================================
@@ -807,7 +817,7 @@ func set_sprite_texture(args: Dictionary) -> Dictionary:
 	if not err.is_empty():
 		return err
 
-	return { &"message": "Set %s texture on node '%s'" % [texture_type, node_path] }
+	return { &"texture_type": texture_type, &"node_path": node_path }
 
 
 # =============================================================================
@@ -947,7 +957,6 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 		&"inheritance_chain": chain,
 		&"properties": properties,
 		&"categories": categories,
-		&"property_count": properties.size(),
 	}
 
 
@@ -994,7 +1003,6 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 		&"property_name": property_name,
 		&"old_value": _utils.serialize_value(old_value),
 		&"new_value": _utils.serialize_value(parsed_value),
-		&"message": "Set %s.%s" % [node_path, property_name],
 	}
 
 

@@ -120,10 +120,7 @@ func get_autoloads(_args: Dictionary) -> Dictionary:
 				&"singleton": is_singleton,
 			},
 		)
-	return {
-		&"autoloads": autoloads,
-		&"count": autoloads.size(),
-	}
+	return { &"autoloads": _utils.tabular(autoloads, [&"name", &"path", &"singleton"]) }
 
 
 # =============================================================================
@@ -156,7 +153,7 @@ func get_input_map(args: Dictionary) -> Dictionary:
 			events.append(item)
 		result[action] = events
 
-	return { &"actions": result, &"count": result.size() }
+	return { &"actions": result }
 
 
 # =============================================================================
@@ -208,11 +205,7 @@ func _input_map_add(action: String, args: Dictionary) -> Dictionary:
 	_save_and_refresh()
 	_try_refresh_input_map_ui()
 
-	var msg: String = "Action '%s' %s" % [action, "created" if created else "updated"]
-	if added_events.size() > 0:
-		msg += " with %d event(s)" % added_events.size()
-
-	var out: Dictionary = { &"message": msg, &"events_added": added_events }
+	var out: Dictionary = { &"action": action, &"created": created, &"events_added": added_events }
 	if event_errors.size() > 0:
 		out[&"event_errors"] = event_errors
 	return out
@@ -231,7 +224,7 @@ func _input_map_remove(action: String) -> Dictionary:
 	_save_and_refresh()
 	_try_refresh_input_map_ui()
 
-	return { &"message": "Removed action: " + action }
+	return { &"action": action }
 
 
 func _input_map_set(action: String, args: Dictionary) -> Dictionary:
@@ -260,7 +253,7 @@ func _input_map_set(action: String, args: Dictionary) -> Dictionary:
 	_save_and_refresh()
 	_try_refresh_input_map_ui()
 
-	var out: Dictionary = { &"message": "Set action '%s' with %d event(s)" % [action, added_events.size()], &"events": added_events }
+	var out: Dictionary = { &"action": action, &"events": added_events }
 	if event_errors.size() > 0:
 		out[&"event_errors"] = event_errors
 	return out
@@ -362,7 +355,8 @@ func _describe_event(event: InputEvent) -> String:
 func get_collision_layers(_args: Dictionary) -> Dictionary:
 	var layers_2d: Array[Dictionary] = _collect_layers("layer_names/2d_physics")
 	var layers_3d: Array[Dictionary] = _collect_layers("layer_names/3d_physics")
-	return { &"layers_2d": layers_2d, &"layers_3d": layers_3d }
+	var keys: Array[StringName] = [&"index", &"value"]
+	return { &"layers_2d": _utils.tabular(layers_2d, keys), &"layers_3d": _utils.tabular(layers_3d, keys) }
 
 
 func _collect_layers(prefix: String) -> Array[Dictionary]:
@@ -415,11 +409,11 @@ func get_node_properties(args: Dictionary) -> Dictionary:
 			&"default": _utils.serialize_value(temp.get(prop_name)),
 		}
 
-		# Enum hints
-		if prop[&"hint"] == PROPERTY_HINT_ENUM:
-			info[&"enum_values"] = prop[&"hint_string"]
+		# Enum hints — only include when there's actual data
 		if prop_name in ENUM_HINTS:
 			info[&"enum_values"] = ENUM_HINTS[prop_name]
+		elif prop[&"hint"] == PROPERTY_HINT_ENUM and not prop[&"hint_string"].is_empty():
+			info[&"enum_values"] = prop[&"hint_string"]
 
 		properties.append(info)
 
@@ -438,7 +432,6 @@ func get_node_properties(args: Dictionary) -> Dictionary:
 	return {
 		&"node_type": node_type,
 		&"inheritance_chain": chain,
-		&"property_count": properties.size(),
 		&"properties": properties,
 	}
 
@@ -522,11 +515,7 @@ func get_console_log(args: Dictionary) -> Dictionary:
 
 	var start: int = maxi(0, all_lines.size() - max_lines)
 	var lines: Array[String] = all_lines.slice(start)
-	return {
-		&"lines": lines,
-		&"line_count": lines.size(),
-		&"content": "\n".join(lines),
-	}
+	return { &"lines": lines }
 
 # =============================================================================
 # get_errors
@@ -605,11 +594,7 @@ func get_errors(args: Dictionary) -> Dictionary:
 	# Return the most recent errors
 	var start: int = maxi(0, all_errors.size() - max_errors)
 	var errors: Array[Dictionary] = all_errors.slice(start)
-	return {
-		&"errors": errors,
-		&"error_count": errors.size(),
-		&"summary": "%d error(s) found" % errors.size(),
-	}
+	return { &"errors": errors }
 
 
 func _extract_file_line(text: String) -> Dictionary:
@@ -641,20 +626,12 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 
 	var tree: Tree = _get_debugger_error_tree()
 	if not tree:
-		return {
-			&"errors": [],
-			&"error_count": 0,
-			&"summary": "Debugger Errors tab not available (game not running or no errors).",
-		}
+		return { &"errors": [] }
 
 	var errors: Array[Dictionary] = []
 	var item: TreeItem = tree.get_root()
 	if not item:
-		return {
-			&"errors": [],
-			&"error_count": 0,
-			&"summary": "No errors in debugger.",
-		}
+		return { &"errors": [] }
 
 	# Root items are errors; children are stack frames
 	item = item.get_first_child()
@@ -709,8 +686,6 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 	errors = errors.slice(start)
 	return {
 		&"errors": errors,
-		&"error_count": errors.size(),
-		&"summary": "%d debugger error(s) found" % errors.size(),
 	}
 
 
@@ -761,9 +736,7 @@ func clear_console_log(_args: Dictionary) -> Dictionary:
 	# Actually clear the editor Output panel
 	rtl.clear()
 	_clear_char_offset = 0
-	return {
-		&"message": "Console log cleared.",
-	}
+	return { &"cleared": true }
 
 
 # =============================================================================
@@ -800,7 +773,7 @@ func open_in_godot(args: Dictionary) -> Dictionary:
 		if res:
 			ei.edit_resource(res)
 
-	return { &"message": "Opened %s%s" % [path, " at line %d" % line if line > 0 else ""] }
+	return { &"path": path }
 
 
 # =============================================================================
@@ -814,7 +787,7 @@ func scene_tree_dump(_args: Dictionary) -> Dictionary:
 	var edited_scene: Node = ei.get_edited_scene_root()
 
 	if not edited_scene:
-		return { &"tree": "(no scene open)", &"message": "No scene is currently open in the editor" }
+		return { &"tree": "(no scene open)" }
 
 	var lines: PackedStringArray = []
 	_dump_node(edited_scene, 0, lines)
@@ -852,7 +825,7 @@ func play_project(args: Dictionary) -> Dictionary:
 	# Godot launches the game (which can freeze the editor momentarily).
 	if scene_path == "current":
 		ei.play_current_scene.call_deferred()
-		return { &"message": "Playing current scene" }
+		return { &"scene": "current" }
 	elif not scene_path.is_empty():
 		scene_path = _utils.validate_res_path(scene_path)
 		if scene_path.is_empty():
@@ -860,10 +833,10 @@ func play_project(args: Dictionary) -> Dictionary:
 		if not FileAccess.file_exists(scene_path):
 			return { &"error": "Scene not found: " + scene_path }
 		ei.play_custom_scene.call_deferred(scene_path)
-		return { &"message": "Playing scene: " + scene_path }
+		return { &"scene": scene_path }
 	else:
 		ei.play_main_scene.call_deferred()
-		return { &"message": "Playing main scene" }
+		return { &"scene": "main" }
 
 
 # =============================================================================
@@ -874,11 +847,10 @@ func stop_project(_args: Dictionary) -> Dictionary:
 		return { &"error": "Editor plugin not available" }
 
 	var ei: EditorInterface = _editor_plugin.get_editor_interface()
-	if not ei.is_playing_scene():
-		return { &"message": "No scene is running" }
-
-	ei.stop_playing_scene()
-	return { &"message": "Stopped running scene" }
+	var was_running: bool = ei.is_playing_scene()
+	if was_running:
+		ei.stop_playing_scene()
+	return { &"was_running": was_running }
 
 
 # =============================================================================
@@ -894,9 +866,26 @@ func is_project_running(_args: Dictionary) -> Dictionary:
 
 
 # =============================================================================
-# git_status - Show working tree status
+# git - Consolidated git operations
 # =============================================================================
-func git_status(_args: Dictionary) -> Dictionary:
+func git(args: Dictionary) -> Dictionary:
+	var action: String = args[&"action"]
+	match action:
+		"status":
+			return _git_status(args)
+		"commit":
+			return _git_commit(args)
+		"diff":
+			return _git_diff(args)
+		"log":
+			return _git_log(args)
+		"stash_push", "stash_pop", "stash_list":
+			args[&"action"] = action.substr(6) # strip "stash_" prefix
+			return _git_stash(args)
+	return { &"error": "Unknown git action: " + action }
+
+
+func _git_status(_args: Dictionary) -> Dictionary:
 	var project_path: String = _project_path
 	var output: Array = []
 	var exit_code: int = OS.execute("git", ["-C", project_path, "status", "--porcelain"], output)
@@ -934,8 +923,7 @@ func git_status(_args: Dictionary) -> Dictionary:
 
 	return {
 		&"branch": branch,
-		&"files": files,
-		&"file_count": files.size(),
+		&"files": _utils.tabular(files, [&"path", &"status"]),
 		&"clean": files.size() == 0,
 	}
 
@@ -943,7 +931,7 @@ func git_status(_args: Dictionary) -> Dictionary:
 # =============================================================================
 # git_commit - Stage files and commit
 # =============================================================================
-func git_commit(args: Dictionary) -> Dictionary:
+func _git_commit(args: Dictionary) -> Dictionary:
 	var message: String = args[&"message"]
 	var files: Array = args.get(&"files", []) # Variant array from JSON
 	var stage_all: bool = args.get(&"all", false)
@@ -1006,7 +994,7 @@ func git_commit(args: Dictionary) -> Dictionary:
 # git_diff - Show uncommitted changes
 # =============================================================================
 ## Show git diff output. Supports single file and staged mode.
-func git_diff(args: Dictionary) -> Dictionary:
+func _git_diff(args: Dictionary) -> Dictionary:
 	var file_path: String = args.get(&"file", "")
 	var staged: bool = args.get(&"staged", false)
 
@@ -1045,7 +1033,7 @@ func git_diff(args: Dictionary) -> Dictionary:
 # git_log - Recent commit history
 # =============================================================================
 ## Show recent git commit history.
-func git_log(args: Dictionary) -> Dictionary:
+func _git_log(args: Dictionary) -> Dictionary:
 	var max_count: int = args.get(&"max_count", 10)
 	var file_path: String = args.get(&"file", "")
 
@@ -1077,17 +1065,14 @@ func git_log(args: Dictionary) -> Dictionary:
 		else:
 			commits.append({ &"hash": line.substr(0, space_idx), &"message": line.substr(space_idx + 1) })
 
-	return {
-		&"commits": commits,
-		&"count": commits.size(),
-	}
+	return { &"commits": _utils.tabular(commits, [&"hash", &"message"]) }
 
 
 # =============================================================================
 # git_stash - Stash management
 # =============================================================================
 ## Git stash operations: push, pop, or list.
-func git_stash(args: Dictionary) -> Dictionary:
+func _git_stash(args: Dictionary) -> Dictionary:
 	var action: String = args[&"action"]
 	var message: String = args[&"message"]
 
@@ -1119,7 +1104,7 @@ func git_stash(args: Dictionary) -> Dictionary:
 				line = line.strip_edges()
 				if not line.is_empty():
 					stashes.append(line)
-			return { &"action": "list", &"stashes": stashes, &"count": stashes.size() }
+			return { &"action": "list", &"stashes": stashes }
 		_:
 			return { &"error": "Invalid action '%s'. Use 'push', 'pop', or 'list'." % action }
 
@@ -1225,11 +1210,11 @@ func query_class_info(args: Dictionary) -> Dictionary:
 		methods.append(
 			{
 				&"name": mname,
-				&"args": method_args,
+				&"args": _utils.tabular(method_args, [&"name", &"type"]),
 				&"return_type": _utils.type_id_to_name(m.get(&"return", { }).get(&"type", TYPE_NIL)),
 			},
 		)
-	result[&"methods"] = methods
+	result[&"methods"] = _utils.tabular(methods, [&"name", &"args", &"return_type"])
 
 	# Properties
 	var properties: Array[Dictionary] = []
@@ -1244,7 +1229,7 @@ func query_class_info(args: Dictionary) -> Dictionary:
 				&"type": _utils.type_id_to_name(p[&"type"]),
 			},
 		)
-	result[&"properties"] = properties
+	result[&"properties"] = _utils.tabular(properties, [&"name", &"type"])
 
 	# Signals
 	var signals: Array[Dictionary] = []
@@ -1260,10 +1245,10 @@ func query_class_info(args: Dictionary) -> Dictionary:
 		signals.append(
 			{
 				&"name": s[&"name"],
-				&"args": sig_args,
+				&"args": _utils.tabular(sig_args, [&"name", &"type"]),
 			},
 		)
-	result[&"signals"] = signals
+	result[&"signals"] = _utils.tabular(signals, [&"name", &"args"])
 
 	# Enums
 	var enums: Dictionary = { }
@@ -1318,7 +1303,4 @@ func query_classes(args: Dictionary) -> Dictionary:
 		filtered.append(cls)
 
 	filtered.sort()
-	return {
-		&"classes": filtered,
-		&"count": filtered.size(),
-	}
+	return { &"classes": filtered }

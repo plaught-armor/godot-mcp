@@ -5,22 +5,22 @@ import "os/exec"
 var scriptTools = []ToolDef{
 	{
 		Name:        "create_script",
-		Description: "Create a NEW GDScript file (.gd) that does not exist yet. Use this for creating new scripts, NOT for editing existing files (use edit_script for edits).",
+		Description: "Create a new .gd file. Use edit_script for existing files.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"path":    {Type: "string", Description: "Script file path (res://scripts/player.gd) - must not exist yet"},
-				"content": {Type: "string", Description: "Full GDScript content to write to the file"},
+				"path":    {Type: "string", Description: "res:// path (must not exist yet)"},
+				"content": {Type: "string", Description: "Full GDScript content"},
 			},
 			Required: []string{"path", "content"},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{"ok": true, "path": args["path"], "message": "Mock: Would create script"})
+			return map[string]any{}
 		},
 	},
 	{
 		Name:        "edit_script",
-		Description: `Apply a SMALL, SURGICAL code edit (1-10 lines) to GDScript files. Auto-applies changes. For large changes, call multiple times. ONLY for .gd files - NEVER for .tscn scene files.`,
+		Description: "Apply a surgical edit (1-10 lines) to a .gd file.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
@@ -28,79 +28,76 @@ var scriptTools = []ToolDef{
 			},
 			Required: []string{"edit"},
 		},
-		MockFn: mockOK("Diff would be applied"),
+		MockFn: mockOK(),
 	},
 	{
 		Name:        "validate_script",
-		Description: "Validate a GDScript file for syntax errors using Godot's built-in parser. Call after creating or modifying scripts to ensure they are error-free.",
+		Description: "Validate a .gd file for syntax errors.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"path": {Type: "string", Description: "Path to the GDScript file to validate (e.g., res://scripts/player.gd)"},
+				"path": {Type: "string", Description: "res:// path to validate"},
 			},
 			Required: []string{"path"},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{"ok": true, "path": args["path"], "valid": true, "errors": []any{}})
+			return map[string]any{"valid": true, "errors": []any{}}
 		},
 	},
 	{
 		Name:        "list_scripts",
-		Description: "List all GDScript files in the project with basic metadata.",
+		Description: "List all .gd files in the project.",
 		InputSchema: &Schema{
 			Type:       "object",
-			Properties: map[string]*Schema{},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{"ok": true, "scripts": []string{"res://scripts/player.gd", "res://scripts/enemy.gd"}, "count": 2})
+			return map[string]any{"scripts": []string{"res://scripts/player.gd", "res://scripts/enemy.gd"}}
 		},
 	},
 	{
 		Name:        "validate_scripts",
-		Description: "Validate multiple GDScript files for syntax errors in a single call. More efficient than calling validate_script repeatedly.",
+		Description: "Validate multiple .gd files in one call.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"paths": {Type: "array", Description: "Array of res:// paths to GDScript files to validate", Items: &Schema{Type: "string"}},
+				"paths": {Type: "array", Description: "res:// paths to validate", Items: &Schema{Type: "string"}},
 			},
 			Required: []string{"paths"},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{"ok": true, "valid_count": 1, "error_count": 0, "results": []any{}})
+			return map[string]any{"results": []any{}}
 		},
 	},
 	{
 		Name:        "get_script_symbols",
-		Description: "Extract all user-defined methods, variables, and signals from a GDScript file. Useful for auditing, documentation, or understanding a script's API without reading the full source.",
+		Description: "Extract methods, variables, and signals from a .gd file.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"path": {Type: "string", Description: "Path to the GDScript file (e.g., res://scripts/player.gd)"},
+				"path": {Type: "string", Description: "res:// script path"},
 			},
 			Required: []string{"path"},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{
-				"ok":        true,
-				"path":      args["path"],
+			return map[string]any{
 				"methods":   []any{},
 				"variables": []any{},
 				"signals":   []any{},
-			})
+			}
 		},
 	},
 	{
 		Name:        "find_class_definition",
-		Description: "Find the file that defines a given class_name. Searches all .gd files for the class_name declaration.",
+		Description: "Find the file that defines a class_name.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"class_name": {Type: "string", Description: "The class name to search for (e.g., BaseSkill, PlayerController)"},
+				"class_name": {Type: "string", Description: "Class name to find"},
 			},
 			Required: []string{"class_name"},
 		},
 		MockFn: func(args map[string]any) any {
-			return mockNote(map[string]any{"ok": true, "class_name": args["class_name"], "file": "", "message": "Mock: would search"})
+			return map[string]any{"file": ""}
 		},
 	},
 }
@@ -111,16 +108,16 @@ func optionalScriptTools() []ToolDef {
 	if _, err := exec.LookPath("gdscript-formatter"); err == nil {
 		out = append(out, ToolDef{
 			Name:        "format_script",
-			Description: "Format a GDScript file using gdscript-formatter.",
+			Description: "Format a .gd file with gdscript-formatter.",
 			InputSchema: &Schema{
 				Type: "object",
 				Properties: map[string]*Schema{
-					"path": {Type: "string", Description: "Path to the GDScript file to format (e.g., res://scripts/player.gd)"},
+					"path": {Type: "string", Description: "res:// script path"},
 				},
 				Required: []string{"path"},
 			},
 			MockFn: func(args map[string]any) any {
-				return mockNote(map[string]any{"ok": true, "path": args["path"], "message": "Mock: File would be formatted"})
+				return map[string]any{"changed": false}
 			},
 		})
 	}

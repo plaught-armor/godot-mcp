@@ -16,24 +16,32 @@ const (
 	serverVersion = "0.6.1"
 )
 
-// New creates and configures the MCP server with all tools registered.
-func New(b *bridge.GodotBridge) *mcp.Server {
+// New creates and configures the MCP server.
+// If lazy is true, only core tools are registered initially; other categories
+// are activated on demand via get_godot_status (for clients that support listChanged).
+// If lazy is false, all tools are registered upfront (for Claude Desktop).
+func New(b *bridge.GodotBridge, lazy bool) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Version: serverVersion,
 	}, nil)
 
-	// Register dynamic status tool
+	if lazy {
+		return newLazy(server, b)
+	}
+	return newEager(server, b)
+}
+
+func newEager(server *mcp.Server, b *bridge.GodotBridge) *mcp.Server {
 	server.AddTool(
 		&mcp.Tool{
 			Name:        "get_godot_status",
-			Description: "Check if Godot editor is connected to the MCP server. Use this before attempting Godot operations to see if you'll get real or mock data.",
-			InputSchema: emptyObjectSchema(),
+			Description: "Check Godot connection status.",
+			InputSchema: &tools.Schema{Type: "object"},
 		},
-		statusHandler(b),
+		eagerStatusHandler(b),
 	)
 
-	// Register all tools with a generic handler that routes to Godot or returns mocks
 	for i := range tools.AllTools {
 		td := &tools.AllTools[i]
 		server.AddTool(
@@ -49,47 +57,84 @@ func New(b *bridge.GodotBridge) *mcp.Server {
 	return server
 }
 
-type statusResponse struct {
-	Connected        bool   `json:"connected"`
-	RuntimeConnected bool   `json:"runtime_connected"`
-	ServerVersion    string `json:"server_version"`
-	WebSocketPort    int    `json:"websocket_port"`
-	Mode             string `json:"mode"`
-	ProjectPath      string `json:"project_path"`
-	ConnectedAt      string `json:"connected_at,omitempty"`
-	PendingRequests  int    `json:"pending_requests"`
-	Message          string `json:"message"`
+func newLazy(server *mcp.Server, b *bridge.GodotBridge) *mcp.Server {
+	tsm := newToolSetManager(server, b)
+
+	server.AddTool(
+		&mcp.Tool{
+			Name:        "get_godot_status",
+			Description: "Check Godot connection. Enable/disable tool categories: scene, script, file, project, git, runtime, asset.",
+			InputSchema: &tools.Schema{
+				Type: "object",
+				Properties: map[string]*tools.Schema{
+					"enable":  {Type: "array", Description: "Categories to enable", Items: &tools.Schema{Type: "string"}},
+					"disable": {Type: "array", Description: "Categories to disable", Items: &tools.Schema{Type: "string"}},
+				},
+			},
+		},
+		lazyStatusHandler(b, tsm),
+	)
+
+	// Register core tools only
+	for _, td := range tools.ByCategory("core") {
+		server.AddTool(
+			&mcp.Tool{
+				Name:        td.Name,
+				Description: td.Description,
+				InputSchema: td.InputSchema,
+			},
+			toolHandler(b, td),
+		)
+	}
+
+	return server
 }
 
-func statusHandler(b *bridge.GodotBridge) mcp.ToolHandler {
+func eagerStatusHandler(b *bridge.GodotBridge) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		status := b.GetStatus()
 		mode := "mock"
-		msg := "Godot is not connected. Tools will return mock data. Open a Godot project with the MCP plugin enabled to connect."
 		if status.Connected {
 			mode = "live"
-			msg = "Godot is connected"
-			if status.ProjectPath != "" {
-				msg += fmt.Sprintf(" (%s)", status.ProjectPath)
-			}
-			msg += ". Tools will execute in the Godot editor."
+		}
+		return textResult(map[string]any{
+			"connected":         status.Connected,
+			"runtime_connected": status.RuntimeConnected,
+			"mode":              mode,
+			"project_path":      status.ProjectPath,
+		})
+	}
+}
+
+func lazyStatusHandler(b *bridge.GodotBridge, tsm *ToolSetManager) mcp.ToolHandler {
+	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct {
+			Enable  []string `json:"enable"`
+			Disable []string `json:"disable"`
+		}
+		if req.Params.Arguments != nil {
+			json.Unmarshal(req.Params.Arguments, &args)
+		}
+		if len(args.Disable) > 0 {
+			tsm.DisableCategories(args.Disable...)
+		}
+		if len(args.Enable) > 0 {
+			tsm.EnableCategories(args.Enable...)
 		}
 
-		result := statusResponse{
-			Connected:        status.Connected,
-			RuntimeConnected: status.RuntimeConnected,
-			ServerVersion:    serverVersion,
-			WebSocketPort:    status.Port,
-			Mode:             mode,
-			ProjectPath:      status.ProjectPath,
-			PendingRequests:  status.PendingRequests,
-			Message:          msg,
+		status := b.GetStatus()
+		mode := "mock"
+		if status.Connected {
+			mode = "live"
 		}
-		if status.ConnectedAt != nil {
-			result.ConnectedAt = status.ConnectedAt.Format("2006-01-02T15:04:05.000Z")
-		}
-
-		return textResult(result)
+		return textResult(map[string]any{
+			"connected":           status.Connected,
+			"runtime_connected":   status.RuntimeConnected,
+			"mode":                mode,
+			"project_path":        status.ProjectPath,
+			"active_categories":   tsm.ActiveCategories(),
+			"available_categories": tools.Categories,
+		})
 	}
 }
 
@@ -98,7 +143,7 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 		var args map[string]any
 		if req.Params.Arguments != nil {
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
-				return errorResult(td.Name, nil, fmt.Errorf("invalid arguments: %w", err), "parse")
+				return errorResult(fmt.Errorf("invalid arguments: %w", err))
 			}
 		} else {
 			args = make(map[string]any)
@@ -117,7 +162,7 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 				// Godot was not connected before the call — fall back to mock
 				return textResult(td.MockFn(args))
 			}
-			return errorResult(td.Name, args, err, "live")
+			return errorResult(err)
 		}
 
 		// raw is already valid JSON from Godot — pass through without re-marshaling
@@ -127,13 +172,12 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 
 func runtimeToolHandler(b *bridge.GodotBridge, td *tools.ToolDef, ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
 	if !b.IsRuntimeConnected() {
-		return errorResult(td.Name, args,
-			fmt.Errorf("game is not running — use play_project first"), "runtime")
+		return errorResult(fmt.Errorf("game is not running — use play_project first"))
 	}
 
 	raw, err := b.InvokeRuntimeTool(ctx, td.Name, args)
 	if err != nil {
-		return errorResult(td.Name, args, err, "runtime")
+		return errorResult(err)
 	}
 
 	// Special case: capture_screenshot returns image data
@@ -146,7 +190,6 @@ func runtimeToolHandler(b *bridge.GodotBridge, td *tools.ToolDef, ctx context.Co
 
 func screenshotResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
 	var img struct {
-		OK    bool   `json:"ok"`
 		Error string `json:"error"`
 		Image string `json:"image_base64"`
 		Width int    `json:"width"`
@@ -155,7 +198,7 @@ func screenshotResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
 	if err := json.Unmarshal(raw, &img); err != nil {
 		return rawTextResult(raw), nil // fallback to text
 	}
-	if !img.OK {
+	if img.Error != "" {
 		return rawTextResult(raw), nil
 	}
 	// Decode base64 string from GDScript into raw bytes.
@@ -191,13 +234,9 @@ func rawTextResult(data []byte) *mcp.CallToolResult {
 	}
 }
 
-func errorResult(toolName string, args map[string]any, err error, mode string) (*mcp.CallToolResult, error) {
+func errorResult(err error) (*mcp.CallToolResult, error) {
 	data, _ := json.Marshal(map[string]any{
 		"error": err.Error(),
-		"tool":  toolName,
-		"args":  args,
-		"mode":  mode,
-		"hint":  "The tool call was sent to Godot but failed. Check Godot editor for details.",
 	})
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -205,11 +244,4 @@ func errorResult(toolName string, args map[string]any, err error, mode string) (
 		},
 		IsError: true,
 	}, nil
-}
-
-func emptyObjectSchema() *tools.Schema {
-	return &tools.Schema{
-		Type:       "object",
-		Properties: map[string]*tools.Schema{},
-	}
 }

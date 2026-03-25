@@ -98,5 +98,4 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	return {
 		&"resource_path": full_path,
 		&"dimensions": { &"width": width, &"height": height },
-		&"message": "Generated %s (%dx%d)" % [full_path, width, height],
 	}

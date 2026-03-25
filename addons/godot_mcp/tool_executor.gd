@@ -61,7 +61,7 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 			return _file_tools
 
 		# Scene tools
-		&"create_scene", &"read_scene", &"add_node", &"remove_node", &"modify_node_property", &"rename_node", &"move_node", &"attach_script", &"detach_script", &"set_collision_shape", &"set_sprite_texture", &"get_scene_hierarchy", &"get_scene_node_properties", &"set_scene_node_property", &"duplicate_node", &"reorder_node":
+		&"scene_edit", &"create_scene", &"read_scene", &"attach_script", &"detach_script", &"set_collision_shape", &"set_sprite_texture", &"get_scene_hierarchy", &"get_scene_node_properties", &"set_scene_node_property":
 			return _scene_tools
 
 		# Script tools
@@ -69,7 +69,7 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 			return _script_tools
 
 		# Project/debug tools
-		&"get_project_settings", &"set_project_setting", &"get_autoloads", &"get_input_map", &"configure_input_map", &"get_collision_layers", &"get_node_properties", &"get_console_log", &"get_errors", &"get_debug_errors", &"clear_console_log", &"open_in_godot", &"scene_tree_dump", &"play_project", &"stop_project", &"is_project_running", &"git_status", &"git_commit", &"git_diff", &"git_log", &"git_stash", &"run_shell_command", &"get_uid", &"query_class_info", &"query_classes":
+		&"get_project_settings", &"set_project_setting", &"get_autoloads", &"get_input_map", &"configure_input_map", &"get_collision_layers", &"get_node_properties", &"get_console_log", &"get_errors", &"get_debug_errors", &"clear_console_log", &"open_in_godot", &"scene_tree_dump", &"play_project", &"stop_project", &"is_project_running", &"git", &"run_shell_command", &"get_uid", &"query_class_info", &"query_classes":
 			return _project_tools
 
 		# Asset tools
