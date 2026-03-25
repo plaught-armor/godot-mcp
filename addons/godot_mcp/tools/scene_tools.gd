@@ -848,7 +848,6 @@ func _build_hierarchy_recursive(node: Node, path: String) -> Dictionary:
 		&"type": node.get_class(),
 		&"path": path,
 		&"children": [],
-		&"child_count": node.get_child_count(),
 	}
 
 	# Check for attached script

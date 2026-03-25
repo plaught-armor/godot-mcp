@@ -111,17 +111,17 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ## What Can It Do?
 
-### 72 Tools Across 7 Categories
+### 59 Tools Across 7 Categories
 
 | Category | Tools | Examples |
 |----------|-------|---------|
 | **File Operations** | 13 | Browse directories, read/create/search files, bulk read/edit, find references, list resources, rename/delete files and folders |
-| **Scene Operations** | 11 | Create scenes, add/remove/move nodes, set properties, attach scripts, assign collision shapes and textures |
-| **Script Operations** | 8 | Create/edit/validate/format scripts, list scripts, get symbols, find class definitions, batch validate |
-| **Project Tools** | 25 | Get/set project settings, input map, collision layers, console log, debug errors, scene tree dumps, play/stop project, git operations, shell commands, ClassDB introspection |
-| **Runtime Tools** | 13 | Screenshots, live scene tree inspection, get/set properties on running nodes, call methods, performance metrics, input injection (actions, keys, mouse), signal watching |
+| **Scene Operations** | 7 | Create/read scenes, batch scene edits (add/remove/move/reparent/rename/set properties), attach/detach scripts, collision shapes, textures |
+| **Script Operations** | 7–8 | Create/edit/validate/format scripts, list scripts, get symbols, find class definitions, batch validate |
+| **Project Tools** | 21 | Get/set project settings, input map, collision layers, console log, debug errors, scene tree dumps, play/stop project, ClassDB introspection, UID lookup |
+| **Git & Shell** | 2 | Consolidated git operations (status/commit/diff/log/stash), shell commands |
+| **Runtime Tools** | 8 | Screenshots, live scene tree, get/set properties, call methods, metrics, consolidated input injection, signal watching |
 | **Asset Generation** | 1 | Generate 2D sprites from SVG |
-| **Status** | 1 | Check Godot editor and runtime connection status |
 
 > `format_script` requires [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter) on PATH. If not found, the tool is hidden from AI clients automatically.
 > Runtime tools require the game to be running (`play_project` first). They operate on the live game process, not the editor.

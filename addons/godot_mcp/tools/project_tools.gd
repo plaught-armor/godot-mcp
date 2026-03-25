@@ -5,12 +5,10 @@ class_name ProjectTools
 ## Project configuration and debug tools for MCP.
 ## Handles: get_project_settings, set_project_setting, get_autoloads,
 ##          get_input_map, configure_input_map, get_collision_layers,
-##          get_node_properties, get_console_log,
-##          get_errors, clear_console_log, open_in_godot, scene_tree_dump,
+##          get_node_properties, get_console_log, get_errors, get_debug_errors,
+##          clear_console_log, open_in_godot, scene_tree_dump,
 ##          play_project, stop_project, is_project_running,
-##          git_status, git_commit, git_diff, git_log, git_stash,
-##          run_shell_command, get_uid,
-##          query_class_info, query_classes
+##          git, run_shell_command, get_uid, query_class_info, query_classes
 
 var _editor_plugin: EditorPlugin = null
 

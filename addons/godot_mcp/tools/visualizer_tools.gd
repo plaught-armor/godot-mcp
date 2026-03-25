@@ -104,8 +104,6 @@ func map_project(args: Dictionary) -> Dictionary:
 		&"project_map": {
 			&"nodes": nodes,
 			&"edges": edges,
-			&"total_scripts": nodes.size(),
-			&"total_connections": edges.size(),
 		},
 	}
 
@@ -383,7 +381,7 @@ func map_scenes(args: Dictionary) -> Dictionary:
 	_collect_scenes(root_path, scene_paths, include_addons)
 
 	if scene_paths.is_empty():
-		return { &"scene_map": { &"scenes": [], &"total_scenes": 0 } }
+		return { &"scene_map": { &"scenes": [], &"edges": [] } }
 
 	# Parse each scene
 	var scenes: Array[Dictionary] = []
@@ -402,7 +400,6 @@ func map_scenes(args: Dictionary) -> Dictionary:
 		&"scene_map": {
 			&"scenes": scenes,
 			&"edges": edges,
-			&"total_scenes": scenes.size(),
 		},
 	}
 

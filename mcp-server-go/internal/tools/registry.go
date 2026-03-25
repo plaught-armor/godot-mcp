@@ -40,8 +40,6 @@ var categoryAssignment = map[string]string{
 	"detach_script":        "scene",
 	"set_collision_shape":  "scene",
 	"set_sprite_texture":   "scene",
-	"set_typed_property":   "scene",
-	"get_scene_hierarchy":  "scene",
 	// script
 	"validate_script":       "script",
 	"validate_scripts":      "script",
@@ -67,8 +65,6 @@ var categoryAssignment = map[string]string{
 	"get_uid":               "project",
 	"query_class_info":      "project",
 	"query_classes":         "project",
-	"map_project":           "project",
-	"map_scenes":            "project",
 	// git
 	"git":              "git",
 	"run_shell_command": "git",

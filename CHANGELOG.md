@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.10.0] - 2026-03-24
+
+### Added
+- **Dynamic tool sets** — `GODOT_MCP_LAZY=1` env var starts with only core tools, load categories on demand via `get_godot_status({"enable": [...]})` for clients supporting `tools/list_changed`
+- **Tabular response format** — uniform arrays use `_h`/`rows` header+rows format, saving ~26-42% tokens on search results, class introspection, git status, and symbol queries
+- **Compact vector serialization** — `V2(x,y)`, `V3(x,y,z)`, `C(r,g,b,a)`, `R2()`, `Q()`, `NP()` string format instead of verbose dicts (~60% savings per value)
+- **`tabular()` helper** in `tool_utils.gd` and `mcp_runtime.gd`
+
+### Changed
+- **Tool consolidation** — 72 → 59 tools: `git` (7→1 with `action` param), `scene_edit` (7→1 with `edits` array), `inject_input` (4→1 with `type` param), `signal_watch` (3→1 with `action` param)
+- **Trimmed all tool and param descriptions** — ~900 tokens/message saved from definition overhead
+- **Stripped redundant response fields** — removed computed counts, null values, echoed-back args, mock metadata, `"ok"` key from all tool results
+- **Slimmed error responses** — just `{"error":"..."}` instead of including tool name, args, mode, and hint
+- **Type safety audit** — `.assign()` for typed arrays, explicit types on all declarations, direct dict access for required args, `.get()` only for optional args
+- **Visualizer updated** for consolidated tool names (`scene_edit`, `git`, `inject_input`, `signal_watch`)
+- **ReconnectHelper** — extracted shared reconnect-with-backoff logic for WebSocket connections
+
+### Removed
+- Individual git tools (`git_status`, `git_commit`, `git_diff`, `git_log`, `git_stash`) — use `git` with `action` param
+- Individual scene mutation tools (`add_node`, `remove_node`, `move_node`, `reparent_node`, `rename_node`, `modify_node_property`, `duplicate_node`) — use `scene_edit` with `edits` array
+- Individual input injection tools (`inject_action`, `inject_key`, `inject_mouse_click`, `inject_mouse_motion`) — use `inject_input` with `type` param
+- Individual signal tools (`watch_signal`, `unwatch_signal`, `get_signal_emissions`) — use `signal_watch` with `action` param
+- Mock response metadata (`_mock`, `_note` fields)
+- Redundant count fields (`total`, `count`, `file_count`, `total_matches`, `error_count`)
+
 ## [0.9.0] - 2026-03-14
 
 ### Added
