@@ -26,44 +26,54 @@ func main() {
 
 	log.Printf("[godot-mcp-server] Starting...")
 
-	// Create Godot bridge
-	b := bridge.New(bridge.DefaultPort, bridge.DefaultTimeout)
+	// Try to own the WebSocket port. If another server already owns it,
+	// fall back to proxy mode instead of killing the existing process.
+	var br bridge.Bridge
 
-	// Create visualizer server
-	viz := visualizer.New(b)
-
-	// Start WebSocket server for Godot communication
-	if err := b.Start(ctx); err != nil {
-		log.Printf("[godot-mcp-server] Failed to start WebSocket server: %v", err)
-		log.Printf("[godot-mcp-server] Continuing in mock-only mode")
+	primary := bridge.New(bridge.DefaultPort, bridge.DefaultTimeout)
+	if err := primary.Start(ctx); err != nil {
+		log.Printf("[godot-mcp-server] Port %d in use, switching to proxy mode...", bridge.DefaultPort)
+		proxy := bridge.NewProxy(bridge.DefaultPort, bridge.DefaultTimeout)
+		if err := proxy.Start(ctx); err != nil {
+			log.Printf("[godot-mcp-server] Proxy connection failed: %v", err)
+			log.Printf("[godot-mcp-server] Continuing in mock-only mode")
+			br = primary // use the unstarted bridge — will return mock results
+		} else {
+			br = proxy
+			log.Printf("[godot-mcp-server] Connected as proxy to primary bridge on port %d", bridge.DefaultPort)
+		}
 	} else {
+		br = primary
 		log.Printf("[godot-mcp-server] WebSocket server listening on port %d", bridge.DefaultPort)
 	}
 
-	// Log connection changes
-	b.OnConnectionChange(func(connected bool, info *bridge.GodotInfo) {
+	// Create visualizer server
+	viz := visualizer.New(br)
+
+	// Log connection changes (no-op for proxy mode)
+	br.OnConnectionChange(func(connected bool, instanceID string, info *bridge.GodotInfo) {
 		if connected {
-			log.Printf("[godot-mcp-server] Godot connected")
+			log.Printf("[godot-mcp-server] Godot %q connected", instanceID)
 		} else {
-			log.Printf("[godot-mcp-server] Godot disconnected")
+			log.Printf("[godot-mcp-server] Godot %q disconnected", instanceID)
 		}
 	})
 
-	// Handle visualizer requests from Godot (Project → Tools → MCP: Map Project)
-	b.OnVisualizerRequest(func(_ context.Context, data json.RawMessage) {
+	// Handle visualizer requests from Godot (no-op for proxy mode)
+	br.OnVisualizerRequest(func(_ context.Context, instanceID string, data json.RawMessage) {
 		var projectMap any
 		if err := json.Unmarshal(data, &projectMap); err != nil {
 			log.Printf("[godot-mcp-server] Failed to parse visualizer data: %v", err)
-			b.SendNotification("visualizer_status", map[string]any{"error": err.Error()})
+			br.SendNotification("visualizer_status", map[string]any{"error": err.Error()}, instanceID)
 			return
 		}
 		url, err := viz.Serve(projectMap)
 		if err != nil {
 			log.Printf("[godot-mcp-server] Failed to start visualizer: %v", err)
-			b.SendNotification("visualizer_status", map[string]any{"error": err.Error()})
+			br.SendNotification("visualizer_status", map[string]any{"error": err.Error()}, instanceID)
 			return
 		}
-		b.SendNotification("visualizer_status", map[string]any{"url": url})
+		br.SendNotification("visualizer_status", map[string]any{"url": url}, instanceID)
 	})
 
 	if lazy {
@@ -74,7 +84,7 @@ func main() {
 	log.Printf("[godot-mcp-server] Mode: mock (waiting for Godot connection)")
 
 	// Create and run MCP server on stdio
-	srv := mcpserver.New(b, lazy)
+	srv := mcpserver.New(br, lazy)
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil {
 		log.Printf("[godot-mcp-server] Fatal error: %v", err)
 		os.Exit(1)
@@ -82,5 +92,5 @@ func main() {
 
 	// Cleanup
 	viz.Stop()
-	b.Stop()
+	br.Stop()
 }

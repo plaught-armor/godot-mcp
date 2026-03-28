@@ -12,12 +12,12 @@ import (
 // Only core tools and explicitly enabled categories are visible to the AI client.
 type ToolSetManager struct {
 	server *mcp.Server
-	bridge *bridge.GodotBridge
+	bridge bridge.Bridge
 	mu     sync.Mutex
 	active map[string]bool
 }
 
-func newToolSetManager(server *mcp.Server, b *bridge.GodotBridge) *ToolSetManager {
+func newToolSetManager(server *mcp.Server, b bridge.Bridge) *ToolSetManager {
 	return &ToolSetManager{
 		server: server,
 		bridge: b,

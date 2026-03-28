@@ -8,8 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os/exec"
-	"runtime"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,14 +50,32 @@ type GodotInfo struct {
 	ConnectedAt time.Time
 }
 
+// InstanceStatus is the per-instance connection snapshot.
+// RuntimeStatus is the per-runtime connection snapshot.
+type RuntimeStatus struct {
+	PID             int `json:"pid"`
+	PendingRequests int `json:"pending_requests"`
+}
+
+// InstanceStatus is the per-instance connection snapshot.
+type InstanceStatus struct {
+	InstanceID       string          `json:"instance_id"`
+	Connected        bool            `json:"connected"`
+	RuntimeConnected bool            `json:"runtime_connected"`
+	Runtimes         []RuntimeStatus `json:"runtimes,omitempty"`
+	ProjectPath      string          `json:"project_path,omitempty"`
+	ConnectedAt      *time.Time      `json:"connected_at,omitempty"`
+	PendingRequests  int             `json:"pending_requests"`
+	Primary          bool            `json:"primary"`
+}
+
 // Status is the connection status snapshot.
 type Status struct {
-	Connected        bool       `json:"connected"`
-	RuntimeConnected bool       `json:"runtime_connected"`
-	ProjectPath      string     `json:"project_path,omitempty"`
-	ConnectedAt      *time.Time `json:"connected_at,omitempty"`
-	PendingRequests  int        `json:"pending_requests"`
-	Port             int        `json:"port"`
+	Connected        bool             `json:"connected"`
+	RuntimeConnected bool             `json:"runtime_connected"`
+	Instances        []InstanceStatus `json:"instances"`
+	PrimaryID        string           `json:"primary_id,omitempty"`
+	Port             int              `json:"port"`
 }
 
 type invokeResult struct {
@@ -72,38 +89,50 @@ type pendingRequest struct {
 	start    time.Time
 }
 
-type connectionCallback func(connected bool, info *GodotInfo)
-type visualizerCallback func(ctx context.Context, data json.RawMessage)
+// runtimeConn holds per-runtime-process state.
+type runtimeConn struct {
+	pid     int
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+	cancel  context.CancelFunc
+	pending map[string]*pendingRequest
+}
 
-// GodotBridge manages the WebSocket connection to the Godot plugin.
+// editorConn holds per-instance state for one Godot editor connection.
+type editorConn struct {
+	conn       *websocket.Conn
+	writeMu    sync.Mutex
+	info       *GodotInfo
+	pending    map[string]*pendingRequest
+	cancelRead context.CancelFunc
+
+	// Runtime (game process) sub-connections, keyed by PID
+	runtimes map[int]*runtimeConn
+}
+
+// Unexported aliases kept for internal use — the exported types live in iface.go.
+type connectionCallback = ConnectionCallback
+type visualizerCallback = VisualizerCallback
+
+// GodotBridge manages WebSocket connections to Godot editor instances.
 type GodotBridge struct {
 	port    int
 	timeout time.Duration
 
 	mu         sync.Mutex
-	writeMu    sync.Mutex // serializes concurrent WebSocket writes
-	conn       *websocket.Conn
-	info       *GodotInfo
-	pending    map[string]*pendingRequest
+	instances  map[string]*editorConn
+	primaryID  string
 	connCb     connectionCallback
 	vizCb      visualizerCallback
 	httpServer *http.Server
-	cancelRead context.CancelFunc
-
-	// Runtime (game process) connection
-	runtimeConn    *websocket.Conn
-	runtimeWriteMu sync.Mutex
-	runtimeCancel  context.CancelFunc
-	runtimePending map[string]*pendingRequest
 }
 
 // New creates a new GodotBridge.
 func New(port int, timeout time.Duration) *GodotBridge {
 	return &GodotBridge{
-		port:           port,
-		timeout:        timeout,
-		pending:        make(map[string]*pendingRequest),
-		runtimePending: make(map[string]*pendingRequest),
+		port:      port,
+		timeout:   timeout,
+		instances: make(map[string]*editorConn),
 	}
 }
 
@@ -118,16 +147,7 @@ func (b *GodotBridge) Start(ctx context.Context) error {
 	addr := fmt.Sprintf(":%d", b.port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Printf("[GodotBridge] Port %d in use, killing zombie process...", b.port)
-		if killErr := killProcessOnPort(b.port); killErr != nil {
-			return fmt.Errorf("port %d in use and could not kill owner: %w", b.port, killErr)
-		}
-		time.Sleep(200 * time.Millisecond)
-		ln, err = net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("listen on port %d after kill: %w", b.port, err)
-		}
-		log.Printf("[GodotBridge] Reclaimed port %d", b.port)
+		return fmt.Errorf("port %d in use: %w", b.port, err)
 	}
 
 	b.httpServer = &http.Server{Handler: mux}
@@ -146,32 +166,32 @@ func (b *GodotBridge) Stop() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	for id, p := range b.pending {
-		p.ch <- invokeResult{Err: errShuttingDown}
-		delete(b.pending, id)
+	for id, inst := range b.instances {
+		for reqID, p := range inst.pending {
+			p.ch <- invokeResult{Err: errShuttingDown}
+			delete(inst.pending, reqID)
+		}
+		for _, rt := range inst.runtimes {
+			for reqID, p := range rt.pending {
+				p.ch <- invokeResult{Err: errShuttingDown}
+				delete(rt.pending, reqID)
+			}
+			if rt.cancel != nil {
+				rt.cancel()
+			}
+			if rt.conn != nil {
+				rt.conn.Close(websocket.StatusGoingAway, "server shutting down")
+			}
+		}
+		if inst.cancelRead != nil {
+			inst.cancelRead()
+		}
+		if inst.conn != nil {
+			inst.conn.Close(websocket.StatusGoingAway, "server shutting down")
+		}
+		delete(b.instances, id)
 	}
-	for id, p := range b.runtimePending {
-		p.ch <- invokeResult{Err: errShuttingDown}
-		delete(b.runtimePending, id)
-	}
-
-	if b.cancelRead != nil {
-		b.cancelRead()
-		b.cancelRead = nil
-	}
-	if b.runtimeCancel != nil {
-		b.runtimeCancel()
-		b.runtimeCancel = nil
-	}
-
-	if b.conn != nil {
-		b.conn.Close(websocket.StatusGoingAway, "server shutting down")
-		b.conn = nil
-	}
-	if b.runtimeConn != nil {
-		b.runtimeConn.Close(websocket.StatusGoingAway, "server shutting down")
-		b.runtimeConn = nil
-	}
+	b.primaryID = ""
 
 	if b.httpServer != nil {
 		b.httpServer.Close()
@@ -181,35 +201,62 @@ func (b *GodotBridge) Stop() {
 	log.Printf("[GodotBridge] Stopped")
 }
 
-// IsConnected returns true if Godot is connected.
+// IsConnected returns true if any Godot instance is connected.
 func (b *GodotBridge) IsConnected() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.conn != nil
+	return len(b.instances) > 0
 }
 
-// IsRuntimeConnected returns true if the game runtime is connected.
+// IsRuntimeConnected returns true if any instance has at least one runtime connection.
 func (b *GodotBridge) IsRuntimeConnected() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.runtimeConn != nil
+	for _, inst := range b.instances {
+		if len(inst.runtimes) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // GetStatus returns a snapshot of the connection status.
 func (b *GodotBridge) GetStatus() Status {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	s := Status{
-		Connected:        b.conn != nil,
-		RuntimeConnected: b.runtimeConn != nil,
-		PendingRequests:  len(b.pending) + len(b.runtimePending),
-		Port:             b.port,
+		Connected: len(b.instances) > 0,
+		PrimaryID: b.primaryID,
+		Port:      b.port,
 	}
-	if b.info != nil {
-		s.ProjectPath = b.info.ProjectPath
-		t := b.info.ConnectedAt
-		s.ConnectedAt = &t
+
+	for id, inst := range b.instances {
+		is := InstanceStatus{
+			InstanceID:       id,
+			Connected:        true,
+			RuntimeConnected: len(inst.runtimes) > 0,
+			PendingRequests:  len(inst.pending),
+			Primary:          id == b.primaryID,
+		}
+		for _, rt := range inst.runtimes {
+			is.Runtimes = append(is.Runtimes, RuntimeStatus{
+				PID:             rt.pid,
+				PendingRequests: len(rt.pending),
+			})
+			is.PendingRequests += len(rt.pending)
+		}
+		if inst.info != nil {
+			is.ProjectPath = inst.info.ProjectPath
+			t := inst.info.ConnectedAt
+			is.ConnectedAt = &t
+		}
+		if is.RuntimeConnected {
+			s.RuntimeConnected = true
+		}
+		s.Instances = append(s.Instances, is)
 	}
+
 	return s
 }
 
@@ -227,14 +274,16 @@ func (b *GodotBridge) OnVisualizerRequest(fn visualizerCallback) {
 	b.vizCb = fn
 }
 
-// SendNotification sends a one-way message to Godot (no response expected).
-func (b *GodotBridge) SendNotification(msgType string, fields map[string]any) error {
+// SendNotification sends a one-way message to a Godot instance.
+// If instanceID is empty, sends to the primary instance.
+func (b *GodotBridge) SendNotification(msgType string, fields map[string]any, instanceID string) error {
 	b.mu.Lock()
-	conn := b.conn
+	inst, err := b.resolveInstance(instanceID)
 	b.mu.Unlock()
-	if conn == nil {
-		return errNotConnected
+	if err != nil {
+		return err
 	}
+
 	msg := map[string]any{"type": msgType}
 	for k, v := range fields {
 		msg[k] = v
@@ -243,26 +292,97 @@ func (b *GodotBridge) SendNotification(msgType string, fields map[string]any) er
 	if err != nil {
 		return err
 	}
-	b.writeMu.Lock()
-	err = conn.Write(context.Background(), websocket.MessageText, data)
-	b.writeMu.Unlock()
+	inst.writeMu.Lock()
+	err = inst.conn.Write(context.Background(), websocket.MessageText, data)
+	inst.writeMu.Unlock()
 	return err
 }
 
-// InvokeTool sends a tool invocation to Godot and waits for the result.
-func (b *GodotBridge) InvokeTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
+// InvokeTool sends a tool invocation to a Godot editor and waits for the result.
+// If instanceID is empty, routes to the primary instance.
+func (b *GodotBridge) InvokeTool(ctx context.Context, toolName string, args map[string]any, instanceID string) (json.RawMessage, error) {
 	b.mu.Lock()
-	conn, pending, wmu := b.conn, b.pending, &b.writeMu
+	inst, err := b.resolveInstance(instanceID)
 	b.mu.Unlock()
-	return b.invokeTool(ctx, toolName, args, conn, wmu, pending, errNotConnected, "")
+	if err != nil {
+		return nil, err
+	}
+	return b.invokeTool(ctx, toolName, args, inst.conn, &inst.writeMu, inst.pending, errNotConnected, "")
 }
 
-// InvokeRuntimeTool sends a tool invocation to the game runtime and waits for the result.
-func (b *GodotBridge) InvokeRuntimeTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
+// InvokeRuntimeTool sends a tool invocation to a game runtime and waits for the result.
+// If instanceID is empty, routes to the primary instance. If runtimePID is 0, uses the first runtime.
+func (b *GodotBridge) InvokeRuntimeTool(ctx context.Context, toolName string, args map[string]any, instanceID string, runtimePID int) (json.RawMessage, error) {
 	b.mu.Lock()
-	conn, pending, wmu := b.runtimeConn, b.runtimePending, &b.runtimeWriteMu
+	inst, err := b.resolveInstance(instanceID)
+	if err != nil {
+		b.mu.Unlock()
+		return nil, err
+	}
+	rt, err := resolveRuntime(inst, runtimePID)
 	b.mu.Unlock()
-	return b.invokeTool(ctx, toolName, args, conn, wmu, pending, errNoRuntime, "runtime ")
+	if err != nil {
+		return nil, err
+	}
+	return b.invokeTool(ctx, toolName, args, rt.conn, &rt.writeMu, rt.pending, errNoRuntime, fmt.Sprintf("runtime[%d] ", rt.pid))
+}
+
+// resolveRuntime finds a runtime by PID or returns the first one. Caller must hold b.mu.
+func resolveRuntime(inst *editorConn, pid int) (*runtimeConn, error) {
+	if len(inst.runtimes) == 0 {
+		return nil, errNoRuntime
+	}
+	if pid != 0 {
+		rt, ok := inst.runtimes[pid]
+		if !ok {
+			pids := make([]string, 0, len(inst.runtimes))
+			for p := range inst.runtimes {
+				pids = append(pids, strconv.Itoa(p))
+			}
+			return nil, fmt.Errorf("runtime PID %d not found (available: %s)", pid, strings.Join(pids, ", "))
+		}
+		return rt, nil
+	}
+	// Return first runtime
+	for _, rt := range inst.runtimes {
+		return rt, nil
+	}
+	return nil, errNoRuntime // unreachable
+}
+
+// SetPrimary changes the primary instance.
+func (b *GodotBridge) SetPrimary(instanceID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if _, ok := b.instances[instanceID]; !ok {
+		return fmt.Errorf("instance %q not found (available: %s)", instanceID, b.listInstanceIDs())
+	}
+	b.primaryID = instanceID
+	return nil
+}
+
+// resolveInstance looks up an instance by ID, falling back to primary. Caller must hold b.mu.
+func (b *GodotBridge) resolveInstance(instanceID string) (*editorConn, error) {
+	if len(b.instances) == 0 {
+		return nil, errNotConnected
+	}
+	if instanceID == "" {
+		instanceID = b.primaryID
+	}
+	inst, ok := b.instances[instanceID]
+	if !ok {
+		return nil, fmt.Errorf("instance %q not found (available: %s)", instanceID, b.listInstanceIDs())
+	}
+	return inst, nil
+}
+
+// listInstanceIDs returns a comma-separated list. Caller must hold b.mu.
+func (b *GodotBridge) listInstanceIDs() string {
+	ids := make([]string, 0, len(b.instances))
+	for id := range b.instances {
+		ids = append(ids, id)
+	}
+	return strings.Join(ids, ", ")
 }
 
 func (b *GodotBridge) invokeTool(
@@ -354,61 +474,107 @@ func (b *GodotBridge) handleUpgrade(ctx context.Context, w http.ResponseWriter, 
 	case "godot_ready":
 		b.acceptEditor(ctx, conn, msg)
 	case "runtime_ready":
-		b.acceptRuntime(ctx, conn)
+		b.acceptRuntime(ctx, conn, msg)
+	case "proxy_ready":
+		b.acceptProxy(ctx, conn)
 	default:
 		log.Printf("[GodotBridge] Unknown hello type: %s", msg.Type)
 		conn.Close(websocket.StatusProtocolError, "unknown hello type")
 	}
 }
 
+// deriveInstanceID computes an instance ID from the hello message.
+func deriveInstanceID(msg IncomingMessage) string {
+	if msg.InstanceID != "" {
+		return msg.InstanceID
+	}
+	// Fall back to last segment of project path
+	if msg.ProjectPath != "" {
+		return filepath.Base(msg.ProjectPath)
+	}
+	return "default"
+}
+
 func (b *GodotBridge) acceptEditor(ctx context.Context, conn *websocket.Conn, hello IncomingMessage) {
+	instanceID := deriveInstanceID(hello)
+
 	b.mu.Lock()
-	if b.conn != nil {
+	if _, exists := b.instances[instanceID]; exists {
 		b.mu.Unlock()
-		log.Printf("[GodotBridge] Rejecting editor connection - already connected")
-		conn.Close(websocket.StatusCode(4000), "Another Godot editor is already connected")
+		log.Printf("[GodotBridge] Rejecting editor %q - already connected", instanceID)
+		conn.Close(websocket.StatusCode(4000), "Instance already connected: "+instanceID)
 		return
 	}
 
 	readCtx, cancelRead := context.WithCancel(ctx)
-	b.conn = conn
-	b.info = &GodotInfo{
-		ConnectedAt: time.Now(),
-		ProjectPath: hello.ProjectPath,
+	inst := &editorConn{
+		conn: conn,
+		info: &GodotInfo{
+			ConnectedAt: time.Now(),
+			ProjectPath: hello.ProjectPath,
+		},
+		pending:    make(map[string]*pendingRequest),
+		runtimes:   make(map[int]*runtimeConn),
+		cancelRead: cancelRead,
 	}
-	b.cancelRead = cancelRead
+	b.instances[instanceID] = inst
+
+	// First connection becomes primary
+	if b.primaryID == "" {
+		b.primaryID = instanceID
+	}
+	isPrimary := b.primaryID == instanceID
 	b.mu.Unlock()
 
-	log.Printf("[GodotBridge] Editor connected (project: %s)", hello.ProjectPath)
-	b.notifyConnectionChange(true, nil)
+	primaryLabel := ""
+	if isPrimary {
+		primaryLabel = " [primary]"
+	}
+	log.Printf("[GodotBridge] Editor %q connected (project: %s)%s", instanceID, hello.ProjectPath, primaryLabel)
+	b.notifyConnectionChange(true, instanceID, inst.info)
 
-	go b.pingLoop(readCtx, conn, &b.writeMu)
-	b.readLoop(readCtx, conn)
-	b.handleDisconnect()
+	go b.pingLoop(readCtx, conn, &inst.writeMu)
+	b.readLoop(readCtx, conn, inst)
+	b.handleDisconnect(instanceID)
 }
 
-func (b *GodotBridge) acceptRuntime(ctx context.Context, conn *websocket.Conn) {
+func (b *GodotBridge) acceptRuntime(ctx context.Context, conn *websocket.Conn, hello IncomingMessage) {
+	instanceID := deriveInstanceID(hello)
+	pid := hello.PID
+
 	b.mu.Lock()
-	if b.runtimeConn != nil {
+	inst, ok := b.instances[instanceID]
+	if !ok {
 		b.mu.Unlock()
-		log.Printf("[GodotBridge] Rejecting runtime connection - already connected")
-		conn.Close(websocket.StatusCode(4001), "Another runtime is already connected")
+		log.Printf("[GodotBridge] Rejecting runtime PID %d for %q - no editor connection", pid, instanceID)
+		conn.Close(websocket.StatusCode(4002), "No editor connected for instance: "+instanceID)
+		return
+	}
+	if _, exists := inst.runtimes[pid]; exists {
+		b.mu.Unlock()
+		log.Printf("[GodotBridge] Rejecting runtime PID %d for %q - already connected", pid, instanceID)
+		conn.Close(websocket.StatusCode(4001), fmt.Sprintf("Runtime PID %d already connected for: %s", pid, instanceID))
 		return
 	}
 
 	readCtx, cancelRead := context.WithCancel(ctx)
-	b.runtimeConn = conn
-	b.runtimeCancel = cancelRead
+	rt := &runtimeConn{
+		pid:     pid,
+		conn:    conn,
+		cancel:  cancelRead,
+		pending: make(map[string]*pendingRequest),
+	}
+	inst.runtimes[pid] = rt
 	b.mu.Unlock()
 
-	log.Printf("[GodotBridge] Runtime connected")
+	log.Printf("[GodotBridge] Runtime PID %d connected for %q (%d runtimes)", pid, instanceID, len(inst.runtimes))
 
-	go b.pingLoop(readCtx, conn, &b.runtimeWriteMu)
-	b.runtimeReadLoop(readCtx, conn)
-	b.handleRuntimeDisconnect()
+	go b.pingLoop(readCtx, conn, &rt.writeMu)
+	b.runtimeReadLoop(readCtx, conn, rt)
+	b.handleRuntimeDisconnect(instanceID, pid)
 }
 
-func (b *GodotBridge) readLoop(ctx context.Context, conn *websocket.Conn) {
+func (b *GodotBridge) readLoop(ctx context.Context, conn *websocket.Conn, inst *editorConn) {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -424,29 +590,37 @@ func (b *GodotBridge) readLoop(ctx context.Context, conn *websocket.Conn) {
 			continue
 		}
 
-		b.handleMessage(ctx, msg)
+		b.handleMessage(ctx, msg, inst)
 	}
 }
 
-func (b *GodotBridge) handleMessage(ctx context.Context, msg IncomingMessage) {
+func (b *GodotBridge) handleMessage(ctx context.Context, msg IncomingMessage, inst *editorConn) {
 	switch msg.Type {
 	case "tool_result":
-		b.handleToolResult(msg)
+		b.resolveResult(inst.pending, msg, "")
 	case "pong":
 		// Keepalive response - nothing to do
 	case "godot_ready":
 		b.mu.Lock()
-		if b.info != nil {
-			b.info.ProjectPath = msg.ProjectPath
+		if inst.info != nil {
+			inst.info.ProjectPath = msg.ProjectPath
 			log.Printf("[GodotBridge] Godot project: %s", msg.ProjectPath)
 		}
 		b.mu.Unlock()
 	case "open_visualizer":
 		b.mu.Lock()
 		cb := b.vizCb
+		// Find the instance ID for the callback
+		var instID string
+		for id, i := range b.instances {
+			if i == inst {
+				instID = id
+				break
+			}
+		}
 		b.mu.Unlock()
 		if cb != nil {
-			go cb(ctx, msg.Result) // Run in goroutine — viz.Serve() blocks; ctx cancels on disconnect
+			go cb(ctx, instID, msg.Result)
 		} else {
 			log.Printf("[GodotBridge] Received open_visualizer but no handler registered")
 		}
@@ -455,39 +629,31 @@ func (b *GodotBridge) handleMessage(ctx context.Context, msg IncomingMessage) {
 	}
 }
 
-func (b *GodotBridge) handleToolResult(msg IncomingMessage) {
-	b.resolveResult(b.pending, msg, "")
-}
-
-func (b *GodotBridge) runtimeReadLoop(ctx context.Context, conn *websocket.Conn) {
+func (b *GodotBridge) runtimeReadLoop(ctx context.Context, conn *websocket.Conn, rt *runtimeConn) {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
-				log.Printf("[GodotBridge] Runtime read error: %v", err)
+				log.Printf("[GodotBridge] Runtime[%d] read error: %v", rt.pid, err)
 			}
 			return
 		}
 
 		var msg IncomingMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("[GodotBridge] Failed to parse runtime message: %v", err)
+			log.Printf("[GodotBridge] Failed to parse runtime[%d] message: %v", rt.pid, err)
 			continue
 		}
 
 		switch msg.Type {
 		case "tool_result":
-			b.handleRuntimeToolResult(msg)
+			b.resolveResult(rt.pending, msg, fmt.Sprintf("runtime[%d] ", rt.pid))
 		case "pong":
 			// keepalive
 		default:
-			log.Printf("[GodotBridge] Unknown runtime message type: %s", msg.Type)
+			log.Printf("[GodotBridge] Unknown runtime[%d] message type: %s", rt.pid, msg.Type)
 		}
 	}
-}
-
-func (b *GodotBridge) handleRuntimeToolResult(msg IncomingMessage) {
-	b.resolveResult(b.runtimePending, msg, "runtime ")
 }
 
 func (b *GodotBridge) resolveResult(pending map[string]*pendingRequest, msg IncomingMessage, label string) {
@@ -508,6 +674,10 @@ func (b *GodotBridge) resolveResult(pending map[string]*pendingRequest, msg Inco
 
 	if msg.Success != nil && *msg.Success {
 		p.ch <- invokeResult{Data: msg.Result}
+	} else if len(msg.Result) > 0 {
+		// Error with full result dict (may contain "suggestion" etc.) —
+		// pass through as raw data so the server can forward all fields.
+		p.ch <- invokeResult{Data: msg.Result}
 	} else {
 		errMsg := msg.Error
 		if errMsg == "" {
@@ -517,43 +687,69 @@ func (b *GodotBridge) resolveResult(pending map[string]*pendingRequest, msg Inco
 	}
 }
 
-func (b *GodotBridge) handleRuntimeDisconnect() {
+func (b *GodotBridge) handleRuntimeDisconnect(instanceID string, pid int) {
 	b.mu.Lock()
-	for id, p := range b.runtimePending {
-		p.ch <- invokeResult{Err: errGameStopped}
-		delete(b.runtimePending, id)
+	inst, ok := b.instances[instanceID]
+	if ok {
+		if rt, exists := inst.runtimes[pid]; exists {
+			for id, p := range rt.pending {
+				p.ch <- invokeResult{Err: errGameStopped}
+				delete(rt.pending, id)
+			}
+			if rt.cancel != nil {
+				rt.cancel()
+			}
+			delete(inst.runtimes, pid)
+		}
 	}
-	if b.runtimeCancel != nil {
-		b.runtimeCancel()
-		b.runtimeCancel = nil
-	}
-	b.runtimeConn = nil
 	b.mu.Unlock()
 
-	log.Printf("[GodotBridge] Runtime disconnected")
+	log.Printf("[GodotBridge] Runtime PID %d disconnected for %q", pid, instanceID)
 }
 
-func (b *GodotBridge) handleDisconnect() {
+func (b *GodotBridge) handleDisconnect(instanceID string) {
 	b.mu.Lock()
-	info := b.info
+	inst, ok := b.instances[instanceID]
+	var info *GodotInfo
+	if ok {
+		info = inst.info
+		// Reject all pending editor requests
+		for id, p := range inst.pending {
+			p.ch <- invokeResult{Err: errGodotDisconnect}
+			delete(inst.pending, id)
+		}
+		// Tear down all runtime connections
+		for pid, rt := range inst.runtimes {
+			for id, p := range rt.pending {
+				p.ch <- invokeResult{Err: errGodotDisconnect}
+				delete(rt.pending, id)
+			}
+			if rt.cancel != nil {
+				rt.cancel()
+			}
+			if rt.conn != nil {
+				rt.conn.Close(websocket.StatusGoingAway, "editor disconnected")
+			}
+			delete(inst.runtimes, pid)
+		}
+		if inst.cancelRead != nil {
+			inst.cancelRead()
+		}
+		delete(b.instances, instanceID)
 
-	// Reject all pending requests
-	for id, p := range b.pending {
-		p.ch <- invokeResult{Err: errGodotDisconnect}
-		delete(b.pending, id)
+		// Promote next instance if primary disconnected
+		if b.primaryID == instanceID {
+			b.primaryID = ""
+			for id := range b.instances {
+				b.primaryID = id
+				break
+			}
+		}
 	}
-
-	if b.cancelRead != nil {
-		b.cancelRead()
-		b.cancelRead = nil
-	}
-
-	b.conn = nil
-	b.info = nil
 	b.mu.Unlock()
 
-	log.Printf("[GodotBridge] Godot disconnected")
-	b.notifyConnectionChange(false, info)
+	log.Printf("[GodotBridge] Editor %q disconnected", instanceID)
+	b.notifyConnectionChange(false, instanceID, info)
 }
 
 func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn, wmu *sync.Mutex) {
@@ -575,7 +771,7 @@ func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn, wmu *s
 	}
 }
 
-func (b *GodotBridge) notifyConnectionChange(connected bool, info *GodotInfo) {
+func (b *GodotBridge) notifyConnectionChange(connected bool, instanceID string, info *GodotInfo) {
 	b.mu.Lock()
 	cb := b.connCb
 	b.mu.Unlock()
@@ -590,44 +786,93 @@ func (b *GodotBridge) notifyConnectionChange(connected bool, info *GodotInfo) {
 				log.Printf("[GodotBridge] Connection callback panic: %v", r)
 			}
 		}()
-		cb(connected, info)
+		cb(connected, instanceID, info)
 	}()
 }
 
-// killProcessOnPort finds and kills the process occupying the given TCP port.
-func killProcessOnPort(port int) error {
-	portStr := strconv.Itoa(port)
-	switch runtime.GOOS {
-	case "linux":
-		out, err := exec.Command("fuser", "-k", portStr+"/tcp").CombinedOutput()
+// acceptProxy handles a proxy client connection.
+// The proxy sends tool_invoke / status_request / set_primary messages;
+// the primary bridge executes them and writes back the result.
+func (b *GodotBridge) acceptProxy(ctx context.Context, conn *websocket.Conn) {
+	log.Printf("[GodotBridge] Proxy client connected")
+
+	readCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	go b.pingLoop(readCtx, conn, &sync.Mutex{})
+
+	var writeMu sync.Mutex
+
+	for {
+		_, data, err := conn.Read(readCtx)
 		if err != nil {
-			return fmt.Errorf("fuser -k %s/tcp: %s (%w)", portStr, out, err)
+			if readCtx.Err() == nil {
+				log.Printf("[GodotBridge] Proxy read error: %v", err)
+			}
+			break
 		}
-		return nil
-	case "darwin":
-		// macOS has no fuser — use lsof to find PID, then kill
-		out, err := exec.Command("lsof", "-ti", ":"+portStr).Output()
-		if err != nil {
-			return fmt.Errorf("lsof -ti :%s: %w", portStr, err)
+
+		var msg ProxyRequest
+		if err := json.Unmarshal(data, &msg); err != nil {
+			log.Printf("[GodotBridge] Invalid proxy message: %v", err)
+			continue
 		}
-		pid := strings.TrimSpace(string(out))
-		if pid == "" {
-			return fmt.Errorf("no process found on port %s", portStr)
+
+		switch msg.Type {
+		case "tool_invoke":
+			go func() {
+				var raw json.RawMessage
+				var invokeErr error
+				if msg.RuntimePID != 0 {
+					raw, invokeErr = b.InvokeRuntimeTool(readCtx, msg.Tool, msg.Args, msg.Instance, msg.RuntimePID)
+				} else {
+					raw, invokeErr = b.InvokeTool(readCtx, msg.Tool, msg.Args, msg.Instance)
+				}
+
+				resp := ProxyResponse{Type: "tool_result", ID: msg.ID}
+				if invokeErr != nil {
+					resp.Error = invokeErr.Error()
+				} else {
+					resp.Result = raw
+					t := true
+					resp.Success = &t
+				}
+
+				out, _ := json.Marshal(resp)
+				writeMu.Lock()
+				conn.Write(readCtx, websocket.MessageText, out)
+				writeMu.Unlock()
+			}()
+
+		case "status_request":
+			status := b.GetStatus()
+			raw, _ := json.Marshal(status)
+			resp := ProxyResponse{Type: "status_response", ID: msg.ID, Result: raw}
+			out, _ := json.Marshal(resp)
+			writeMu.Lock()
+			conn.Write(readCtx, websocket.MessageText, out)
+			writeMu.Unlock()
+
+		case "set_primary":
+			var errStr string
+			if err := b.SetPrimary(msg.Instance); err != nil {
+				errStr = err.Error()
+			}
+			resp := ProxyResponse{Type: "set_primary_response", ID: msg.ID, Error: errStr}
+			t := errStr == ""
+			resp.Success = &t
+			out, _ := json.Marshal(resp)
+			writeMu.Lock()
+			conn.Write(readCtx, websocket.MessageText, out)
+			writeMu.Unlock()
+
+		case "notification":
+			b.SendNotification(msg.NotificationType, msg.Fields, msg.Instance)
+
+		default:
+			log.Printf("[GodotBridge] Unknown proxy message type: %s", msg.Type)
 		}
-		if err := exec.Command("kill", pid).Run(); err != nil {
-			return fmt.Errorf("kill %s: %w", pid, err)
-		}
-		return nil
-	case "windows":
-		// Find PID via netstat, then taskkill
-		out, err := exec.Command("cmd", "/c",
-			fmt.Sprintf("for /f \"tokens=5\" %%a in ('netstat -aon ^| findstr :%s') do taskkill /F /PID %%a", portStr),
-		).CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("taskkill for port %s: %s (%w)", portStr, out, err)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
+
+	log.Printf("[GodotBridge] Proxy client disconnected")
 }

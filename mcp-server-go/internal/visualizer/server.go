@@ -21,12 +21,12 @@ const defaultVizPort = 6510
 // Server serves the project visualization and handles internal WebSocket commands.
 type Server struct {
 	mu         sync.Mutex
-	bridge     *bridge.GodotBridge
+	bridge     bridge.Bridge
 	httpServer *http.Server
 }
 
 // New creates a new visualization server.
-func New(b *bridge.GodotBridge) *Server {
+func New(b bridge.Bridge) *Server {
 	return &Server{bridge: b}
 }
 
@@ -236,7 +236,7 @@ func (s *Server) handleInternalCommand(ctx context.Context, command string, args
 
 	log.Printf("[visualizer] Internal command: %s", command)
 
-	raw, err := s.bridge.InvokeTool(ctx, command, args)
+	raw, err := s.bridge.InvokeTool(ctx, command, args, "")
 	if err != nil {
 		return map[string]any{"error": err.Error()}
 	}
@@ -268,7 +268,13 @@ func (s *Server) injectGitStatus(projectData any) any {
 	projectPath := ""
 	if s.bridge != nil {
 		status := s.bridge.GetStatus()
-		projectPath = status.ProjectPath
+		// Use primary instance's project path
+		for _, inst := range status.Instances {
+			if inst.Primary {
+				projectPath = inst.ProjectPath
+				break
+			}
+		}
 	}
 	if projectPath == "" {
 		return projectData
