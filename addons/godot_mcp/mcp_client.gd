@@ -8,6 +8,7 @@ class_name MCPClient
 signal connected
 signal disconnected
 signal tool_requested(request_id: String, tool_name: String, args: Dictionary)
+signal debugger_continue_requested
 signal visualizer_opened(url: String)
 signal visualizer_failed(error: String)
 
@@ -18,6 +19,7 @@ const MAX_PACKETS_PER_FRAME: int = 32
 var socket: WebSocketPeer = WebSocketPeer.new()
 const OUTBOUND_BUFFER_SIZE: int = 10 * 1024 * 1024 # 10 MB — matches Go server read limit
 var server_url: String = DEFAULT_URL
+var instance_id: String = ""
 var _is_connected: bool = false
 var _should_reconnect: bool = true
 var _reconnect: ReconnectHelper = ReconnectHelper.new()
@@ -73,19 +75,8 @@ func disconnect_from_server() -> void:
 	_is_connected = false
 
 
-func send_tool_result(request_id: String, success: bool, result: Variant = null, error: String = "") -> void:
-	var response: Dictionary = {
-		&"type": &"tool_result",
-		&"id": request_id,
-		&"success": success,
-	}
-
-	if success:
-		response[&"result"] = result
-	else:
-		response[&"error"] = error
-
-	_send_message(response)
+func send_tool_result(request_id: String, result: Variant = null) -> void:
+	_send_message({ &"type": &"tool_result", &"id": request_id, &"result": result })
 
 
 func send_visualizer_request(project_map: Dictionary) -> void:
@@ -120,13 +111,14 @@ func _handle_connect() -> void:
 	_reconnect.reset()
 	print("[GMCP] Connected to server")
 
-	# Send godot_ready message with project info
-	_send_message(
-		{
-			&"type": &"godot_ready",
-			&"project_path": _project_path,
-		},
-	)
+	# Send godot_ready message with project info and instance ID
+	var hello: Dictionary = {
+		&"type": &"godot_ready",
+		&"project_path": _project_path,
+	}
+	if not instance_id.is_empty():
+		hello[&"instance_id"] = instance_id
+	_send_message(hello)
 
 	connected.emit()
 
@@ -149,18 +141,20 @@ func _handle_message(json_string: String) -> void:
 	var message: Dictionary = parsed
 	var msg_type: String = message.get(&"type", "")
 	match msg_type:
-		"ping":
+		&"ping":
 			_send_message(_PONG_MSG)
-		"tool_invoke":
+		&"tool_invoke":
 			var request_id: String = message.get(&"id", "")
 			var tool_name: String = message.get(&"tool", "")
 			var args: Dictionary = message.get(&"args", { })
-			if not tool_name.begins_with("visualizer."):
+			if not tool_name.begins_with(&"visualizer."):
 				print("[GMCP] Tool request: ", tool_name, " (", request_id, ")")
 			tool_requested.emit(request_id, tool_name, args)
-		"visualizer_status":
+		&"debugger_continue":
+			debugger_continue_requested.emit()
+		&"visualizer_status":
 			var url: String = message.get(&"url", "")
-			var err: String = message.get(&"error", "")
+			var err: String = message.get(&"err", "")
 			if url != "":
 				visualizer_opened.emit(url)
 			else:

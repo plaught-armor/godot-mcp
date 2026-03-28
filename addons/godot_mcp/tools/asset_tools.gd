@@ -26,9 +26,9 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var save_path: String = args.get(&"save_path", "res://assets/generated/")
 
 	if svg_code.strip_edges().is_empty():
-		return { &"error": "Missing 'svg_code'" }
+		return { &"err": "Missing 'svg_code'" }
 	if filename.strip_edges().is_empty():
-		return { &"error": "Missing 'filename'" }
+		return { &"err": "Missing 'filename'" }
 
 	# Ensure .png extension
 	if not filename.ends_with(".png"):
@@ -37,7 +37,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	# Ensure save path
 	save_path = _utils.validate_res_path(save_path)
 	if save_path.is_empty():
-		return { &"error": "Save path escapes project root" }
+		return { &"err": "Save path escapes project root" }
 	if not save_path.ends_with("/"):
 		save_path += "/"
 
@@ -71,7 +71,7 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var temp_svg_path: String = "user://temp_asset.svg"
 	var svg_file: FileAccess = FileAccess.open(temp_svg_path, FileAccess.WRITE)
 	if not svg_file:
-		return { &"error": "Failed to create temp SVG file" }
+		return { &"err": "Failed to create temp SVG file" }
 	svg_file.store_string(svg_code)
 	svg_file.close()
 
@@ -91,11 +91,12 @@ func generate_2d_asset(args: Dictionary) -> Dictionary:
 	var global_path: String = ProjectSettings.globalize_path(full_path)
 	err = image.save_png(global_path)
 	if err != OK:
-		return { &"error": "Failed to save PNG: " + str(err) }
+		return { &"err": "Failed to save PNG: " + str(err) }
 
 	_utils.refresh_filesystem()
 
 	return {
-		&"resource_path": full_path,
-		&"dimensions": { &"width": width, &"height": height },
+		&"path": full_path,
+		&"width": width,
+		&"height": height,
 	}

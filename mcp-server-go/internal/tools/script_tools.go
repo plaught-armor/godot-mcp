@@ -5,18 +5,16 @@ import "os/exec"
 var scriptTools = []ToolDef{
 	{
 		Name:        "create_script",
-		Description: "Create a new .gd file. Use edit_script for existing files.",
+		Description: "Create a .gd file.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"path":    {Type: "string", Description: "res:// path (must not exist yet)"},
-				"content": {Type: "string", Description: "Full GDScript content"},
+				"path":    {Type: "string"},
+				"content": {Type: "string"},
 			},
 			Required: []string{"path", "content"},
 		},
-		MockFn: func(args map[string]any) any {
-			return map[string]any{}
-		},
+		MockFn: mockOK(),
 	},
 	{
 		Name:        "edit_script",
@@ -24,7 +22,7 @@ var scriptTools = []ToolDef{
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"edit": {Type: "object", Description: `Edit spec: {type: "snippet_replace", file: "res://path.gd", old_snippet: "old code", new_snippet: "new code", context_before: "line above", context_after: "line below"}. Keep old_snippet SMALL (1-10 lines).`},
+				"edit": {Type: "object"},
 			},
 			Required: []string{"edit"},
 		},
@@ -36,7 +34,7 @@ var scriptTools = []ToolDef{
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"path": {Type: "string", Description: "res:// path to validate"},
+				"path": {Type: "string"},
 			},
 			Required: []string{"path"},
 		},
@@ -47,11 +45,9 @@ var scriptTools = []ToolDef{
 	{
 		Name:        "list_scripts",
 		Description: "List all .gd files in the project.",
-		InputSchema: &Schema{
-			Type:       "object",
-		},
+		InputSchema: &Schema{Type: "object"},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"scripts": []string{"res://scripts/player.gd", "res://scripts/enemy.gd"}}
+			return map[string]any{"scripts": []string{}}
 		},
 	},
 	{
@@ -60,7 +56,7 @@ var scriptTools = []ToolDef{
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"paths": {Type: "array", Description: "res:// paths to validate", Items: &Schema{Type: "string"}},
+				"paths": {Type: "array", Items: &Schema{Type: "string"}},
 			},
 			Required: []string{"paths"},
 		},
@@ -74,16 +70,12 @@ var scriptTools = []ToolDef{
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"path": {Type: "string", Description: "res:// script path"},
+				"path": {Type: "string"},
 			},
 			Required: []string{"path"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{
-				"methods":   []any{},
-				"variables": []any{},
-				"signals":   []any{},
-			}
+			return map[string]any{"methods": []any{}, "variables": []any{}, "signals": []any{}}
 		},
 	},
 	{
@@ -92,7 +84,7 @@ var scriptTools = []ToolDef{
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"class_name": {Type: "string", Description: "Class name to find"},
+				"class_name": {Type: "string"},
 			},
 			Required: []string{"class_name"},
 		},
@@ -102,7 +94,6 @@ var scriptTools = []ToolDef{
 	},
 }
 
-// optionalScriptTools returns tools that depend on external binaries.
 func optionalScriptTools() []ToolDef {
 	var out []ToolDef
 	if _, err := exec.LookPath("gdscript-formatter"); err == nil {
@@ -112,7 +103,7 @@ func optionalScriptTools() []ToolDef {
 			InputSchema: &Schema{
 				Type: "object",
 				Properties: map[string]*Schema{
-					"path": {Type: "string", Description: "res:// script path"},
+					"path": {Type: "string"},
 				},
 				Required: []string{"path"},
 			},

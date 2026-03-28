@@ -13,6 +13,7 @@ const MAX_EMISSIONS: int = 500
 var _socket: WebSocketPeer = WebSocketPeer.new()
 var _connected: bool = false
 var _reconnect: ReconnectHelper = ReconnectHelper.new()
+var _instance_id: String = ""
 # Signal watching: key = "node_path::signal_name", value = callable used to connect
 var _watched_signals: Dictionary = { } # {String: Callable}
 var _signal_emissions: Array[Dictionary] = [] # [{node_path, signal_name, args, timestamp}]
@@ -24,6 +25,12 @@ func _ready() -> void:
 	if ProjectSettings.has_setting("godot_mcp/mcp_launched"):
 		ProjectSettings.set_setting("godot_mcp/mcp_launched", false)
 		DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_NO_FOCUS, true)
+	# Compute instance ID to match editor plugin
+	var custom_id: String = ProjectSettings.get_setting("godot_mcp/instance_id", "")
+	if custom_id.is_empty():
+		_instance_id = ProjectSettings.globalize_path("res://").get_base_dir().get_file()
+	else:
+		_instance_id = custom_id
 	_reconnect.setup(self)
 	_reconnect.should_connect.connect(_attempt_connection)
 	_attempt_connection()
@@ -37,7 +44,7 @@ func _process(_delta: float) -> void:
 		if not _connected:
 			_connected = true
 			_reconnect.reset()
-			_send({ "type": "runtime_ready" })
+			_send({ &"type": &"runtime_ready", &"instance_id": _instance_id, &"pid": OS.get_process_id() })
 			print("[MCPRuntime] Connected to MCP server")
 		while _socket.get_available_packet_count() > 0:
 			_handle_message(_socket.get_packet().get_string_from_utf8())
@@ -64,36 +71,36 @@ func _handle_message(json_string: String) -> void:
 	if msg == null or msg is not Dictionary:
 		return
 
-	match msg.get("type", ""):
-		"ping":
-			_send({ "type": "pong" })
-		"tool_invoke":
-			var id: String = msg["id"]
-			var tool_name: String = msg["tool"]
-			if tool_name == "capture_screenshot":
+	match msg.get(&"type", ""):
+		&"ping":
+			_send({ &"type": &"pong" })
+		&"tool_invoke":
+			var id: String = msg[&"id"]
+			var tool_name: String = msg[&"tool"]
+			if tool_name == &"capture_screenshot":
 				_capture_screenshot_async(id)
 			else:
-				var result: Dictionary = _execute(tool_name, msg.get("args", { }))
-				_send_result(id, not result.has("error"), result)
+				var result: Dictionary = _execute(tool_name, msg.get(&"args", { }))
+				_send_result(id, result)
 
 
 func _execute(tool_name: String, args: Dictionary) -> Dictionary:
 	match tool_name:
-		"inspect_runtime_tree":
+		&"inspect_runtime_tree":
 			return _inspect_tree(args)
-		"get_runtime_property":
+		&"get_runtime_property":
 			return _get_property(args)
-		"set_runtime_property":
+		&"set_runtime_property":
 			return _set_property(args)
-		"call_runtime_method":
+		&"call_runtime_method":
 			return _call_method(args)
-		"get_runtime_metrics":
+		&"get_runtime_metrics":
 			return _get_metrics()
-		"inject_input":
+		&"inject_input":
 			return _dispatch_inject_input(args)
-		"signal_watch":
+		&"signal_watch":
 			return _dispatch_signal_watch(args)
-	return { "error": "Unknown runtime tool: " + tool_name }
+	return { &"err": "Unknown runtime tool: " + tool_name }
 
 
 # =============================================================================
@@ -103,43 +110,35 @@ func _capture_screenshot_async(id: String) -> void:
 	await RenderingServer.frame_post_draw
 	var viewport: Viewport = get_viewport()
 	if viewport == null:
-		_send_result(id, false, { "error": "No viewport available" })
+		_send_result(id, { &"err": "No viewport available" })
 		return
 
 	var img: Image = viewport.get_texture().get_image()
 	if img == null:
-		_send_result(id, false, { "error": "Failed to capture viewport image" })
+		_send_result(id, { &"err": "Failed to capture viewport image" })
 		return
 
 	var png_data: PackedByteArray = img.save_png_to_buffer()
 	if png_data.is_empty():
-		_send_result(id, false, { "error": "Failed to encode PNG" })
+		_send_result(id, { &"err": "Failed to encode PNG" })
 		return
 
 	var b64: String = Marshalls.raw_to_base64(png_data)
-	_send_result(
-		id,
-		true,
-		{
-			"image_base64": b64,
-			"width": img.get_width(),
-			"height": img.get_height(),
-		},
-	)
+	_send_result(id, { &"img": b64, &"width": img.get_width(), &"height": img.get_height() })
 
 
 # =============================================================================
 # inspect_runtime_tree
 # =============================================================================
 func _inspect_tree(args: Dictionary) -> Dictionary:
-	var root_path: String = args.get("root_path", "/root")
-	var max_depth: int = clampi(args.get("max_depth", MAX_DEPTH_DEFAULT), 1, MAX_DEPTH_LIMIT)
+	var root_path: String = args.get(&"root_path", "/root")
+	var max_depth: int = clampi(args.get(&"max_depth", MAX_DEPTH_DEFAULT), 1, MAX_DEPTH_LIMIT)
 
 	var root: Node = get_tree().root.get_node_or_null(root_path)
 	if root == null:
-		return { "error": "Node not found: " + root_path }
+		return { &"err": "Node not found: " + root_path }
 
-	return { "tree": _serialize_node_tree(root, 0, max_depth) }
+	return { &"tree": _serialize_node_tree(root, 0, max_depth) }
 
 
 func _serialize_node_tree(node: Node, depth: int, max_depth: int) -> Dictionary:
@@ -148,25 +147,25 @@ func _serialize_node_tree(node: Node, depth: int, max_depth: int) -> Dictionary:
 		var children: Array[Dictionary] = []
 		for child: Node in node.get_children():
 			children.append(_serialize_node_tree(child, depth + 1, max_depth))
-		result["children"] = children
+		result[&"children"] = children
 	elif depth < max_depth:
 		pass # leaf node — omit children key to save allocation
 	else:
 		var child_count: int = node.get_child_count()
 		if child_count > 0:
-			result["child_count"] = child_count
+			result[&"child_count"] = child_count
 	return result
 
 
 func _serialize_node(node: Node) -> Dictionary:
 	var result: Dictionary = {
-		"name": node.name,
-		"type": node.get_class(),
-		"path": str(node.get_path()),
+		&"name": node.name,
+		&"type": node.get_class(),
+		&"path": str(node.get_path()),
 	}
 	var script := node.get_script()
 	if script:
-		result["script"] = script.resource_path
+		result[&"script"] = script.resource_path
 	return result
 
 
@@ -174,67 +173,61 @@ func _serialize_node(node: Node) -> Dictionary:
 # get_runtime_property
 # =============================================================================
 func _get_property(args: Dictionary) -> Dictionary:
-	var node_path: String = args["node_path"]
-	var property: String = args["property"]
+	var node_path: String = args[&"node_path"]
+	var property: String = args[&"property"]
 	if node_path.is_empty() or property.is_empty():
-		return { "error": "Missing node_path or property" }
+		return { &"err": "Missing node_path or property" }
 
 	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return { "error": "Node not found: " + node_path }
+		return { &"err": "Node not found: " + node_path }
 
 	var value: Variant = node.get(property)
-	return { "node_path": node_path, "property": property, "value": _serialize_value(value) }
+	return { &"node_path": node_path,&"property": property,&"value": _serialize_value(value) }
 
 
 # =============================================================================
 # set_runtime_property
 # =============================================================================
 func _set_property(args: Dictionary) -> Dictionary:
-	var node_path: String = args["node_path"]
-	var property: String = args["property"]
+	var node_path: String = args[&"node_path"]
+	var property: String = args[&"property"]
 	if node_path.is_empty() or property.is_empty():
-		return { "error": "Missing node_path or property" }
+		return { &"err": "Missing node_path or property" }
 
 	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return { "error": "Node not found: " + node_path }
+		return { &"err": "Node not found: " + node_path }
 
 	var old_value: Variant = node.get(property)
-	var new_value: Variant = _deserialize_value(args.get("value"))
+	var new_value: Variant = _deserialize_value(args.get(&"value"))
 	node.set(property, new_value)
 
-	return {
-		"node_path": node_path,
-		"property": property,
-		"old_value": _serialize_value(old_value),
-		"new_value": _serialize_value(node.get(property)),
-	}
+	return { &"old": _serialize_value(old_value) }
 
 
 # =============================================================================
 # call_runtime_method
 # =============================================================================
 func _call_method(args: Dictionary) -> Dictionary:
-	var node_path: String = args["node_path"]
-	var method: String = args["method"]
+	var node_path: String = args[&"node_path"]
+	var method: String = args[&"method"]
 	if node_path.is_empty() or method.is_empty():
-		return { "error": "Missing node_path or method" }
+		return { &"err": "Missing node_path or method" }
 
 	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return { "error": "Node not found: " + node_path }
+		return { &"err": "Node not found: " + node_path }
 
 	if not node.has_method(method):
-		return { "error": "Method not found: " + method + " on " + node_path }
+		return { &"err": "Method not found: " + method + " on " + node_path }
 
-	var call_args: Array = args.get("args", []) if args.get("args") is Array else []
 	var deserialized: Array = []
-	for arg: Variant in call_args:
+	for arg: Variant in args.get(&"args", []):
 		deserialized.append(_deserialize_value(arg))
 
 	var result: Variant = node.callv(method, deserialized)
-	return { "result": _serialize_value(result) }
+	return { &"result": _serialize_value(result) }
 
 
 # =============================================================================
@@ -242,23 +235,23 @@ func _call_method(args: Dictionary) -> Dictionary:
 # =============================================================================
 func _get_metrics() -> Dictionary:
 	return {
-		"fps": Performance.get_monitor(Performance.TIME_FPS),
-		"frame_time_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
-		"physics_time_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
-		"memory": {
-			"static_mb": Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0,
-			"static_max_mb": Performance.get_monitor(Performance.MEMORY_STATIC_MAX) / 1048576.0,
+		&"fps": Performance.get_monitor(Performance.TIME_FPS),
+		&"frame_time_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		&"physics_time_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		&"memory": {
+			&"static_mb": Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0,
+			&"static_max_mb": Performance.get_monitor(Performance.MEMORY_STATIC_MAX) / 1048576.0,
 		},
-		"objects": {
-			"node_count": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
-			"object_count": Performance.get_monitor(Performance.OBJECT_COUNT),
-			"orphan_node_count": Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT),
-			"resource_count": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT),
+		&"objects": {
+			&"node_count": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+			&"object_count": Performance.get_monitor(Performance.OBJECT_COUNT),
+			&"orphan_node_count": Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT),
+			&"resource_count": Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT),
 		},
-		"render": {
-			"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
-			"total_objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
-			"total_primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+		&"render": {
+			&"draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			&"total_objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+			&"total_primitives": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
 		},
 	}
 
@@ -267,99 +260,101 @@ func _get_metrics() -> Dictionary:
 # inject_input dispatcher
 # =============================================================================
 func _dispatch_inject_input(args: Dictionary) -> Dictionary:
-	var input_type: String = args.get("type", "")
+	args.merge(args.get(&"properties", {}))
+	var input_type: String = args.get(&"type", "")
 	match input_type:
-		"action":
+		&"action":
 			return _inject_action(args)
-		"key":
+		&"key":
 			return _inject_key(args)
-		"mouse_click":
+		&"mouse_click":
 			return _inject_mouse_click(args)
-		"mouse_motion":
+		&"mouse_motion":
 			return _inject_mouse_motion(args)
-	return { "error": "Unknown input type: " + input_type + " (use action, key, mouse_click, or mouse_motion)" }
+	return { &"err": "Unknown input type: " + input_type + " (use action, key, mouse_click, or mouse_motion)" }
 
 
 # =============================================================================
 # signal_watch dispatcher
 # =============================================================================
 func _dispatch_signal_watch(args: Dictionary) -> Dictionary:
-	var sig_action: String = args.get("action", "")
+	args.merge(args.get(&"properties", {}))
+	var sig_action: String = args.get(&"action", "")
 	match sig_action:
-		"watch":
+		&"watch":
 			return _watch_signal(args)
-		"unwatch":
+		&"unwatch":
 			return _unwatch_signal(args)
-		"get_emissions":
+		&"get_emissions":
 			return _get_signal_emissions(args)
-	return { "error": "Unknown signal_watch action: " + sig_action + " (use watch, unwatch, or get_emissions)" }
+	return { &"err": "Unknown signal_watch action: " + sig_action + " (use watch, unwatch, or get_emissions)" }
 
 
 # =============================================================================
 # inject_action
 # =============================================================================
 func _inject_action(args: Dictionary) -> Dictionary:
-	var action: String = args["action"]
+	var action: String = args[&"action"]
 	if action.is_empty():
-		return { "error": "Missing action" }
+		return { &"err": "Missing action" }
 
-	var pressed: bool = args.get("pressed", true)
-	var strength: float = args.get("strength", 1.0)
+	var pressed: bool = args.get(&"pressed", true)
+	var strength: float = args.get(&"strength", 1.0)
 
 	if not InputMap.has_action(action):
-		return { "error": "Unknown action: " + action }
+		return { &"err": "Unknown action: " + action }
 
 	if pressed:
 		Input.action_press(action, strength)
 	else:
 		Input.action_release(action)
 
-	return { "action": action, "pressed": pressed, "strength": strength }
+	return {}
 
 
 # =============================================================================
 # inject_key
 # =============================================================================
 func _inject_key(args: Dictionary) -> Dictionary:
-	var keycode_str: String = args["keycode"]
+	var keycode_str: String = args[&"keycode"]
 	if keycode_str.is_empty():
-		return { "error": "Missing keycode" }
+		return { &"err": "Missing keycode" }
 
 	var keycode: int = OS.find_keycode_from_string(keycode_str)
 	if keycode == KEY_NONE:
-		return { "error": "Unknown keycode: " + keycode_str }
+		return { &"err": "Unknown keycode: " + keycode_str }
 
-	var pressed: bool = args.get("pressed", true)
+	var pressed: bool = args.get(&"pressed", true)
 	var ev: InputEventKey = InputEventKey.new()
 	ev.keycode = keycode
 	ev.pressed = pressed
-	ev.shift_pressed = args.get("shift", false)
-	ev.ctrl_pressed = args.get("ctrl", false)
-	ev.alt_pressed = args.get("alt", false)
-	ev.meta_pressed = args.get("meta", false)
+	ev.shift_pressed = args.get(&"shift", false)
+	ev.ctrl_pressed = args.get(&"ctrl", false)
+	ev.alt_pressed = args.get(&"alt", false)
+	ev.meta_pressed = args.get(&"meta", false)
 	Input.parse_input_event(ev)
 
-	return { "keycode": keycode_str, "pressed": pressed }
+	return {}
 
 
 # =============================================================================
 # inject_mouse_click
 # =============================================================================
 func _inject_mouse_click(args: Dictionary) -> Dictionary:
-	var x: float = args["x"]
-	var y: float = args["y"]
-	var button: String = args.get("button", "left")
+	var x: float = args[&"x"]
+	var y: float = args[&"y"]
+	var button: String = args.get(&"button", "left")
 
 	var button_index: int
 	match button:
-		"left":
+		&"left":
 			button_index = MOUSE_BUTTON_LEFT
-		"right":
+		&"right":
 			button_index = MOUSE_BUTTON_RIGHT
-		"middle":
+		&"middle":
 			button_index = MOUSE_BUTTON_MIDDLE
 		_:
-			return { "error": "Unknown button: " + button + " (use left, right, or middle)" }
+			return { &"err": "Unknown button: " + button + " (use left, right, or middle)" }
 
 	var pos: Vector2 = Vector2(x, y)
 
@@ -379,17 +374,17 @@ func _inject_mouse_click(args: Dictionary) -> Dictionary:
 	release.pressed = false
 	Input.parse_input_event(release)
 
-	return { "x": x, "y": y, "button": button }
+	return {}
 
 
 # =============================================================================
 # inject_mouse_motion
 # =============================================================================
 func _inject_mouse_motion(args: Dictionary) -> Dictionary:
-	var rel_x: float = args.get("relative_x", 0.0)
-	var rel_y: float = args.get("relative_y", 0.0)
-	var pos_x: float = args.get("position_x", 0.0)
-	var pos_y: float = args.get("position_y", 0.0)
+	var rel_x: float = args.get(&"relative_x", 0.0)
+	var rel_y: float = args.get(&"relative_y", 0.0)
+	var pos_x: float = args.get(&"position_x", 0.0)
+	var pos_y: float = args.get(&"position_y", 0.0)
 
 	var ev: InputEventMouseMotion = InputEventMouseMotion.new()
 	ev.relative = Vector2(rel_x, rel_y)
@@ -397,36 +392,36 @@ func _inject_mouse_motion(args: Dictionary) -> Dictionary:
 	ev.global_position = Vector2(pos_x, pos_y)
 	Input.parse_input_event(ev)
 
-	return { "relative": { "x": rel_x, "y": rel_y }, "position": { "x": pos_x, "y": pos_y } }
+	return {}
 
 
 # =============================================================================
 # watch_signal
 # =============================================================================
 func _watch_signal(args: Dictionary) -> Dictionary:
-	var node_path: String = args["node_path"]
-	var signal_name: String = args["signal_name"]
+	var node_path: String = args[&"node_path"]
+	var signal_name: String = args[&"signal_name"]
 	if node_path.is_empty() or signal_name.is_empty():
-		return { "error": "Missing node_path or signal_name" }
+		return { &"err": "Missing node_path or signal_name" }
 
 	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node == null:
-		return { "error": "Node not found: " + node_path }
+		return { &"err": "Node not found: " + node_path }
 
 	if not node.has_signal(signal_name):
-		return { "error": "Signal not found: " + signal_name + " on " + node_path }
+		return { &"err": "Signal not found: " + signal_name + " on " + node_path }
 
 	var key: String = node_path + "::" + signal_name
 	if _watched_signals.has(key):
-		return { "already_watching": true, "key": key }
+		return { &"already_watching": true,&"key": key }
 
 	# We need a closure that captures node_path and signal_name,
 	# while accepting any number of signal arguments via a lambda.
 	var sig: Signal = Signal(node, signal_name)
 	var arg_count: int = 0
 	for s: Dictionary in node.get_signal_list():
-		if s["name"] == signal_name:
-			arg_count = s["args"].size()
+		if s[&"name"] == signal_name:
+			arg_count = s[&"args"].size()
 			break
 
 	# Build a callable matching the exact signal arity.
@@ -448,21 +443,21 @@ func _watch_signal(args: Dictionary) -> Dictionary:
 	sig.connect(cb)
 	_watched_signals[key] = cb
 
-	return { "watching": key }
+	return { &"watching": key }
 
 
 # =============================================================================
 # unwatch_signal
 # =============================================================================
 func _unwatch_signal(args: Dictionary) -> Dictionary:
-	var node_path: String = args["node_path"]
-	var signal_name: String = args["signal_name"]
+	var node_path: String = args[&"node_path"]
+	var signal_name: String = args[&"signal_name"]
 	if node_path.is_empty() or signal_name.is_empty():
-		return { "error": "Missing node_path or signal_name" }
+		return { &"err": "Missing node_path or signal_name" }
 
 	var key: String = node_path + "::" + signal_name
 	if not _watched_signals.has(key):
-		return { "error": "Not watching: " + key }
+		return { &"err": "Not watching: " + key }
 
 	var node: Node = get_tree().root.get_node_or_null(node_path)
 	if node != null:
@@ -472,15 +467,15 @@ func _unwatch_signal(args: Dictionary) -> Dictionary:
 			sig.disconnect(cb)
 
 	_watched_signals.erase(key)
-	return { "unwatched": key }
+	return { &"unwatched": key }
 
 
 # =============================================================================
 # get_signal_emissions
 # =============================================================================
 func _get_signal_emissions(args: Dictionary) -> Dictionary:
-	var filter_key: String = args.get("key", "")
-	var clear: bool = args.get("clear", true)
+	var filter_key: String = args.get(&"key", "")
+	var clear: bool = args.get(&"clear", true)
 
 	var out: Array[Dictionary]
 	if filter_key.is_empty():
@@ -491,7 +486,7 @@ func _get_signal_emissions(args: Dictionary) -> Dictionary:
 		out = []
 		var remaining: Array[Dictionary] = []
 		for e: Dictionary in _signal_emissions:
-			var k: String = e["node_path"] + "::" + e["signal_name"]
+			var k: String = e[&"node_path"] + "::" + e[&"signal_name"]
 			if k == filter_key:
 				out.append(e)
 			else:
@@ -499,7 +494,7 @@ func _get_signal_emissions(args: Dictionary) -> Dictionary:
 		if clear:
 			_signal_emissions = remaining
 
-	return { "emissions": _tabular(out, ["node_path", "signal_name", "args", "timestamp"]), "watching": _watched_signals.keys() }
+	return { &"emissions": _tabular(out, [&"node_path", &"signal_name", &"args", &"timestamp"]), &"watching": _watched_signals.keys() }
 
 
 func _on_signal_fired(node_path: String, signal_name: String, sig_args: Array) -> void:
@@ -510,10 +505,10 @@ func _on_signal_fired(node_path: String, signal_name: String, sig_args: Array) -
 		serialized_args.append(_serialize_value(arg))
 	_signal_emissions.append(
 		{
-			"node_path": node_path,
-			"signal_name": signal_name,
-			"args": serialized_args,
-			"timestamp": Time.get_ticks_msec(),
+			&"node_path": node_path,
+			&"signal_name": signal_name,
+			&"args": serialized_args,
+			&"timestamp": Time.get_ticks_msec(),
 		},
 	)
 
@@ -575,28 +570,28 @@ func _deserialize_value(value: Variant) -> Variant:
 		return _parse_compact_type(value)
 	if value is Dictionary:
 		# Legacy dict format fallback + plain dicts
-		var t: String = value.get("_type", "")
+		var t: String = value.get(&"_type", "")
 		if t.is_empty():
 			return value
 		match t:
 			"Vector2":
-				return Vector2(value.get("x", 0.0), value.get("y", 0.0))
+				return Vector2(value.get(&"x", 0.0), value.get(&"y", 0.0))
 			"Vector2i":
-				return Vector2i(int(value.get("x", 0)), int(value.get("y", 0)))
+				return Vector2i(int(value.get(&"x", 0)), int(value.get(&"y", 0)))
 			"Vector3":
-				return Vector3(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0))
+				return Vector3(value.get(&"x", 0.0), value.get(&"y", 0.0), value.get(&"z", 0.0))
 			"Vector3i":
-				return Vector3i(int(value.get("x", 0)), int(value.get("y", 0)), int(value.get("z", 0)))
+				return Vector3i(int(value.get(&"x", 0)), int(value.get(&"y", 0)), int(value.get(&"z", 0)))
 			"Vector4":
-				return Vector4(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0), value.get("w", 0.0))
+				return Vector4(value.get(&"x", 0.0), value.get(&"y", 0.0), value.get(&"z", 0.0), value.get(&"w", 0.0))
 			"Quaternion":
-				return Quaternion(value.get("x", 0.0), value.get("y", 0.0), value.get("z", 0.0), value.get("w", 1.0))
+				return Quaternion(value.get(&"x", 0.0), value.get(&"y", 0.0), value.get(&"z", 0.0), value.get(&"w", 1.0))
 			"Color":
-				return Color(value.get("r", 0.0), value.get("g", 0.0), value.get("b", 0.0), value.get("a", 1.0))
+				return Color(value.get(&"r", 0.0), value.get(&"g", 0.0), value.get(&"b", 0.0), value.get(&"a", 1.0))
 			"Rect2":
-				return Rect2(value.get("x", 0.0), value.get("y", 0.0), value.get("w", 0.0), value.get("h", 0.0))
+				return Rect2(value.get(&"x", 0.0), value.get(&"y", 0.0), value.get(&"w", 0.0), value.get(&"h", 0.0))
 			"NodePath":
-				return NodePath(value.get("path", ""))
+				return NodePath(value.get(&"path", ""))
 		return value
 	if value is Array:
 		var out: Array = []
@@ -645,7 +640,7 @@ func _tabular(items: Array, keys: Array) -> Dictionary:
 		for k: String in keys:
 			row.append(item.get(k))
 		rows.append(row)
-	return { "_h": keys, "rows": rows }
+	return { &"_h": keys, &"rows": rows }
 
 
 # =============================================================================
@@ -656,14 +651,5 @@ func _send(msg: Dictionary) -> void:
 		_socket.send_text(JSON.stringify(msg))
 
 
-func _send_result(id: String, success: bool, result: Dictionary) -> void:
-	var msg: Dictionary = {
-		"type": "tool_result",
-		"id": id,
-		"success": success,
-	}
-	if success:
-		msg["result"] = result
-	else:
-		msg["error"] = result.get("error", "Unknown error")
-	_send(msg)
+func _send_result(id: String, result: Dictionary) -> void:
+	_send({ &"type": &"tool_result", &"id": id, &"result": result })

@@ -32,22 +32,18 @@ func set_utils(utils: ToolUtils) -> void:
 func list_dir(args: Dictionary) -> Dictionary:
 	var root: String = _utils.validate_res_path(args[&"root"])
 	if root.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 	var include_hidden: bool = args.get(&"include_hidden", false)
 	var recursive: bool = args.get(&"recursive", false)
 	var glob_filter: String = args.get(&"glob", "")
 
 	if recursive:
 		var all_files: PackedStringArray = _collect_files(root, glob_filter)
-		return {
-			&"path": root,
-			&"files": all_files,
-			&"recursive": true,
-		}
+		return { &"files": all_files }
 
 	var dir: DirAccess = DirAccess.open(root)
 	if dir == null:
-		return { &"error": "Cannot open directory: " + root }
+		return { &"err": "Cannot open directory: " + root, &"sug": "Use list_dir to verify the directory exists" }
 
 	var files: PackedStringArray = []
 	var folders: PackedStringArray = []
@@ -78,11 +74,7 @@ func list_dir(args: Dictionary) -> Dictionary:
 	files.sort()
 	folders.sort()
 
-	return {
-		&"path": root,
-		&"files": files,
-		&"folders": folders,
-	}
+	return { &"files": files, &"folders": folders }
 
 
 # =============================================================================
@@ -95,21 +87,20 @@ func read_file(args: Dictionary) -> Dictionary:
 	var max_bytes: int = args.get(&"max_bytes", DEFAULT_MAX_BYTES)
 
 	if path.strip_edges().is_empty():
-		return { &"error": "Missing 'path' parameter" }
+		return { &"err": "Missing 'path' parameter" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 
 	if not FileAccess.file_exists(path):
-		return { &"error": "File not found: " + path }
+		return { &"err": "File not found: " + path, &"sug": "Use list_dir or search_project to find the correct path" }
 
 	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return { &"error": "Cannot open file: " + path }
+		return { &"err": "Cannot open file: " + path }
 
 	var content: String
-	var line_count: int = 0
 
 	# Read as text — get_as_text() handles UTF-8 correctly without splitting
 	# multi-byte characters (unlike get_buffer().get_string_from_utf8())
@@ -120,7 +111,6 @@ func read_file(args: Dictionary) -> Dictionary:
 
 	if end_line <= 0 and start_line <= 1:
 		content = raw_content
-		line_count = content.count("\n") + 1
 	else:
 		# Slice the requested line range from the bulk-read content
 		var all_lines: PackedStringArray = raw_content.split("\n")
@@ -128,14 +118,11 @@ func read_file(args: Dictionary) -> Dictionary:
 		var to: int = all_lines.size() if end_line <= 0 else mini(end_line, all_lines.size())
 		var sliced: PackedStringArray = all_lines.slice(from, to)
 		content = "\n".join(sliced)
-		line_count = sliced.size()
 
-	return {
-		&"path": path,
-		&"content": content,
-		&"line_count": line_count,
-		&"range": [start_line, end_line] if end_line > 0 else null,
-	}
+	var result: Dictionary = { &"content": content }
+	if end_line > 0:
+		result[&"range"] = [start_line, end_line]
+	return result
 
 
 # =============================================================================
@@ -149,17 +136,17 @@ func read_files(args: Dictionary) -> Dictionary:
 	var max_bytes: int = args.get(&"max_bytes", DEFAULT_MAX_BYTES)
 
 	if paths.is_empty():
-		return { &"error": "Missing 'paths' array" }
+		return { &"err": "Missing 'paths' array" }
 	if paths.size() > MAX_BULK_FILES:
-		return { &"error": "Too many files (%d). Maximum is %d" % [paths.size(), MAX_BULK_FILES] }
+		return { &"err": "Too many files (%d). Maximum is %d" % [paths.size(), MAX_BULK_FILES] }
 
 	var files: Array[Dictionary] = []
 	for p: String in paths:
 		var result: Dictionary = read_file({ &"path": p, &"max_bytes": max_bytes })
-		if result.has(&"error"):
-			files.append({ &"path": p, &"error": result[&"error"] })
+		if result.has(&"err"):
+			files.append({ &"path": p, &"err": result[&"err"] })
 		else:
-			files.append({ &"path": result[&"path"], &"content": result[&"content"], &"line_count": result[&"line_count"] })
+			files.append({ &"path": p, &"content": result[&"content"] })
 
 	return { &"files": files }
 
@@ -173,51 +160,51 @@ func bulk_edit(args: Dictionary) -> Dictionary:
 	var edits: Array
 	edits.assign(args[&"edits"])
 	if edits.is_empty():
-		return { &"error": "Missing 'edits' array" }
+		return { &"err": "Missing 'edits' array" }
 
 	var results: Array[Dictionary] = []
 	var success_count: int = 0
 
 	for edit: Variant in edits:
 		if edit is not Dictionary:
-			results.append({ &"error": "Invalid edit entry (not a dictionary)" })
+			results.append({ &"err": "Invalid edit entry (not a dictionary)" })
 			continue
 
 		var file_path: String = edit[&"file"]
 		if file_path.is_empty():
-			results.append({ &"error": "Missing 'file' in edit entry" })
+			results.append({ &"err": "Missing 'file' in edit entry" })
 			continue
 
 		file_path = _utils.validate_res_path(file_path)
 		if file_path.is_empty():
-			results.append({ &"file": edit[&"file"], &"replaced": false, &"error": "Path escapes project root" })
+			results.append({ &"file": edit[&"file"], &"replaced": false, &"err": "Path escapes project root" })
 			continue
 
 		if not FileAccess.file_exists(file_path):
-			results.append({ &"file": file_path, &"replaced": false, &"error": "File not found" })
+			results.append({ &"file": file_path, &"replaced": false, &"err": "File not found" })
 			continue
 
 		var old_text: String = edit[&"old"]
 		var new_text: String = edit[&"new"]
 		if old_text.is_empty():
-			results.append({ &"file": file_path, &"replaced": false, &"error": "Missing 'old' text" })
+			results.append({ &"file": file_path, &"replaced": false, &"err": "Missing 'old' text" })
 			continue
 
 		var file: FileAccess = FileAccess.open(file_path, FileAccess.READ)
 		if file == null:
-			results.append({ &"file": file_path, &"replaced": false, &"error": "Cannot open file" })
+			results.append({ &"file": file_path, &"replaced": false, &"err": "Cannot open file" })
 			continue
 		var content: String = file.get_as_text()
 		file.close()
 
 		if content.find(old_text) == -1:
-			results.append({ &"file": file_path, &"replaced": false, &"error": "old text not found in file" })
+			results.append({ &"file": file_path, &"replaced": false, &"err": "old text not found in file" })
 			continue
 
 		var new_content: String = content.replace(old_text, new_text)
 		file = FileAccess.open(file_path, FileAccess.WRITE)
 		if file == null:
-			results.append({ &"file": file_path, &"replaced": false, &"error": "Cannot write file" })
+			results.append({ &"file": file_path, &"replaced": false, &"err": "Cannot write file" })
 			continue
 		file.store_string(new_content)
 		file.close()
@@ -240,14 +227,14 @@ func create_file(args: Dictionary) -> Dictionary:
 	var overwrite: bool = args.get(&"overwrite", false)
 
 	if path.strip_edges().is_empty():
-		return { &"error": "Missing 'path'" }
+		return { &"err": "Missing 'path'" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 
 	if FileAccess.file_exists(path) and not overwrite:
-		return { &"error": "File already exists: " + path + ". Set overwrite=true to replace." }
+		return { &"err": "File already exists: " + path + ". Set overwrite=true to replace." }
 
 	# Ensure parent directory exists
 	var dir_path: String = path.get_base_dir()
@@ -256,16 +243,13 @@ func create_file(args: Dictionary) -> Dictionary:
 
 	var file: FileAccess = FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
-		return { &"error": "Cannot create file: " + path }
+		return { &"err": "Cannot create file: " + path }
 	file.store_string(content)
 	file.close()
 
 	_utils.refresh_filesystem()
 
-	return {
-		&"path": path,
-		&"line_count": content.count("\n") + 1,
-	}
+	return {}
 
 
 # =============================================================================
@@ -280,7 +264,7 @@ func search_project(args: Dictionary) -> Dictionary:
 	var exclude_dirs: PackedStringArray = _parse_exclude_dirs(args)
 
 	if query.strip_edges().is_empty():
-		return { &"error": "Missing 'query' parameter" }
+		return { &"err": "Missing 'query' parameter" }
 
 	# Compile regex if requested
 	var compiled_regex: RegEx = null
@@ -288,7 +272,7 @@ func search_project(args: Dictionary) -> Dictionary:
 		compiled_regex = RegEx.new()
 		var err: Error = compiled_regex.compile(query)
 		if err != OK:
-			return { &"error": "Invalid regex pattern: " + query }
+			return { &"err": "Invalid regex pattern: " + query }
 
 	var search_query: String = query if case_sensitive else query.to_lower()
 	var files: PackedStringArray = _collect_files("res://", glob_filter, exclude_dirs)
@@ -345,9 +329,8 @@ func search_project(args: Dictionary) -> Dictionary:
 					break
 
 	return {
-		&"query": query,
-		&"matches": _utils.tabular(matches, [&"file", &"line", &"content"]),
-		&"truncated": matches.size() >= max_results,
+		&"m": _utils.tabular(matches, [&"file", &"line", &"content"]),
+		&"trunc": matches.size() >= max_results,
 	}
 
 
@@ -435,9 +418,9 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 	var preview: bool = args.get(&"preview", false)
 
 	if search.is_empty():
-		return { &"error": "Missing 'search' parameter" }
+		return { &"err": "Missing 'search' parameter" }
 	if search == replace:
-		return { &"error": "'search' and 'replace' are identical" }
+		return { &"err": "'search' and 'replace' are identical" }
 
 	var files: PackedStringArray = _collect_files("res://", glob_filter, exclude_dirs)
 	var search_term: String = search if case_sensitive else search.to_lower()
@@ -522,7 +505,6 @@ func replace_in_files(args: Dictionary) -> Dictionary:
 	return {
 		&"files": modified_files,
 		&"replacements": total_replacements,
-		&"preview": preview,
 	}
 
 
@@ -539,22 +521,22 @@ static func _is_binary_ext(ext: String) -> bool:
 func create_folder(args: Dictionary) -> Dictionary:
 	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
-		return { &"error": "Missing 'path'" }
+		return { &"err": "Missing 'path'" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 
 	if DirAccess.dir_exists_absolute(path):
-		return { &"path": path, &"existed": true }
+		return {}
 
 	var err: Error = DirAccess.make_dir_recursive_absolute(path)
 	if err != OK:
-		return { &"error": "Failed to create directory: " + str(err) }
+		return { &"err": "Failed to create directory: " + str(err) }
 
 	_utils.refresh_filesystem()
 
-	return { &"path": path }
+	return {}
 
 
 # =============================================================================
@@ -566,16 +548,16 @@ func delete_file(args: Dictionary) -> Dictionary:
 	var create_backup: bool = args.get(&"create_backup", true)
 
 	if path.strip_edges().is_empty():
-		return { &"error": "Missing 'path'" }
+		return { &"err": "Missing 'path'" }
 	if not confirm:
-		return { &"error": "Must set confirm=true to delete" }
+		return { &"err": "Must set confirm=true to delete" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 
 	if not FileAccess.file_exists(path):
-		return { &"error": "File not found: " + path }
+		return { &"err": "File not found: " + path, &"sug": "Use list_dir or search_project to find the correct path" }
 
 	# Create backup
 	if create_backup:
@@ -584,11 +566,11 @@ func delete_file(args: Dictionary) -> Dictionary:
 
 	var err: Error = DirAccess.remove_absolute(path)
 	if err != OK:
-		return { &"error": "Failed to delete file: " + str(err) }
+		return { &"err": "Failed to delete file: " + str(err) }
 
 	_utils.refresh_filesystem()
 
-	return { &"path": path, &"backup": create_backup }
+	return {}
 
 
 # =============================================================================
@@ -600,28 +582,28 @@ func delete_folder(args: Dictionary) -> Dictionary:
 	var recursive: bool = args.get(&"recursive", false)
 
 	if path.strip_edges().is_empty():
-		return { &"error": "Missing 'path'" }
+		return { &"err": "Missing 'path'" }
 	if not confirm:
-		return { &"error": "Must set confirm=true to delete" }
+		return { &"err": "Must set confirm=true to delete" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 	if path == "res://" or path == "res://addons" or path == "res://addons/godot_mcp":
-		return { &"error": "Refusing to delete protected directory: " + path }
+		return { &"err": "Refusing to delete protected directory: " + path }
 
 	if not DirAccess.dir_exists_absolute(path):
-		return { &"error": "Directory not found: " + path }
+		return { &"err": "Directory not found: " + path, &"sug": "Use list_dir to see available directories" }
 
 	if recursive:
 		var removed: bool = _remove_dir_recursive(path)
 		if not removed:
-			return { &"error": "Failed to remove directory recursively: " + path }
+			return { &"err": "Failed to remove directory recursively: " + path }
 	else:
 		# Only delete if empty
 		var dir: DirAccess = DirAccess.open(path)
 		if dir == null:
-			return { &"error": "Cannot open directory: " + path }
+			return { &"err": "Cannot open directory: " + path }
 		dir.list_dir_begin()
 		var has_contents: bool = false
 		var name: String = dir.get_next()
@@ -632,13 +614,13 @@ func delete_folder(args: Dictionary) -> Dictionary:
 			name = dir.get_next()
 		dir.list_dir_end()
 		if has_contents:
-			return { &"error": "Directory is not empty. Use recursive=true to delete contents." }
+			return { &"err": "Directory is not empty. Use recursive=true to delete contents." }
 		var err: Error = DirAccess.remove_absolute(path)
 		if err != OK:
-			return { &"error": "Failed to delete directory: " + str(err) }
+			return { &"err": "Failed to delete directory: " + str(err) }
 
 	_utils.refresh_filesystem()
-	return { &"path": path }
+	return {}
 
 
 func _remove_dir_recursive(path: String) -> bool:
@@ -672,21 +654,21 @@ func rename_file(args: Dictionary) -> Dictionary:
 	var new_path: String = args[&"new_path"]
 
 	if old_path.strip_edges().is_empty():
-		return { &"error": "Missing 'old_path'" }
+		return { &"err": "Missing 'old_path'" }
 	if new_path.strip_edges().is_empty():
-		return { &"error": "Missing 'new_path'" }
+		return { &"err": "Missing 'new_path'" }
 
 	old_path = _utils.validate_res_path(old_path)
 	if old_path.is_empty():
-		return { &"error": "old_path escapes project root" }
+		return { &"err": "old_path escapes project root" }
 	new_path = _utils.validate_res_path(new_path)
 	if new_path.is_empty():
-		return { &"error": "new_path escapes project root" }
+		return { &"err": "new_path escapes project root" }
 
 	if not FileAccess.file_exists(old_path):
-		return { &"error": "File not found: " + old_path }
+		return { &"err": "File not found: " + old_path, &"sug": "Use list_dir or search_project to find the correct path" }
 	if FileAccess.file_exists(new_path):
-		return { &"error": "Target already exists: " + new_path }
+		return { &"err": "Target already exists: " + new_path }
 
 	# Ensure target directory exists
 	var dir_path: String = new_path.get_base_dir()
@@ -695,14 +677,11 @@ func rename_file(args: Dictionary) -> Dictionary:
 
 	var err: Error = DirAccess.rename_absolute(old_path, new_path)
 	if err != OK:
-		return { &"error": "Failed to rename: " + str(err) }
+		return { &"err": "Failed to rename: " + str(err) }
 
 	_utils.refresh_filesystem()
 
-	return {
-		&"old_path": old_path,
-		&"new_path": new_path,
-	}
+	return {}
 
 
 # =============================================================================
@@ -716,7 +695,7 @@ func find_references(args: Dictionary) -> Dictionary:
 	var exclude_dirs: PackedStringArray = _parse_exclude_dirs(args)
 
 	if symbol.strip_edges().is_empty():
-		return { &"error": "Missing 'symbol' parameter" }
+		return { &"err": "Missing 'symbol' parameter" }
 
 	# Escape regex metacharacters in the symbol name, then wrap with word boundaries
 	var escaped: String = symbol
@@ -725,7 +704,7 @@ func find_references(args: Dictionary) -> Dictionary:
 	var regex: RegEx = RegEx.new()
 	var err: Error = regex.compile("\\b" + escaped + "\\b")
 	if err != OK:
-		return { &"error": "Cannot compile regex for symbol: " + symbol }
+		return { &"err": "Cannot compile regex for symbol: " + symbol }
 
 	var files: PackedStringArray = _collect_files("res://", glob_filter, exclude_dirs)
 	var matches: Array[Dictionary] = []
@@ -757,9 +736,8 @@ func find_references(args: Dictionary) -> Dictionary:
 					break
 
 	return {
-		&"symbol": symbol,
-		&"matches": _utils.tabular(matches, [&"file", &"line", &"content"]),
-		&"truncated": matches.size() >= max_results,
+		&"m": _utils.tabular(matches, [&"file", &"line", &"content"]),
+		&"trunc": matches.size() >= max_results,
 	}
 
 
@@ -790,7 +768,4 @@ func list_resources(args: Dictionary) -> Dictionary:
 				if cls == type_filter or res.is_class(type_filter):
 					resources.append({ &"path": file_path, &"type": cls })
 
-	return {
-		&"resources": resources,
-		&"type_filter": type_filter if not type_filter.is_empty() else "all",
-	}
+	return { &"resources": resources }

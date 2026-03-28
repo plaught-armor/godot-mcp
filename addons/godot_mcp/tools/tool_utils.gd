@@ -5,11 +5,11 @@ class_name ToolUtils
 ## Shared utility functions used across all MCP tool handlers.
 
 const SKIP_PROPS: Dictionary = {
-	"script": true,
-	"owner": true,
-	"scene_file_path": true,
-	"unique_name_in_owner": true,
-	"editor_description": true,
+	&"script": true,
+	&"owner": true,
+	&"scene_file_path": true,
+	&"unique_name_in_owner": true,
+	&"editor_description": true,
 }
 
 var _editor_plugin: EditorPlugin = null

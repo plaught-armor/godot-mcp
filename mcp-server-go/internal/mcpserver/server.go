@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/bridge"
@@ -20,7 +22,7 @@ const (
 // If lazy is true, only core tools are registered initially; other categories
 // are activated on demand via get_godot_status (for clients that support listChanged).
 // If lazy is false, all tools are registered upfront (for Claude Desktop).
-func New(b *bridge.GodotBridge, lazy bool) *mcp.Server {
+func New(b bridge.Bridge, lazy bool) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Version: serverVersion,
@@ -32,12 +34,18 @@ func New(b *bridge.GodotBridge, lazy bool) *mcp.Server {
 	return newEager(server, b)
 }
 
-func newEager(server *mcp.Server, b *bridge.GodotBridge) *mcp.Server {
+func newEager(server *mcp.Server, b bridge.Bridge) *mcp.Server {
 	server.AddTool(
 		&mcp.Tool{
 			Name:        "get_godot_status",
-			Description: "Check Godot connection status.",
-			InputSchema: &tools.Schema{Type: "object"},
+			Description: "Check Godot connection status. Pass instance/set_primary to manage multi-instance.",
+			InputSchema: &tools.Schema{
+				Type: "object",
+				Properties: map[string]*tools.Schema{
+					"instance":    {Type: "string", Description: "Target instance ID"},
+					"set_primary": {Type: "string", Description: "Set primary instance ID"},
+				},
+			},
 		},
 		eagerStatusHandler(b),
 	)
@@ -57,18 +65,20 @@ func newEager(server *mcp.Server, b *bridge.GodotBridge) *mcp.Server {
 	return server
 }
 
-func newLazy(server *mcp.Server, b *bridge.GodotBridge) *mcp.Server {
+func newLazy(server *mcp.Server, b bridge.Bridge) *mcp.Server {
 	tsm := newToolSetManager(server, b)
 
 	server.AddTool(
 		&mcp.Tool{
 			Name:        "get_godot_status",
-			Description: "Check Godot connection. Enable/disable tool categories: scene, script, file, project, git, runtime, asset.",
+			Description: "Check Godot connection. Enable/disable tool categories: scene, script, file, project, git, runtime, asset. Pass instance/set_primary for multi-instance.",
 			InputSchema: &tools.Schema{
 				Type: "object",
 				Properties: map[string]*tools.Schema{
-					"enable":  {Type: "array", Description: "Categories to enable", Items: &tools.Schema{Type: "string"}},
-					"disable": {Type: "array", Description: "Categories to disable", Items: &tools.Schema{Type: "string"}},
+					"enable":      {Type: "array", Description: "Categories to enable", Items: &tools.Schema{Type: "string"}},
+					"disable":     {Type: "array", Description: "Categories to disable", Items: &tools.Schema{Type: "string"}},
+					"instance":    {Type: "string", Description: "Target instance ID"},
+					"set_primary": {Type: "string", Description: "Set primary instance ID"},
 				},
 			},
 		},
@@ -90,27 +100,44 @@ func newLazy(server *mcp.Server, b *bridge.GodotBridge) *mcp.Server {
 	return server
 }
 
-func eagerStatusHandler(b *bridge.GodotBridge) mcp.ToolHandler {
+func eagerStatusHandler(b bridge.Bridge) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		var args struct {
+			SetPrimary string `json:"set_primary"`
+		}
+		if req.Params.Arguments != nil {
+			json.Unmarshal(req.Params.Arguments, &args)
+		}
+		if args.SetPrimary != "" {
+			if err := b.SetPrimary(args.SetPrimary); err != nil {
+				return errorResult(err)
+			}
+		}
+
 		status := b.GetStatus()
 		mode := "mock"
 		if status.Connected {
 			mode = "live"
 		}
-		return textResult(map[string]any{
+		result := map[string]any{
 			"connected":         status.Connected,
 			"runtime_connected": status.RuntimeConnected,
 			"mode":              mode,
-			"project_path":      status.ProjectPath,
-		})
+		}
+		if len(status.Instances) > 0 {
+			result["instances"] = status.Instances
+			result["primary"] = status.PrimaryID
+		}
+		return textResult(result)
 	}
 }
 
-func lazyStatusHandler(b *bridge.GodotBridge, tsm *ToolSetManager) mcp.ToolHandler {
+func lazyStatusHandler(b bridge.Bridge, tsm *ToolSetManager) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args struct {
-			Enable  []string `json:"enable"`
-			Disable []string `json:"disable"`
+			Enable     []string `json:"enable"`
+			Disable    []string `json:"disable"`
+			SetPrimary string   `json:"set_primary"`
 		}
 		if req.Params.Arguments != nil {
 			json.Unmarshal(req.Params.Arguments, &args)
@@ -121,24 +148,56 @@ func lazyStatusHandler(b *bridge.GodotBridge, tsm *ToolSetManager) mcp.ToolHandl
 		if len(args.Enable) > 0 {
 			tsm.EnableCategories(args.Enable...)
 		}
+		if args.SetPrimary != "" {
+			if err := b.SetPrimary(args.SetPrimary); err != nil {
+				return errorResult(err)
+			}
+		}
 
 		status := b.GetStatus()
 		mode := "mock"
 		if status.Connected {
 			mode = "live"
 		}
-		return textResult(map[string]any{
-			"connected":           status.Connected,
-			"runtime_connected":   status.RuntimeConnected,
-			"mode":                mode,
-			"project_path":        status.ProjectPath,
-			"active_categories":   tsm.ActiveCategories(),
+		result := map[string]any{
+			"connected":            status.Connected,
+			"runtime_connected":    status.RuntimeConnected,
+			"mode":                 mode,
+			"active_categories":    tsm.ActiveCategories(),
 			"available_categories": tools.Categories,
-		})
+		}
+		if len(status.Instances) > 0 {
+			result["instances"] = status.Instances
+			result["primary"] = status.PrimaryID
+		}
+		return textResult(result)
 	}
 }
 
-func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
+// extractInstance removes and returns the "instance" key from args.
+func extractInstance(args map[string]any) string {
+	v, ok := args["instance"]
+	if !ok {
+		return ""
+	}
+	delete(args, "instance")
+	s, _ := v.(string)
+	return s
+}
+
+// extractRuntime removes and returns the "runtime" key from args as a PID int.
+func extractRuntime(args map[string]any) int {
+	v, ok := args["runtime"]
+	if !ok {
+		return 0
+	}
+	delete(args, "runtime")
+	// JSON numbers come as float64
+	f, _ := v.(float64)
+	return int(f)
+}
+
+func toolHandler(b bridge.Bridge, td *tools.ToolDef) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var args map[string]any
 		if req.Params.Arguments != nil {
@@ -149,34 +208,54 @@ func toolHandler(b *bridge.GodotBridge, td *tools.ToolDef) mcp.ToolHandler {
 			args = make(map[string]any)
 		}
 
+		instanceID := extractInstance(args)
+		runtimePID := extractRuntime(args)
+
 		if td.Runtime {
-			return runtimeToolHandler(b, td, ctx, args)
+			return runtimeToolHandler(b, td, ctx, args, instanceID, runtimePID)
 		}
 
 		// Check connection before invoking — only use mocks when Godot
 		// was never connected, not when it crashes mid-invocation.
 		wasConnected := b.IsConnected()
-		raw, err := b.InvokeTool(ctx, td.Name, args)
+		raw, err := b.InvokeTool(ctx, td.Name, args, instanceID)
 		if err != nil {
 			if !wasConnected && !b.IsConnected() {
 				// Godot was not connected before the call — fall back to mock
 				return textResult(td.MockFn(args))
 			}
-			return errorResult(err)
+			return errorResultWithSuggestion(err, "Use get_godot_status to check connection")
 		}
 
-		// raw is already valid JSON from Godot — pass through without re-marshaling
-		return rawTextResult(raw), nil
+		// raw is already valid JSON from Godot — pass through.
+		// Check if the response contains "err" key and set IsError.
+		result := rawTextResult(raw)
+		if isErrorJSON(raw) {
+			result.IsError = true
+		}
+		return result, nil
 	}
 }
 
-func runtimeToolHandler(b *bridge.GodotBridge, td *tools.ToolDef, ctx context.Context, args map[string]any) (*mcp.CallToolResult, error) {
+func runtimeToolHandler(b bridge.Bridge, td *tools.ToolDef, ctx context.Context, args map[string]any, instanceID string, runtimePID int) (*mcp.CallToolResult, error) {
 	if !b.IsRuntimeConnected() {
-		return errorResult(fmt.Errorf("game is not running — use play_project first"))
+		return errorResultWithSuggestion(
+			fmt.Errorf("game is not running"),
+			"Use play_project to start the game first",
+		)
 	}
 
-	raw, err := b.InvokeRuntimeTool(ctx, td.Name, args)
+	raw, err := b.InvokeRuntimeTool(ctx, td.Name, args, instanceID, runtimePID)
 	if err != nil {
+		// If a runtime tool timed out, the debugger may have paused the game.
+		// Ask the editor plugin to press Continue so the next retry can succeed.
+		if strings.Contains(err.Error(), "timed out") {
+			if notifyErr := b.SendNotification("debugger_continue", nil, instanceID); notifyErr != nil {
+				log.Printf("[MCP] Failed to send debugger_continue: %v", notifyErr)
+			} else {
+				log.Printf("[MCP] Sent debugger_continue after runtime timeout")
+			}
+		}
 		return errorResult(err)
 	}
 
@@ -185,13 +264,17 @@ func runtimeToolHandler(b *bridge.GodotBridge, td *tools.ToolDef, ctx context.Co
 		return screenshotResult(raw)
 	}
 
-	return rawTextResult(raw), nil
+	result := rawTextResult(raw)
+	if isErrorJSON(raw) {
+		result.IsError = true
+	}
+	return result, nil
 }
 
 func screenshotResult(raw json.RawMessage) (*mcp.CallToolResult, error) {
 	var img struct {
-		Error string `json:"error"`
-		Image string `json:"image_base64"`
+		Error string `json:"err"`
+		Image string `json:"img"`
 		Width int    `json:"width"`
 		Height int   `json:"height"`
 	}
@@ -236,7 +319,7 @@ func rawTextResult(data []byte) *mcp.CallToolResult {
 
 func errorResult(err error) (*mcp.CallToolResult, error) {
 	data, _ := json.Marshal(map[string]any{
-		"error": err.Error(),
+		"err": err.Error(),
 	})
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
@@ -244,4 +327,28 @@ func errorResult(err error) (*mcp.CallToolResult, error) {
 		},
 		IsError: true,
 	}, nil
+}
+
+func errorResultWithSuggestion(err error, suggestion string) (*mcp.CallToolResult, error) {
+	data, _ := json.Marshal(map[string]any{
+		"err": err.Error(),
+		"sug": suggestion,
+	})
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{Text: string(data)},
+		},
+		IsError: true,
+	}, nil
+}
+
+// isErrorJSON checks if raw JSON contains a top-level "err" key.
+func isErrorJSON(data json.RawMessage) bool {
+	var probe struct {
+		Error *string `json:"err"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return false
+	}
+	return probe.Error != nil
 }

@@ -672,19 +672,8 @@ func (b *GodotBridge) resolveResult(pending map[string]*pendingRequest, msg Inco
 	duration := time.Since(p.start)
 	log.Printf("[GodotBridge] %sTool %s completed in %dms", label, p.toolName, duration.Milliseconds())
 
-	if msg.Success != nil && *msg.Success {
-		p.ch <- invokeResult{Data: msg.Result}
-	} else if len(msg.Result) > 0 {
-		// Error with full result dict (may contain "suggestion" etc.) —
-		// pass through as raw data so the server can forward all fields.
-		p.ch <- invokeResult{Data: msg.Result}
-	} else {
-		errMsg := msg.Error
-		if errMsg == "" {
-			errMsg = label + "tool execution failed"
-		}
-		p.ch <- invokeResult{Err: errors.New(errMsg)}
-	}
+	// Result always present — pass through. The MCP server checks for "err" key.
+	p.ch <- invokeResult{Data: msg.Result}
 }
 
 func (b *GodotBridge) handleRuntimeDisconnect(instanceID string, pid int) {

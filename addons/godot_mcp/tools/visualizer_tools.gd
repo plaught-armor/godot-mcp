@@ -60,14 +60,14 @@ func map_project(args: Dictionary) -> Dictionary:
 	var include_addons: bool = args.get(&"include_addons", false)
 
 	if root_path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 
 	# Collect all .gd files
 	var script_paths: PackedStringArray = []
 	_collect_scripts(root_path, script_paths, include_addons)
 
 	if script_paths.is_empty():
-		return { &"error": "No GDScript files found in " + root_path }
+		return { &"err": "No GDScript files found in " + root_path }
 
 	# Parse each script
 	var nodes: Array[Dictionary] = []
@@ -146,7 +146,7 @@ func _parse_script(path: String) -> Dictionary:
 	if file == null:
 		return {
 			&"path": path,
-			&"error": "Cannot open file",
+			&"err": "Cannot open file",
 			&"class_name": "",
 			&"extends": "",
 			&"preloads": [],
@@ -374,7 +374,7 @@ func map_scenes(args: Dictionary) -> Dictionary:
 	var include_addons: bool = args.get(&"include_addons", false)
 
 	if root_path.is_empty():
-		return { &"error": "Path escapes project root" }
+		return { &"err": "Path escapes project root" }
 
 	# Collect all .tscn files
 	var scene_paths: PackedStringArray = []
@@ -437,7 +437,7 @@ func _collect_scenes(path: String, results: PackedStringArray, include_addons: b
 func _parse_scene(path: String) -> Dictionary:
 	var file: FileAccess = FileAccess.open(path, FileAccess.READ)
 	if file == null:
-		return { &"path": path, &"error": "Cannot open file", &"instances": [] }
+		return { &"path": path, &"err": "Cannot open file", &"instances": [] }
 
 	var content: String = file.get_as_text()
 	file.close()

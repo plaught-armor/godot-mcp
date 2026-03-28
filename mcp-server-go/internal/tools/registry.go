@@ -5,7 +5,7 @@ var AllTools []ToolDef
 var toolIndex map[string]*ToolDef
 
 // Categories available for dynamic tool registration.
-var Categories = []string{"file", "scene", "script", "project", "git", "runtime", "asset"}
+var Categories = []string{"file", "scene", "script", "project", "git", "runtime", "asset", "physics", "tilemap", "theme", "resource", "profiling", "input", "animation", "shader", "scene3d", "navigation", "audio", "particle", "analysis"}
 
 // coreTools are always registered regardless of category activation.
 var coreTools = map[string]bool{
@@ -33,13 +33,12 @@ var categoryAssignment = map[string]string{
 	"find_references":  "file",
 	"list_resources":   "file",
 	// scene
-	"create_scene":         "scene",
-	"read_scene":           "scene",
-	"scene_edit": "scene",
-	"attach_script":        "scene",
-	"detach_script":        "scene",
-	"set_collision_shape":  "scene",
-	"set_sprite_texture":   "scene",
+	"create_scene":       "scene",
+	"read_scene":         "scene",
+	"scene_edit":         "scene",
+	"attach_script":      "scene",
+	"detach_script":      "scene",
+	"set_sprite_texture": "scene",
 	// script
 	"validate_script":       "script",
 	"validate_scripts":      "script",
@@ -48,43 +47,53 @@ var categoryAssignment = map[string]string{
 	"find_class_definition": "script",
 	"format_script":         "script",
 	// project
-	"get_project_settings":  "project",
-	"set_project_setting":   "project",
-	"get_autoloads":         "project",
-	"get_input_map":         "project",
-	"configure_input_map":   "project",
-	"get_collision_layers":  "project",
-	"get_node_properties":   "project",
-	"get_debug_errors":      "project",
-	"clear_console_log":     "project",
-	"open_in_godot":         "project",
-	"scene_tree_dump":       "project",
-	"play_project":          "project",
-	"stop_project":          "project",
-	"is_project_running":    "project",
-	"get_uid":               "project",
-	"query_class_info":      "project",
-	"query_classes":         "project",
+	"get_project_settings": "project",
+	"set_project_setting":  "project",
+	"get_autoloads":        "project",
+	"get_node_properties":  "project",
+	"get_debug_errors":     "project",
+	"clear_console_log":    "project",
+	"open_in_godot":        "project",
+	"scene_tree_dump":      "project",
+	"play_project":         "project",
+	"stop_project":         "project",
+	"is_project_running":   "project",
+	"get_uid":              "project",
+	"query_class_info":     "project",
+	"query_classes":        "project",
 	// git
 	"git":              "git",
 	"run_shell_command": "git",
 	// runtime
-	"capture_screenshot":     "runtime",
-	"inspect_runtime_tree":   "runtime",
-	"get_runtime_property":   "runtime",
-	"set_runtime_property":   "runtime",
-	"call_runtime_method":    "runtime",
-	"get_runtime_metrics":    "runtime",
-	"inject_input":  "runtime",
-	"signal_watch":  "runtime",
+	"capture_screenshot":   "runtime",
+	"inspect_runtime_tree": "runtime",
+	"get_runtime_property": "runtime",
+	"set_runtime_property": "runtime",
+	"call_runtime_method":  "runtime",
+	"get_runtime_metrics":  "runtime",
+	"inject_input":         "runtime",
+	"signal_watch":         "runtime",
 	// asset
 	"generate_2d_asset": "asset",
+	// consolidated
+	"phys":    "physics",
+	"tmap":    "tilemap",
+	"theme":   "theme",
+	"res":     "resource",
+	"perf":    "profiling",
+	"input":   "input",
+	"anim":    "animation",
+	"shader":  "shader",
+	"s3d":     "scene3d",
+	"nav":     "navigation",
+	"audio":   "audio",
+	"ptcl":    "particle",
+	"analyze": "analysis",
 }
 
 func init() {
 	opt := optionalScriptTools()
-	total := len(fileTools) + len(sceneTools) + len(scriptTools) + len(opt) + len(projectTools) + len(assetTools) + len(runtimeTools)
-	AllTools = make([]ToolDef, 0, total)
+	AllTools = make([]ToolDef, 0, 80)
 	AllTools = append(AllTools, fileTools...)
 	AllTools = append(AllTools, sceneTools...)
 	AllTools = append(AllTools, scriptTools...)
@@ -92,6 +101,19 @@ func init() {
 	AllTools = append(AllTools, projectTools...)
 	AllTools = append(AllTools, assetTools...)
 	AllTools = append(AllTools, runtimeTools...)
+	AllTools = append(AllTools, physicsTools...)
+	AllTools = append(AllTools, tilemapTools...)
+	AllTools = append(AllTools, themeTools...)
+	AllTools = append(AllTools, resourceTools...)
+	AllTools = append(AllTools, profilingTools...)
+	AllTools = append(AllTools, inputTools...)
+	AllTools = append(AllTools, animationTools...)
+	AllTools = append(AllTools, shaderTools...)
+	AllTools = append(AllTools, scene3dTools...)
+	AllTools = append(AllTools, navigationTools...)
+	AllTools = append(AllTools, audioTools...)
+	AllTools = append(AllTools, particleTools...)
+	AllTools = append(AllTools, analysisTools...)
 
 	// Assign categories
 	for i := range AllTools {
@@ -142,7 +164,7 @@ func Get(name string) *ToolDef {
 func GetMockResponse(name string, args map[string]any) any {
 	td := toolIndex[name]
 	if td == nil {
-		return map[string]any{"error": "Unknown tool: " + name}
+		return map[string]any{"err": "Unknown tool: " + name}
 	}
 	return td.MockFn(args)
 }

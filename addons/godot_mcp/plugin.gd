@@ -11,7 +11,7 @@ const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
 # Everything else runs on the main thread (filesystem refresh, editor UI, etc.).
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
-		&"list_dir", &"read_file", &"read_files", &"search_project", &"find_references", &"list_resources", &"list_scripts", &"get_script_symbols", &"find_class_definition", &"get_autoloads", &"get_uid", &"query_class_info", &"query_classes", &"map_scenes":
+		&"list_dir", &"read_file", &"read_files", &"search_project", &"find_references", &"list_resources", &"list_scripts", &"get_script_symbols", &"find_class_definition", &"get_autoloads", &"get_uid", &"query_class_info", &"query_classes", &"map_scenes", &"perf":
 			return true
 	return false
 
@@ -44,6 +44,7 @@ func _enter_tree() -> void:
 	_mcp_client.connected.connect(_on_connected)
 	_mcp_client.disconnected.connect(_on_disconnected)
 	_mcp_client.tool_requested.connect(_on_tool_requested)
+	_mcp_client.debugger_continue_requested.connect(_try_debugger_continue)
 	_mcp_client.visualizer_opened.connect(
 		func(url: String):
 			print_rich("[GMCP] Project visualizer available at [url]%s[/url]" % url)
@@ -59,6 +60,12 @@ func _enter_tree() -> void:
 
 	# Register runtime autoload (persists in project.godot)
 	add_autoload_singleton("MCPRuntime", "res://addons/godot_mcp/mcp_runtime.gd")
+
+	# Compute instance ID for multi-editor support
+	var instance_id: String = ProjectSettings.get_setting("godot_mcp/instance_id", "")
+	if instance_id.is_empty():
+		instance_id = ProjectSettings.globalize_path("res://").get_base_dir().get_file()
+	_mcp_client.instance_id = instance_id
 
 	# Start connection
 	_mcp_client.connect_to_server()
@@ -107,6 +114,13 @@ const SETTINGS: Dictionary = {
 		&"hint_string": "",
 		&"description": "Command to run for GDScript formatting (e.g., gdscript-formatter, gdformat).",
 	},
+	&"godot_mcp/instance_id": {
+		&"type": TYPE_STRING,
+		&"default": "",
+		&"hint": PROPERTY_HINT_NONE,
+		&"hint_string": "",
+		&"description": "Instance ID for multi-editor support. Leave empty to auto-derive from project folder name.",
+	},
 }
 
 
@@ -143,9 +157,9 @@ func _setup_status_indicator() -> void:
 
 
 func _on_connected() -> void:
-	print("[GMCP] Connected to MCP server")
+	print("[GMCP] Connected to MCP server (instance: %s)" % _mcp_client.instance_id)
 	if _status_label:
-		_status_label.text = "GMCP: Connected"
+		_status_label.text = "GMCP: %s" % _mcp_client.instance_id
 		_status_label.add_theme_color_override(&"font_color", Color.GREEN)
 
 
@@ -205,10 +219,7 @@ func _thread_loop() -> void:
 
 
 func _send_result(request_id: String, result: Dictionary) -> void:
-	if result.has(&"error"):
-		_mcp_client.send_tool_result(request_id, false, null, result[&"error"])
-	else:
-		_mcp_client.send_tool_result(request_id, true, result)
+	_mcp_client.send_tool_result(request_id, result)
 
 
 func _on_map_project_pressed() -> void:
@@ -220,8 +231,8 @@ func _on_map_project_pressed() -> void:
 	thread.start(
 		func():
 			var result: Dictionary = _tool_executor.execute_tool(&"map_project", { })
-			if result.has(&"error"):
-				push_error("[GMCP] Map project failed: ", result[&"error"])
+			if result.has(&"err"):
+				push_error("[GMCP] Map project failed: ", result[&"err"])
 				_cleanup_thread.call_deferred(thread)
 			else:
 				_send_visualizer_data.call_deferred(result[&"project_map"], thread)
@@ -235,3 +246,23 @@ func _send_visualizer_data(project_map: Dictionary, thread: Thread) -> void:
 
 func _cleanup_thread(thread: Thread) -> void:
 	thread.wait_to_finish()
+
+
+## BFS from EditorInterface to find ScriptEditorDebugger's Continue button and press it.
+## Called when the Go server detects a runtime tool timeout (debugger may have paused the game).
+func _try_debugger_continue() -> void:
+	var base: Control = EditorInterface.get_base_control()
+	var queue: Array[Node] = [base]
+	while not queue.is_empty():
+		var node: Node = queue.pop_front()
+		if node.get_class() == &"ScriptEditorDebugger":
+			# Found the debugger — now find the Continue button within it
+			var inner: Array[Node] = [node]
+			while not inner.is_empty():
+				var n: Node = inner.pop_front()
+				if n is Button and n.tooltip_text == &"Continue":
+					n.emit_signal(&"pressed")
+					print("[GMCP] Auto-continued debugger")
+					return
+				inner.append_array(n.get_children())
+		queue.append_array(node.get_children())

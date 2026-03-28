@@ -6,9 +6,7 @@ import "encoding/json"
 type IncomingMessage struct {
 	Type        string          `json:"type"`
 	ID          string          `json:"id,omitempty"`
-	Success     *bool           `json:"success,omitempty"`
 	Result      json.RawMessage `json:"result,omitempty"`
-	Error       string          `json:"error,omitempty"`
 	ProjectPath string          `json:"project_path,omitempty"`
 	InstanceID  string          `json:"instance_id,omitempty"`
 	PID         int             `json:"pid,omitempty"`
