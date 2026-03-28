@@ -261,15 +261,12 @@ func _statistics(args: Dictionary) -> Dictionary:
 	var include_addons: bool = args.get(&"include_addons", false)
 
 	var counts: Dictionary = {}
-	var script_lines: int = 0
-	var scene_count: int = 0
-	var resource_count: int = 0
-	_walk_stats(path, include_addons, counts, script_lines, scene_count, resource_count, 0)
+	_walk_stats(path, include_addons, counts)
 
-	# Extract counters stored in dict
-	script_lines = int(counts.get(&"_sl", 0)); counts.erase(&"_sl")
-	scene_count = int(counts.get(&"_sc", 0)); counts.erase(&"_sc")
-	resource_count = int(counts.get(&"_rc", 0)); counts.erase(&"_rc")
+	# Extract internal counters
+	var sl: int = int(counts.get(&"_sl", 0)); counts.erase(&"_sl")
+	var sc: int = int(counts.get(&"_sc", 0)); counts.erase(&"_sc")
+	var rc: int = int(counts.get(&"_rc", 0)); counts.erase(&"_rc")
 	counts.erase(&"_tf")
 
 	var autoloads: Dictionary = {}
@@ -280,13 +277,12 @@ func _statistics(args: Dictionary) -> Dictionary:
 
 	return {
 		&"file_counts": counts,
-		&"script_lines": script_lines, &"scene_count": scene_count,
-		&"resource_count": resource_count, &"autoloads": autoloads,
+		&"script_lines": sl, &"scene_count": sc,
+		&"resource_count": rc, &"autoloads": autoloads,
 	}
 
 
-func _walk_stats(path: String, include_addons: bool, counts: Dictionary,
-		_sl: int, _sc: int, _rc: int, _tf: int) -> void:
+func _walk_stats(path: String, include_addons: bool, counts: Dictionary) -> void:
 	var dir: DirAccess = DirAccess.open(path)
 	if not dir:
 		return
@@ -297,7 +293,7 @@ func _walk_stats(path: String, include_addons: bool, counts: Dictionary,
 			var full: String = path.path_join(fname)
 			if dir.current_is_dir():
 				if fname != "addons" or include_addons:
-					_walk_stats(full, include_addons, counts, _sl, _sc, _rc, _tf)
+					_walk_stats(full, include_addons, counts)
 			else:
 				var ext: String = fname.get_extension().to_lower()
 				counts[ext] = counts.get(ext, 0) + 1

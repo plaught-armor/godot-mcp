@@ -64,13 +64,13 @@ func main() {
 		var projectMap any
 		if err := json.Unmarshal(data, &projectMap); err != nil {
 			log.Printf("[godot-mcp-server] Failed to parse visualizer data: %v", err)
-			br.SendNotification("visualizer_status", map[string]any{"error": err.Error()}, instanceID)
+			br.SendNotification("visualizer_status", map[string]any{"err": err.Error()}, instanceID)
 			return
 		}
 		url, err := viz.Serve(projectMap)
 		if err != nil {
 			log.Printf("[godot-mcp-server] Failed to start visualizer: %v", err)
-			br.SendNotification("visualizer_status", map[string]any{"error": err.Error()}, instanceID)
+			br.SendNotification("visualizer_status", map[string]any{"err": err.Error()}, instanceID)
 			return
 		}
 		br.SendNotification("visualizer_status", map[string]any{"url": url}, instanceID)

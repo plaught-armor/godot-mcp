@@ -76,7 +76,7 @@ var projectTools = []ToolDef{
 			},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"errors": []any{}}
+			return map[string]any{"errs": []any{}}
 		},
 	},
 	{
@@ -90,7 +90,7 @@ var projectTools = []ToolDef{
 			},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"errors": []any{}}
+			return map[string]any{"errs": []any{}}
 		},
 	},
 	{

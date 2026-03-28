@@ -79,7 +79,7 @@ var categoryAssignment = map[string]string{
 	"phys":    "physics",
 	"tmap":    "tilemap",
 	"theme":   "theme",
-	"res":     "resource",
+	"tres":    "resource",
 	"perf":    "profiling",
 	"input":   "input",
 	"anim":    "animation",

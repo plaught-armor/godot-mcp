@@ -15,7 +15,7 @@ var fileTools = []ToolDef{
 			Required: []string{"root"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"path": args["root"], "files": []string{"project.godot"}, "folders": []string{"scenes"}}
+			return map[string]any{"files": []string{}, "folders": []string{}}
 		},
 	},
 	{
@@ -31,7 +31,7 @@ var fileTools = []ToolDef{
 			Required: []string{"path"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"content": "# Mock\n", "line_count": 1}
+			return map[string]any{"content": ""}
 		},
 	},
 	{
@@ -64,7 +64,7 @@ var fileTools = []ToolDef{
 			Required: []string{"query"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"matches": []any{}, "truncated": false}
+			return map[string]any{"m": []any{}, "trunc": false}
 		},
 	},
 	{
@@ -169,7 +169,7 @@ var fileTools = []ToolDef{
 			Required: []string{"edits"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"success_count": 1, "error_count": 0}
+			return map[string]any{"results": []any{}}
 		},
 	},
 	{
@@ -186,7 +186,7 @@ var fileTools = []ToolDef{
 			Required: []string{"symbol"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"matches": []any{}, "truncated": false}
+			return map[string]any{"m": []any{}, "trunc": false}
 		},
 	},
 	{

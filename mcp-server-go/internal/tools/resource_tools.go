@@ -2,7 +2,7 @@ package tools
 
 var resourceTools = []ToolDef{
 	{
-		Name:        "res",
+		Name:        "tres",
 		Description: "Resource (.tres) files: read, edit, create, preview.",
 		InputSchema: &Schema{
 			Type: "object",

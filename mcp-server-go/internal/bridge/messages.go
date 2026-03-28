@@ -34,9 +34,8 @@ type ProxyRequest struct {
 
 // ProxyResponse is sent from the primary GodotBridge back to a proxy client.
 type ProxyResponse struct {
-	Type    string          `json:"type"`
-	ID      string          `json:"id"`
-	Success *bool           `json:"success,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	Type   string          `json:"type"`
+	ID     string          `json:"id"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  string          `json:"err,omitempty"`
 }

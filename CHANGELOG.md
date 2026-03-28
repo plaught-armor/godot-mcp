@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.11.0-rc1] - 2026-03-27
+
+### Added
+- **Proxy bridge** — second MCP server connects to the first as a WebSocket proxy instead of killing it, enabling Claude Desktop + Zed to share one Godot connection
+- **13 new consolidated tools** — `anim` (AnimationPlayer + AnimationTree), `s3d` (3D scene: meshes, lighting, materials, environment, cameras, gridmaps), `phys` (collision shapes, raycasts, physics bodies, layers), `nav` (navigation regions, agents, mesh baking), `tmap` (TileMapLayer editing), `ptcl` (GPU particles with presets), `audio` (bus layout, effects, AudioStreamPlayer), `input` (InputMap management), `shader` (shader files + uniforms), `theme` (UI theme overrides), `res` (resource files), `analyze` (project analysis: unused resources, signal flow, scene complexity, circular deps, statistics), `perf` (performance monitors)
+- **Bridge interface** — `Bridge` interface + `ProxyBridge` impl for multi-client support
+
+### Changed
+- **Aggressive token optimization** across all tools:
+  - `properties` pattern: consolidated tools use `action` + one `properties` object instead of many top-level params
+  - Short tool names: `animation_edit` → `anim`, `scene_3d_edit` → `s3d`, etc.
+  - Short action names: `setup_collision` → `collision`, `get_actions` → `list`, etc.
+  - Short response keys: `error` → `err`, `suggestion` → `sug`, `old_value` → `old`, `matches` → `m`, `track_index` → `ti`, `image_base64` → `img`
+  - Minimal returns: mutations return `{}`, reads drop echoed input keys, no derivable counts
+  - Go schema descriptions stripped to bare minimum
+- **Wire protocol simplified** — removed `success` field, bridge derives success from absence of `err` key in result
+- **StringName conversion** — all dict keys and match arms in `mcp_runtime.gd` and `mcp_client.gd` use `&"key"` for interned pointer comparison
+- **Tool merges** — `get_input_map` + `configure_input_map` → `input`, `get_collision_layers` + `set_collision_shape` → `phys`
+
+### Removed
+- `get_input_map`, `configure_input_map` — use `input` with action `list`/`set`
+- `get_collision_layers` — use `phys` with action `get_layers`
+- `set_collision_shape` — use `phys` with action `collision`
+- `success` field from WebSocket wire protocol
+- Verbose response fields: confirmation booleans, echoed input keys, derivable counts
+
 ## [0.10.0] - 2026-03-24
 
 ### Added

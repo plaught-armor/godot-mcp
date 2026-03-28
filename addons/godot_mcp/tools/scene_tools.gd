@@ -74,7 +74,35 @@ func scene_edit(args: Dictionary) -> Dictionary:
 			return duplicate_node(args)
 		"reorder":
 			return reorder_node(args)
+		"batch":
+			return _batch(args)
 	return {&"err": "Unknown scene_edit action: " + action}
+
+
+func _batch(args: Dictionary) -> Dictionary:
+	var ops: Array = args[&"ops"]
+	var errors: Array[Dictionary] = []
+	var scene_path: String = args[&"scene_path"]
+
+	for i: int in ops.size():
+		var op: Dictionary = ops[i]
+		op[&"scene_path"] = scene_path
+		op.merge(op.get(&"properties", {}))
+		var action: String = op[&"action"]
+		var result: Dictionary
+		match action:
+			"add_node": result = add_node(op)
+			"remove_node": result = remove_node(op)
+			"set_property": result = modify_node_property(op)
+			"rename": result = rename_node(op)
+			"move": result = move_node(op)
+			"duplicate": result = duplicate_node(op)
+			"reorder": result = reorder_node(op)
+			_: result = { &"err": "Unknown op action: " + action }
+		if result.has(&"err"):
+			errors.append({ &"i": i, &"err": result[&"err"] })
+
+	return { &"errs": errors }
 
 
 # =============================================================================

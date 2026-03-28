@@ -6,7 +6,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 72 tools · Runtime bridge · Interactive project visualizer · MIT license
+> Godot 4.x · 68 tools · Proxy bridge · Runtime bridge · Interactive project visualizer · MIT license
 
 ---
 

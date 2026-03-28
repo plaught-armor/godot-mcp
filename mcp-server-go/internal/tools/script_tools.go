@@ -39,7 +39,7 @@ var scriptTools = []ToolDef{
 			Required: []string{"path"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"valid": true, "errors": []any{}}
+			return map[string]any{"valid": true, "errs": []any{}}
 		},
 	},
 	{

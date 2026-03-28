@@ -228,7 +228,7 @@ func _setup_lighting(args: Dictionary) -> Dictionary:
 # set_material
 # =============================================================================
 func _set_material(args: Dictionary) -> Dictionary:
-	var node: Node = _find_node(args.get(&"node_path", ""))
+	var node: Node = _find_node(args[&"node_path"])
 	if not node or not node is MeshInstance3D:
 		return { &"err": "MeshInstance3D not found" }
 

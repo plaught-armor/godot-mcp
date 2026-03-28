@@ -186,13 +186,13 @@ func validate_script(args: Dictionary) -> Dictionary:
 		return {
 			&"valid": false,
 			&"error_code": err,
-			&"errors": errors,
+			&"errs": errors,
 		}
 
 	if not script.can_instantiate():
 		return {
 			&"valid": false,
-			&"errors": ["Script parsed but cannot be instantiated (dependency errors)"],
+			&"errs": ["Script parsed but cannot be instantiated (dependency errors)"],
 		}
 
 	return { &"valid": true }
@@ -253,7 +253,7 @@ func validate_scripts(args: Dictionary) -> Dictionary:
 		var result: Dictionary = validate_script({ &"path": p })
 		var entry: Dictionary = { &"path": p }
 		entry[&"valid"] = result[&"valid"] if result.has(&"valid") else false
-		entry[&"errors"] = result.get(&"errors", [])
+		entry[&"errs"] = result.get(&"errs", [])
 		results.append(entry)
 
 	return { &"results": results }
@@ -586,7 +586,7 @@ func create_script_file(args: Dictionary) -> Dictionary:
 ## Add, update, or delete a variable in a script file.
 func modify_variable(args: Dictionary) -> Dictionary:
 	var script_path: String = args[&"path"]
-	var action: String = args.get(&"action", "")
+	var action: String = args[&"action"]
 	var old_name: String = args.get(&"old_name", "")
 	var new_name: String = args.get(&"name", "")
 	var var_type: String = args.get(&"type", "")
@@ -658,7 +658,7 @@ func modify_variable(args: Dictionary) -> Dictionary:
 ## Add, update, or delete a signal in a script file.
 func modify_signal(args: Dictionary) -> Dictionary:
 	var script_path: String = args[&"path"]
-	var action: String = args.get(&"action", "")
+	var action: String = args[&"action"]
 	var old_name: String = args.get(&"old_name", "")
 	var new_name: String = args.get(&"name", "")
 	var params: String = args.get(&"params", "")

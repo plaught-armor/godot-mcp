@@ -343,7 +343,7 @@ func get_errors(args: Dictionary) -> Dictionary:
 	# Return the most recent errors
 	var start: int = maxi(0, all_errors.size() - max_errors)
 	var errors: Array[Dictionary] = all_errors.slice(start)
-	return { &"errors": errors }
+	return { &"errs": errors }
 
 
 func _extract_file_line(text: String) -> Dictionary:
@@ -375,12 +375,12 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 
 	var tree: Tree = _get_debugger_error_tree()
 	if not tree:
-		return { &"errors": [] }
+		return { &"errs": [] }
 
 	var errors: Array[Dictionary] = []
 	var item: TreeItem = tree.get_root()
 	if not item:
-		return { &"errors": [] }
+		return { &"errs": [] }
 
 	# Root items are errors; children are stack frames
 	item = item.get_first_child()
@@ -434,7 +434,7 @@ func get_debug_errors(args: Dictionary) -> Dictionary:
 	var start: int = maxi(0, errors.size() - max_errors)
 	errors = errors.slice(start)
 	return {
-		&"errors": errors,
+		&"errs": errors,
 	}
 
 

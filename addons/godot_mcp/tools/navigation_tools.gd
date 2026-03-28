@@ -118,7 +118,7 @@ func _setup_region(args: Dictionary) -> Dictionary:
 # bake
 # =============================================================================
 func _bake(args: Dictionary) -> Dictionary:
-	var node: Node = _find_node(args.get(&"node_path", ""))
+	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }
 
@@ -195,7 +195,7 @@ func _setup_agent(args: Dictionary) -> Dictionary:
 # set_layers
 # =============================================================================
 func _set_layers(args: Dictionary) -> Dictionary:
-	var node: Node = _find_node(args.get(&"node_path", ""))
+	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }
 
@@ -231,7 +231,7 @@ func _set_layers(args: Dictionary) -> Dictionary:
 # info
 # =============================================================================
 func _info(args: Dictionary) -> Dictionary:
-	var node: Node = _find_node(args.get(&"node_path", ""))
+	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }
 

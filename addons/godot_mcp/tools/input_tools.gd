@@ -97,7 +97,7 @@ func _add(input_action: String, args: Dictionary) -> Dictionary:
 	_persist_action(input_action)
 	_save_and_refresh()
 
-	return { &"event_errors": event_errors }
+	return { &"errs": event_errors }
 
 
 func _remove(input_action: String) -> Dictionary:
@@ -134,7 +134,7 @@ func _replace(input_action: String, args: Dictionary) -> Dictionary:
 	_persist_action(input_action)
 	_save_and_refresh()
 
-	return { &"event_errors": event_errors }
+	return { &"errs": event_errors }
 
 
 func _create_input_event(desc: Dictionary) -> Dictionary:

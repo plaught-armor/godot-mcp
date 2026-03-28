@@ -13,6 +13,8 @@ import (
 	"github.com/coder/websocket"
 )
 
+var proxyHelloBytes = []byte(`{"type":"proxy_ready"}`)
+
 // ProxyBridge implements Bridge by forwarding calls over WebSocket
 // to an existing GodotBridge that owns the port.
 type ProxyBridge struct {
@@ -31,7 +33,7 @@ func NewProxy(port int, timeout time.Duration) *ProxyBridge {
 	return &ProxyBridge{
 		port:    port,
 		timeout: timeout,
-		pending: make(map[string]chan ProxyResponse),
+		pending: make(map[string]chan ProxyResponse, 16),
 	}
 }
 
@@ -45,8 +47,7 @@ func (p *ProxyBridge) Start(ctx context.Context) error {
 	conn.SetReadLimit(10 * 1024 * 1024)
 
 	// Send hello
-	hello, _ := json.Marshal(map[string]string{"type": "proxy_ready"})
-	if err := conn.Write(ctx, websocket.MessageText, hello); err != nil {
+	if err := conn.Write(ctx, websocket.MessageText, proxyHelloBytes); err != nil {
 		conn.Close(websocket.StatusGoingAway, "hello failed")
 		return fmt.Errorf("proxy hello: %w", err)
 	}
@@ -63,7 +64,6 @@ func (p *ProxyBridge) Start(ctx context.Context) error {
 // Stop closes the proxy connection.
 func (p *ProxyBridge) Stop() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	if p.cancel != nil {
 		p.cancel()
@@ -72,9 +72,15 @@ func (p *ProxyBridge) Stop() {
 		p.conn.Close(websocket.StatusGoingAway, "proxy shutting down")
 		p.conn = nil
 	}
+	var toNotify []chan ProxyResponse
 	for id, ch := range p.pending {
-		ch <- ProxyResponse{Error: "proxy shutting down"}
+		toNotify = append(toNotify, ch)
 		delete(p.pending, id)
+	}
+	p.mu.Unlock()
+
+	for _, ch := range toNotify {
+		ch <- ProxyResponse{Error: "proxy shutting down"}
 	}
 }
 
@@ -159,7 +165,9 @@ func (p *ProxyBridge) SendNotification(msgType string, fields map[string]any, in
 	if p.conn == nil {
 		return errNotConnected
 	}
-	return p.conn.Write(context.Background(), websocket.MessageText, data)
+	wctx, wcancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer wcancel()
+	return p.conn.Write(wctx, websocket.MessageText, data)
 }
 
 // SetPrimary forwards a set_primary request to the primary bridge.
@@ -227,11 +235,16 @@ func (p *ProxyBridge) readLoop(ctx context.Context) {
 	defer func() {
 		p.mu.Lock()
 		p.conn = nil
+		var toNotify []chan ProxyResponse
 		for id, ch := range p.pending {
-			ch <- ProxyResponse{Error: "proxy disconnected"}
+			toNotify = append(toNotify, ch)
 			delete(p.pending, id)
 		}
 		p.mu.Unlock()
+
+		for _, ch := range toNotify {
+			ch <- ProxyResponse{Error: "proxy disconnected"}
+		}
 		log.Printf("[ProxyBridge] Disconnected from primary")
 	}()
 
@@ -252,9 +265,11 @@ func (p *ProxyBridge) readLoop(ctx context.Context) {
 
 		// Dispatch pings
 		if resp.Type == "ping" {
+			wctx, wcancel := context.WithTimeout(ctx, 5*time.Second)
 			p.writeMu.Lock()
-			p.conn.Write(ctx, websocket.MessageText, []byte(`{"type":"pong"}`))
+			p.conn.Write(wctx, websocket.MessageText, pongBytes)
 			p.writeMu.Unlock()
+			wcancel()
 			continue
 		}
 

@@ -100,7 +100,7 @@ func _get_handler(tool_name: StringName) -> RefCounted:
 			return _theme_tools
 		&"tmap":
 			return _tilemap_tools
-		&"res":
+		&"tres":
 			return _resource_tools
 		&"input":
 			return _input_tools

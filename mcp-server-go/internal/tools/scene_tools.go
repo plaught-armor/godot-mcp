@@ -34,14 +34,15 @@ var sceneTools = []ToolDef{
 	},
 	{
 		Name:        "scene_edit",
-		Description: "Edit scene nodes: add, remove, set_property, rename, move, duplicate, reorder.",
+		Description: "Edit scene nodes. batch: [{action, ...}] for multiple ops in one call.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"action":     {Type: "string", Enum: []string{"add_node", "remove_node", "set_property", "rename", "move", "duplicate", "reorder"}},
+				"action":     {Type: "string", Enum: []string{"add_node", "remove_node", "set_property", "rename", "move", "duplicate", "reorder", "batch"}},
 				"scene_path": {Type: "string"},
 				"node_path":  {Type: "string"},
 				"properties": {Type: "object"},
+				"ops":        {Type: "array", Items: &Schema{Type: "object"}},
 			},
 			Required: []string{"action", "scene_path"},
 		},

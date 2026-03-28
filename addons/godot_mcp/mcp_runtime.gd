@@ -183,7 +183,7 @@ func _get_property(args: Dictionary) -> Dictionary:
 		return { &"err": "Node not found: " + node_path }
 
 	var value: Variant = node.get(property)
-	return { &"node_path": node_path,&"property": property,&"value": _serialize_value(value) }
+	return { &"value": _serialize_value(value) }
 
 
 # =============================================================================
@@ -279,7 +279,7 @@ func _dispatch_inject_input(args: Dictionary) -> Dictionary:
 # =============================================================================
 func _dispatch_signal_watch(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
-	var sig_action: String = args.get(&"action", "")
+	var sig_action: String = args[&"action"]
 	match sig_action:
 		&"watch":
 			return _watch_signal(args)

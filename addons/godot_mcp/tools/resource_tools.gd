@@ -17,7 +17,7 @@ func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
 
 
-func res(args: Dictionary) -> Dictionary:
+func tres(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:

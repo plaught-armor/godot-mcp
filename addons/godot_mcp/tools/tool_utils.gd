@@ -34,6 +34,16 @@ func refresh_filesystem() -> void:
 
 
 func ensure_res_path(path: String) -> String:
+	if path.begins_with(&"uid://"):
+		var uid: int = ResourceUID.text_to_id(path)
+		if uid != -1 and ResourceUID.has_id(uid):
+			return ResourceUID.get_id_path(uid)
+		return path
+	if path.is_valid_int():
+		var uid: int = int(path)
+		if ResourceUID.has_id(uid):
+			return ResourceUID.get_id_path(uid)
+		return path
 	if not path.begins_with("res://"):
 		path = "res://" + path
 	return path
