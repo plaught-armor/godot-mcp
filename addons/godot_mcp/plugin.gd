@@ -25,6 +25,8 @@ var _thread: Thread
 var _mutex: Mutex
 var _pending_requests: Array[Dictionary] = [] # [{id, tool, args}]
 var _thread_running: bool = false
+var _dialog_check_timer: float = 0.0
+const _DIALOG_CHECK_INTERVAL: float = 0.5
 
 
 func _enter_tree() -> void:
@@ -133,6 +135,13 @@ const SETTINGS: Dictionary = {
 		&"hint": PROPERTY_HINT_NONE,
 		&"hint_string": "",
 		&"description": "Instance ID for multi-editor support. Leave empty to auto-derive from project folder name.",
+	},
+	&"godot_mcp/auto_dismiss_dialogs": {
+		&"type": TYPE_BOOL,
+		&"default": true,
+		&"hint": PROPERTY_HINT_NONE,
+		&"hint_string": "",
+		&"description": "Auto-dismiss blocking editor dialogs (reload, save confirmations) during MCP tool execution.",
 	},
 }
 
@@ -282,3 +291,29 @@ func _on_runtime_started(_session_id: int) -> void:
 
 func _on_runtime_stopped(_session_id: int) -> void:
 	_mcp_client.send_runtime_status(_debugger_plugin.is_runtime_connected())
+
+
+# =============================================================================
+# Auto-dismiss blocking editor dialogs
+# =============================================================================
+func _process(delta: float) -> void:
+	if not ProjectSettings.get_setting(&"godot_mcp/auto_dismiss_dialogs", true):
+		return
+	_dialog_check_timer += delta
+	if _dialog_check_timer < _DIALOG_CHECK_INTERVAL:
+		return
+	_dialog_check_timer = 0.0
+	_dismiss_blocking_dialogs(EditorInterface.get_base_control())
+
+
+func _dismiss_blocking_dialogs(node: Node) -> bool:
+	if node is AcceptDialog and node.visible and node.exclusive and not node is FileDialog:
+		node.get_ok_button().emit_signal(&"pressed")
+		print("[GMCP] Auto-dismissed: %s" % node.title)
+		return true
+	for child: Node in node.get_children():
+		if child is Window and not child.visible:
+			continue
+		if _dismiss_blocking_dialogs(child):
+			return true
+	return false
