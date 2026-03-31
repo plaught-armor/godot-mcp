@@ -1,0 +1,10 @@
+; Minimal project for running tests. Not a real game project.
+; Used by: make test, CI, headless validation.
+; MCPRuntime autoload intentionally omitted — tests create instances directly.
+
+config_version=5
+
+[application]
+
+config/name="godot-mcp-tests"
+config/features=PackedStringArray("4.4")

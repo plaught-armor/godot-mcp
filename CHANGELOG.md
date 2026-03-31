@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.12.0-rc1] - 2026-03-30
+
+### Added
+- **EngineDebugger IPC** — runtime tools now route through Godot's built-in debugger channel instead of a separate WebSocket. Zero config in the game process, no extra port, no race conditions on startup
+- **HTTP daemon mode** — `--http` flag or `GODOT_MCP_HTTP=1` starts a persistent HTTP server on port 6506 (configurable). Multiple AI clients (Claude, Cursor, Codex) share one Godot WebSocket bridge. Idle auto-shutdown when all editors disconnect
+- **`runtime_watch`** — continuous property monitoring with change detection via `_physics_process` sampling. Actions: watch, unwatch, list, get_changes
+- **`map_ui`** — walk Control tree reporting positions, sizes, text content, button states. Tabular format
+- **`explore_camera`** — spawn/move/capture/restore a temporary Camera3D for screenshots from arbitrary angles
+- **`runtime_nav`** — query NavigationServer at runtime: pathfinding, distance calculation, navmesh snapping (2D/3D)
+- **`runtime_log`** — capture game errors and warnings via EngineDebugger. Actions: get, clear
+- **Input side-effect tracking** — `inject_input` gains optional `track` array for property diffing before/after input injection
+- **Enhanced runtime metrics** — `get_runtime_metrics` now includes physics 2D/3D body counts, navigation stats, video memory
+- **Test infrastructure** — headless Godot test runner (22 unit tests), Go server + editor integration test, Makefile targets
+
+### Changed
+- **Runtime IPC architecture** — removed `runtimeConn`, `acceptRuntime`, `runtimeReadLoop` from Go bridge. Runtime tools share the editor's pending request map via `runtime_tool_invoke` message type
+- **EditorDebuggerPlugin** — new `mcp_debugger.gd` relays tool invocations between editor plugin and running game via `EngineDebugger.register_message_capture()`
+- **Shared viewport capture** — `_capture_viewport()` helper deduplicates screenshot logic between `capture_screenshot` and `explore_camera` capture
+- **Go `invokeTool`** — parameterized wire message type, eliminating duplicated `invokeRuntimeTool` method
+
+### Removed
+- Direct WebSocket connection from game process to Go server (`mcp_runtime.gd` no longer has networking code)
+- `runtimeConn` struct and all runtime WebSocket handling in Go bridge
+- `debugger_continue` BFS hack (EngineDebugger handles debugger state natively)
+
 ## [0.11.0-rc1] - 2026-03-27
 
 ### Added

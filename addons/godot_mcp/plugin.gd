@@ -5,6 +5,7 @@ extends EditorPlugin
 
 const MCPClientScript = preload("res://addons/godot_mcp/mcp_client.gd")
 const ToolExecutorScript = preload("res://addons/godot_mcp/tool_executor.gd")
+const MCPDebuggerScript = preload("res://addons/godot_mcp/mcp_debugger.gd")
 
 
 # Tools safe to run on a background thread (pure read, no editor API calls).
@@ -18,6 +19,7 @@ func _is_background_safe(tool_name: StringName) -> bool:
 
 var _mcp_client: MCPClient # MCPClient
 var _tool_executor: ToolExecutor # ToolExecutor
+var _debugger_plugin # MCPDebuggerPlugin (no class_name — untyped to avoid base class mismatch)
 var _status_label: Label
 var _thread: Thread
 var _mutex: Mutex
@@ -40,11 +42,18 @@ func _enter_tree() -> void:
 	_tool_executor = ToolExecutorScript.new()
 	_tool_executor.set_editor_plugin(self)
 
+	# Register debugger plugin for runtime IPC
+	_debugger_plugin = MCPDebuggerScript.new()
+	add_debugger_plugin(_debugger_plugin)
+	_debugger_plugin.tool_result_received.connect(_on_runtime_tool_result)
+	_debugger_plugin.runtime_started.connect(_on_runtime_started)
+	_debugger_plugin.runtime_stopped.connect(_on_runtime_stopped)
+
 	# Connect signals
 	_mcp_client.connected.connect(_on_connected)
 	_mcp_client.disconnected.connect(_on_disconnected)
 	_mcp_client.tool_requested.connect(_on_tool_requested)
-	_mcp_client.debugger_continue_requested.connect(_try_debugger_continue)
+	_mcp_client.runtime_tool_requested.connect(_on_runtime_tool_requested)
 	_mcp_client.visualizer_opened.connect(
 		func(url: String):
 			print_rich("[GMCP] Project visualizer available at [url]%s[/url]" % url)
@@ -81,6 +90,10 @@ func _exit_tree() -> void:
 	if _thread and _thread.is_started():
 		_thread.wait_to_finish()
 	_thread = null
+
+	if _debugger_plugin:
+		remove_debugger_plugin(_debugger_plugin)
+		_debugger_plugin = null
 
 	if _mcp_client:
 		_mcp_client.disconnect_from_server()
@@ -248,21 +261,24 @@ func _cleanup_thread(thread: Thread) -> void:
 	thread.wait_to_finish()
 
 
-## BFS from EditorInterface to find ScriptEditorDebugger's Continue button and press it.
-## Called when the Go server detects a runtime tool timeout (debugger may have paused the game).
-func _try_debugger_continue() -> void:
-	var base: Control = EditorInterface.get_base_control()
-	var queue: Array[Node] = [base]
-	while not queue.is_empty():
-		var node: Node = queue.pop_front()
-		if node.get_class() == &"ScriptEditorDebugger":
-			# Found the debugger — now find the Continue button within it
-			var inner: Array[Node] = [node]
-			while not inner.is_empty():
-				var n: Node = inner.pop_front()
-				if n is Button and n.tooltip_text == &"Continue":
-					n.emit_signal(&"pressed")
-					print("[GMCP] Auto-continued debugger")
-					return
-				inner.append_array(n.get_children())
-		queue.append_array(node.get_children())
+## Handle runtime tool request from Go server — forward through EngineDebugger IPC.
+func _on_runtime_tool_requested(request_id: String, tool_name: String, args: Dictionary) -> void:
+	print("[GMCP] Runtime tool: ", tool_name, " (", request_id, ")")
+	if not _debugger_plugin or not _debugger_plugin.is_runtime_connected():
+		_send_result(request_id, {&"err": "Game is not running"})
+		return
+	if not _debugger_plugin.invoke_tool(request_id, tool_name, JSON.stringify(args)):
+		_send_result(request_id, {&"err": "Failed to send to runtime — no active debugger session"})
+
+
+## Handle runtime tool result from game via EngineDebugger IPC.
+func _on_runtime_tool_result(request_id: String, result_json: String) -> void:
+	_mcp_client.send_raw_tool_result(request_id, result_json)
+
+
+func _on_runtime_started(_session_id: int) -> void:
+	_mcp_client.send_runtime_status(true)
+
+
+func _on_runtime_stopped(_session_id: int) -> void:
+	_mcp_client.send_runtime_status(false)

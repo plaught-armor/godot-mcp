@@ -73,6 +73,11 @@ var categoryAssignment = map[string]string{
 	"get_runtime_metrics":  "runtime",
 	"inject_input":         "runtime",
 	"signal_watch":         "runtime",
+	"runtime_watch":        "runtime",
+	"map_ui":               "runtime",
+	"explore_camera":       "runtime",
+	"runtime_nav":          "runtime",
+	"runtime_log":          "runtime",
 	// asset
 	"generate_2d_asset": "asset",
 	// consolidated

@@ -117,7 +117,7 @@ var projectTools = []ToolDef{
 		Description: "Dump editor scene tree (design-time).",
 		InputSchema: &Schema{Type: "object"},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"tree": ""}
+			return map[string]any{}
 		},
 	},
 	{
@@ -142,7 +142,7 @@ var projectTools = []ToolDef{
 		Description: "Check if a scene is running.",
 		InputSchema: &Schema{Type: "object"},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"running": false}
+			return map[string]any{}
 		},
 	},
 	{
@@ -170,7 +170,7 @@ var projectTools = []ToolDef{
 			Required: []string{"command"},
 		},
 		MockFn: func(args map[string]any) any {
-			return map[string]any{"exit_code": 0, "stdout": ""}
+			return map[string]any{}
 		},
 	},
 	{

@@ -21,7 +21,7 @@ func newToolSetManager(server *mcp.Server, b bridge.Bridge) *ToolSetManager {
 	return &ToolSetManager{
 		server: server,
 		bridge: b,
-		active: make(map[string]bool),
+		active: make(map[string]bool, 20),
 	}
 }
 
