@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.12.0-rc1] - 2026-03-31
+
+### Added
+- **EngineDebugger IPC** — runtime tools route through Godot's built-in debugger channel instead of a separate WebSocket. Zero config in the game process, no extra port, no race conditions
+- **HTTP daemon mode** — `--http` flag starts persistent HTTP server on port 6506. Multiple AI clients share one Godot WebSocket bridge. Idle auto-shutdown
+- **Tool consolidation** — 74 tools consolidated into 22 via action enums (~46% schema token reduction): `file`, `scene`, `script`, `proj`, `git`, `shell`, `rt` + existing consolidated tools
+- **Batch scene operations** — `scene` gains `find_by_type`, `set_by_type`, `cross_scene_set` actions
+- **Autoload management** — `proj` gains `add_autoload` and `rm_autoload` actions
+- **Export tool** — `proj` gains `export_presets`, `export_info`, `export_cmd` actions
+- **Runtime tools** — `rt` consolidates 13 runtime actions: screenshot, tree, prop, set_prop, call, metrics, input (+side-effect tracking), sig_watch, prop_watch, ui, cam_spawn/move/capture/restore, nav, log
+- **Live signal connections** — `analyze` gains `live_signals` action (scene tree signal audit)
+- **AnimationTree improvements** — state/blend node positions in structure output, transition xfade/advance_expression, state validation on add/remove transition
+- **Test infrastructure** — headless Godot test runner (115 tests across 4 suites), `make test`
+
+### Changed
+- **Runtime IPC architecture** — removed `runtimeConn`, `acceptRuntime`, `runtimeReadLoop` from Go bridge. Runtime tools share editor's pending request map via `runtime_tool_invoke`
+- **Per-connection pending mutex** — `pendingMu` separates tool result resolution from bridge-level connection management
+- **Variadic signal callbacks** — Godot 4.5+ rest parameters replace 9 arity-specific callback functions
+- **`const PackedStringArray` → `static var`** — fixes engine bug #88753 where `.size()` returns byte count
+
+### Removed
+- Direct WebSocket from game to Go server (runtime uses EngineDebugger IPC)
+- `runtimeConn` struct and all runtime WebSocket handling in Go bridge
+- `debugger_continue` BFS hack
+- 52 standalone tool schemas (consolidated into action enums)
+
 ## [0.11.0-rc1] - 2026-03-27
 
 ### Added

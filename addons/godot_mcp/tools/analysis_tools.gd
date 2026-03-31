@@ -22,20 +22,22 @@ func analyze(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"unused":
+		&"unused":
 			return _unused_resources(args)
-		"signals":
+		&"signals":
 			return _signal_flow()
-		"complexity":
+		&"complexity":
 			return _scene_complexity(args)
-		"references":
+		&"references":
 			return _script_references(args)
-		"circular":
+		&"circular":
 			return _circular_deps(args)
-		"stats":
+		&"stats":
 			return _statistics(args)
+		&"live_signals":
+			return _live_signal_connections(args)
 		_:
-			return { &"err": "Unknown analyze_project action: " + action }
+			return {&"err": "Unknown analyze_project action: " + action}
 
 
 func _get_edited_root() -> Node:
@@ -338,3 +340,36 @@ func _read_file_text(file_path: Variant) -> String:
 	var content: String = file.get_as_text()
 	file.close()
 	return content
+
+
+# =============================================================================
+# live_signals — signal connections in the live edited scene tree
+# =============================================================================
+func _live_signal_connections(args: Dictionary) -> Dictionary:
+	var root: Node = _get_edited_root()
+	if root == null:
+		return {&"err": "No scene open"}
+	var signal_filter: String = ""
+	if args.has(&"signal_name"):
+		signal_filter = args[&"signal_name"]
+	var connections: Array[Dictionary] = []
+	_collect_live_signals(root, signal_filter, connections)
+	return {&"connections": connections}
+
+
+func _collect_live_signals(node: Node, signal_filter: String, connections: Array[Dictionary]) -> void:
+	for sig_info: Dictionary in node.get_signal_list():
+		var sig_name: String = sig_info[&"name"]
+		if not signal_filter.is_empty() and not sig_name.contains(signal_filter):
+			continue
+		for conn: Dictionary in node.get_signal_connection_list(sig_name):
+			var target_obj: Object = conn[&"callable"].get_object()
+			var target_path: String = str(target_obj.get_path()) if target_obj is Node else target_obj.get_class()
+			connections.append({
+				&"source": str(node.get_path()),
+				&"signal": sig_name,
+				&"target": target_path,
+				&"method": conn[&"callable"].get_method(),
+			})
+	for child: Node in node.get_children():
+		_collect_live_signals(child, signal_filter, connections)

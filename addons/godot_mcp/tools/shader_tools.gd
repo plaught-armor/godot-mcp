@@ -21,17 +21,17 @@ func shader(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"create":
+		&"create":
 			return _create(args)
-		"read":
+		&"read":
 			return _read(args)
-		"edit":
+		&"edit":
 			return _edit(args)
-		"assign":
+		&"assign":
 			return _assign(args)
-		"param":
+		&"param":
 			return _set_param(args)
-		"params":
+		&"params":
 			return _get_params(args)
 		_:
 			return { &"err": "Unknown shader_edit action: " + action }

@@ -21,17 +21,17 @@ func s3d(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"mesh":
+		&"mesh":
 			return _add_mesh(args)
-		"lighting":
+		&"lighting":
 			return _setup_lighting(args)
-		"material":
+		&"material":
 			return _set_material(args)
-		"environment":
+		&"environment":
 			return _setup_environment(args)
-		"camera":
+		&"camera":
 			return _setup_camera(args)
-		"gridmap":
+		&"gridmap":
 			return _add_gridmap(args)
 		_:
 			return { &"err": "Unknown scene_3d_edit action: " + action }
@@ -293,12 +293,12 @@ func _setup_environment(args: Dictionary) -> Dictionary:
 	# Background
 	var bg_mode: String = args.get(&"background_mode", "sky")
 	match bg_mode:
-		"sky": env.background_mode = Environment.BG_SKY
-		"color":
+		&"sky": env.background_mode = Environment.BG_SKY
+		&"color":
 			env.background_mode = Environment.BG_COLOR
 			env.background_color = _parse_color(args, &"background_color", Color(0.3, 0.3, 0.3))
-		"canvas": env.background_mode = Environment.BG_CANVAS
-		"clear_color": env.background_mode = Environment.BG_CLEAR_COLOR
+		&"canvas": env.background_mode = Environment.BG_CANVAS
+		&"clear_color": env.background_mode = Environment.BG_CLEAR_COLOR
 
 	# Procedural sky
 	if args.has(&"sky") and args[&"sky"] is Dictionary:

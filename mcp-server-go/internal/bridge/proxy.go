@@ -99,7 +99,7 @@ func (p *ProxyBridge) IsRuntimeConnected() bool {
 
 // GetStatus queries the primary bridge for its full status.
 func (p *ProxyBridge) GetStatus() Status {
-	resp, err := p.roundTrip("status_request", ProxyRequest{Type: "status_request"})
+	resp, err := p.roundTrip(ProxyRequest{Type: "status_request"})
 	if err != nil {
 		return Status{Port: p.port}
 	}
@@ -172,7 +172,7 @@ func (p *ProxyBridge) SendNotification(msgType string, fields map[string]any, in
 
 // SetPrimary forwards a set_primary request to the primary bridge.
 func (p *ProxyBridge) SetPrimary(instanceID string) error {
-	resp, err := p.roundTrip("set_primary_response", ProxyRequest{
+	resp, err := p.roundTrip(ProxyRequest{
 		Type:     "set_primary",
 		Instance: instanceID,
 	})
@@ -186,7 +186,7 @@ func (p *ProxyBridge) SetPrimary(instanceID string) error {
 }
 
 // roundTrip sends a request and waits for the matching response with the default timeout.
-func (p *ProxyBridge) roundTrip(expectedType string, req ProxyRequest) (ProxyResponse, error) {
+func (p *ProxyBridge) roundTrip(req ProxyRequest) (ProxyResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), p.timeout)
 	defer cancel()
 	return p.roundTripCtx(ctx, req)

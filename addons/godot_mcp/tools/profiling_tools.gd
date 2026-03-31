@@ -21,9 +21,9 @@ func perf(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"monitors":
+		&"monitors":
 			return _monitors(args)
-		"summary":
+		&"summary":
 			return _summary()
 		_:
 			return { &"err": "Unknown profiling action: " + action }

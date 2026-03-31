@@ -6,8 +6,8 @@ class_name ScriptTools
 ## Handles: create_script, edit_script, validate_script, validate_scripts,
 ##          list_scripts, get_script_symbols, find_class_definition
 
-const _SHELL_METACHARACTERS: PackedStringArray = [";", "|", "&", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"]
-const _SCRIPT_REF_EXTENSIONS: PackedStringArray = ["gd", "tscn", "tres"]
+static var _SHELL_METACHARACTERS: PackedStringArray = [";", "|", "&", "`", "$", "(", ")", "{", "}", "<", ">", "\n", "\r"]
+static var _SCRIPT_REF_EXTENSIONS: PackedStringArray = ["gd", "tscn", "tres"]
 
 var _editor_plugin: EditorPlugin = null
 
@@ -37,6 +37,28 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 
 
 var _utils: ToolUtils
+
+
+func script(args: Dictionary) -> Dictionary:
+	args.merge(args.get(&"properties", {}))
+	match args[&"action"]:
+		&"create":
+			return create_script(args)
+		&"edit":
+			return edit_script(args)
+		&"validate":
+			return validate_script(args)
+		&"validate_batch":
+			return validate_scripts(args)
+		&"list":
+			return list_scripts(args)
+		&"symbols":
+			return get_script_symbols(args)
+		&"find_class":
+			return find_class_definition(args)
+		&"format":
+			return format_script(args)
+	return {&"err": "Unknown script action: " + str(args.get(&"action", ""))}
 
 
 func set_utils(utils: ToolUtils) -> void:

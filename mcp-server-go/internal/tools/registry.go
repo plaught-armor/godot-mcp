@@ -9,70 +9,27 @@ var Categories = []string{"file", "scene", "script", "project", "git", "runtime"
 
 // coreTools are always registered regardless of category activation.
 var coreTools = map[string]bool{
-	"list_dir":        true,
-	"read_file":       true,
-	"read_files":      true,
-	"search_project":  true,
-	"create_file":     true,
-	"create_script":   true,
-	"edit_script":     true,
-	"get_console_log": true,
-	"get_errors":      true,
+	"file":   true,
+	"script": true,
+	"proj":   true,
 }
 
 // categoryAssignment maps tool names to their category.
 // Tools not listed here default to "core" if in coreTools, otherwise "project".
 var categoryAssignment = map[string]string{
 	// file
-	"create_folder":    "file",
-	"delete_file":      "file",
-	"delete_folder":    "file",
-	"rename_file":      "file",
-	"replace_in_files": "file",
-	"bulk_edit":        "file",
-	"find_references":  "file",
-	"list_resources":   "file",
+	"file": "file",
 	// scene
-	"create_scene":       "scene",
-	"read_scene":         "scene",
-	"scene_edit":         "scene",
-	"attach_script":      "scene",
-	"detach_script":      "scene",
-	"set_sprite_texture": "scene",
+	"scene": "scene",
 	// script
-	"validate_script":       "script",
-	"validate_scripts":      "script",
-	"list_scripts":          "script",
-	"get_script_symbols":    "script",
-	"find_class_definition": "script",
-	"format_script":         "script",
+	"script": "script",
 	// project
-	"get_project_settings": "project",
-	"set_project_setting":  "project",
-	"get_autoloads":        "project",
-	"get_node_properties":  "project",
-	"get_debug_errors":     "project",
-	"clear_console_log":    "project",
-	"open_in_godot":        "project",
-	"scene_tree_dump":      "project",
-	"play_project":         "project",
-	"stop_project":         "project",
-	"is_project_running":   "project",
-	"get_uid":              "project",
-	"query_class_info":     "project",
-	"query_classes":        "project",
+	"proj": "project",
 	// git
-	"git":              "git",
-	"run_shell_command": "git",
+	"git":   "git",
+	"shell": "git",
 	// runtime
-	"capture_screenshot":   "runtime",
-	"inspect_runtime_tree": "runtime",
-	"get_runtime_property": "runtime",
-	"set_runtime_property": "runtime",
-	"call_runtime_method":  "runtime",
-	"get_runtime_metrics":  "runtime",
-	"inject_input":         "runtime",
-	"signal_watch":         "runtime",
+	"rt": "runtime",
 	// asset
 	"generate_2d_asset": "asset",
 	// consolidated
@@ -92,12 +49,10 @@ var categoryAssignment = map[string]string{
 }
 
 func init() {
-	opt := optionalScriptTools()
-	AllTools = make([]ToolDef, 0, 80)
+	AllTools = make([]ToolDef, 0, 30)
 	AllTools = append(AllTools, fileTools...)
 	AllTools = append(AllTools, sceneTools...)
 	AllTools = append(AllTools, scriptTools...)
-	AllTools = append(AllTools, opt...)
 	AllTools = append(AllTools, projectTools...)
 	AllTools = append(AllTools, assetTools...)
 	AllTools = append(AllTools, runtimeTools...)

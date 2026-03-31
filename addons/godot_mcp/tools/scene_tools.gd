@@ -54,28 +54,50 @@ func _find_live_node(root: Node, node_path: String) -> Node:
 
 
 # =============================================================================
-# Consolidated scene edit dispatcher
+# Consolidated scene dispatcher
 # =============================================================================
-func scene_edit(args: Dictionary) -> Dictionary:
+func scene(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"add_node":
+		&"create":
+			return create_scene(args)
+		&"read":
+			return read_scene(args)
+		&"attach_script":
+			return attach_script(args)
+		&"detach_script":
+			return detach_script(args)
+		&"texture":
+			return set_sprite_texture(args)
+		_:
+			return _scene_edit(action, args)
+
+
+func _scene_edit(action: String, args: Dictionary) -> Dictionary:
+	match action:
+		&"add_node":
 			return add_node(args)
-		"remove_node":
+		&"remove_node":
 			return remove_node(args)
-		"set_property":
+		&"set_property":
 			return modify_node_property(args)
-		"rename":
+		&"rename":
 			return rename_node(args)
-		"move":
+		&"move":
 			return move_node(args)
-		"duplicate":
+		&"duplicate":
 			return duplicate_node(args)
-		"reorder":
+		&"reorder":
 			return reorder_node(args)
-		"batch":
+		&"batch":
 			return _batch(args)
+		&"find_by_type":
+			return _find_by_type(args)
+		&"set_by_type":
+			return _set_by_type(args)
+		&"cross_scene_set":
+			return _cross_scene_set(args)
 	return {&"err": "Unknown scene_edit action: " + action}
 
 
@@ -91,13 +113,13 @@ func _batch(args: Dictionary) -> Dictionary:
 		var action: String = op[&"action"]
 		var result: Dictionary
 		match action:
-			"add_node": result = add_node(op)
-			"remove_node": result = remove_node(op)
-			"set_property": result = modify_node_property(op)
-			"rename": result = rename_node(op)
-			"move": result = move_node(op)
-			"duplicate": result = duplicate_node(op)
-			"reorder": result = reorder_node(op)
+			&"add_node": result = add_node(op)
+			&"remove_node": result = remove_node(op)
+			&"set_property": result = modify_node_property(op)
+			&"rename": result = rename_node(op)
+			&"move": result = move_node(op)
+			&"duplicate": result = duplicate_node(op)
+			&"reorder": result = reorder_node(op)
 			_: result = { &"err": "Unknown op action: " + action }
 		if result.has(&"err"):
 			errors.append({ &"i": i, &"err": result[&"err"] })
@@ -296,7 +318,7 @@ func read_scene(args: Dictionary) -> Dictionary:
 
 
 func _build_node_structure(node: Node, include_props: bool, path: String = ".") -> Dictionary:
-	const PROPERTIES: PackedStringArray = [
+	var PROPERTIES: PackedStringArray = [
 		"position",
 		"rotation",
 		"scale",
@@ -1345,3 +1367,105 @@ func _parse_typed_value(value: Variant, type_hint: int) -> Variant:
 				return Rect2(value.get(&"x", 0), value.get(&"y", 0), value.get(&"width", 0), value.get(&"height", 0))
 
 	return value
+
+
+# =============================================================================
+# find_by_type — find all nodes of a class type in the edited scene
+# =============================================================================
+func _find_by_type(args: Dictionary) -> Dictionary:
+	var type_name: String = args[&"type"]
+	var root: Node = _get_edited_root()
+	if root == null:
+		return {&"err": "No scene open"}
+	var matches: Array[Dictionary] = []
+	_collect_by_type(root, type_name, matches)
+	return {&"m": matches}
+
+
+func _collect_by_type(node: Node, type_name: String, matches: Array[Dictionary]) -> void:
+	if node.is_class(type_name):
+		matches.append({&"name": node.name, &"path": str(node.get_path()), &"type": node.get_class()})
+	for child: Node in node.get_children():
+		_collect_by_type(child, type_name, matches)
+
+
+# =============================================================================
+# set_by_type — set a property on all nodes of a class type
+# =============================================================================
+func _set_by_type(args: Dictionary) -> Dictionary:
+	var type_name: String = args[&"type"]
+	var property: String = args[&"property"]
+	var value: Variant = _parse_value(args[&"value"])
+	var root: Node = _get_edited_root()
+	if root == null:
+		return {&"err": "No scene open"}
+	var affected: Array[String] = []
+	_apply_by_type(root, type_name, property, value, affected)
+	return {&"n": affected}
+
+
+func _apply_by_type(node: Node, type_name: String, property: String, value: Variant, affected: Array[String]) -> void:
+	if node.is_class(type_name) and property in node:
+		node.set(property, value)
+		affected.append(str(node.get_path()))
+	for child: Node in node.get_children():
+		_apply_by_type(child, type_name, property, value, affected)
+
+
+# =============================================================================
+# cross_scene_set — set property on matching nodes across all .tscn files
+# =============================================================================
+func _cross_scene_set(args: Dictionary) -> Dictionary:
+	var type_name: String = args[&"type"]
+	var property: String = args[&"property"]
+	var value: Variant = _parse_value(args[&"value"])
+	var path_filter: String = args.get(&"path_filter", "res://")
+	var exclude_addons: bool = args.get(&"exclude_addons", true)
+
+	var scene_files: PackedStringArray = _collect_scene_files(path_filter, exclude_addons)
+	var scenes_affected: int = 0
+	var total_nodes: int = 0
+	var errs: Array[Dictionary] = []
+
+	for scene_path: String in scene_files:
+		var packed: PackedScene = ResourceLoader.load(scene_path) as PackedScene
+		if packed == null:
+			continue
+		var instance: Node = packed.instantiate()
+		if instance == null:
+			continue
+		var affected: Array[String] = []
+		_apply_by_type(instance, type_name, property, value, affected)
+		if not affected.is_empty():
+			packed.pack(instance)
+			if ResourceSaver.save(packed, scene_path) != OK:
+				errs.append({&"scene": scene_path, &"err": "Save failed"})
+			else:
+				scenes_affected += 1
+				total_nodes += affected.size()
+		instance.free()
+
+	_utils.refresh_filesystem()
+	var result: Dictionary = {&"scenes": scenes_affected, &"nodes": total_nodes}
+	if not errs.is_empty():
+		result[&"errs"] = errs
+	return result
+
+
+func _collect_scene_files(root_path: String, exclude_addons: bool) -> PackedStringArray:
+	var files: PackedStringArray = []
+	var dir: DirAccess = DirAccess.open(root_path)
+	if dir == null:
+		return files
+	dir.list_dir_begin()
+	var file: String = dir.get_next()
+	while not file.is_empty():
+		var full_path: String = root_path.path_join(file)
+		if dir.current_is_dir():
+			if not (exclude_addons and file == "addons"):
+				files.append_array(_collect_scene_files(full_path, exclude_addons))
+		elif file.ends_with(".tscn"):
+			files.append(full_path)
+		file = dir.get_next()
+	dir.list_dir_end()
+	return files

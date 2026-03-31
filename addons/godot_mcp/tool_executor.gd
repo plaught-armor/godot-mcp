@@ -70,19 +70,19 @@ func execute_tool(tool_name: StringName, args: Dictionary) -> Dictionary:
 func _get_handler(tool_name: StringName) -> RefCounted:
 	match tool_name:
 		# File tools
-		&"list_dir", &"read_file", &"read_files", &"create_file", &"search_project", &"create_folder", &"delete_file", &"delete_folder", &"rename_file", &"replace_in_files", &"bulk_edit", &"find_references", &"list_resources":
+		&"file":
 			return _file_tools
 
 		# Scene tools
-		&"scene_edit", &"create_scene", &"read_scene", &"attach_script", &"detach_script", &"set_sprite_texture", &"get_scene_hierarchy", &"get_scene_node_properties", &"set_scene_node_property":
+		&"scene":
 			return _scene_tools
 
 		# Script tools
-		&"create_script", &"edit_script", &"validate_script", &"validate_scripts", &"list_scripts", &"create_script_file", &"modify_variable", &"modify_signal", &"modify_function", &"modify_function_delete", &"delete_script", &"rename_script", &"format_script", &"get_script_symbols", &"find_class_definition":
+		&"script":
 			return _script_tools
 
 		# Project/debug tools
-		&"get_project_settings", &"set_project_setting", &"get_autoloads", &"get_node_properties", &"get_console_log", &"get_errors", &"get_debug_errors", &"clear_console_log", &"open_in_godot", &"scene_tree_dump", &"play_project", &"stop_project", &"is_project_running", &"git", &"run_shell_command", &"get_uid", &"query_class_info", &"query_classes":
+		&"proj", &"git", &"shell":
 			return _project_tools
 
 		# Asset tools

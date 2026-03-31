@@ -21,17 +21,17 @@ func theme(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"create":
+		&"create":
 			return _create(args)
-		"color":
+		&"color":
 			return _set_color(args)
-		"constant":
+		&"constant":
 			return _set_constant(args)
-		"font_size":
+		&"font_size":
 			return _set_font_size(args)
-		"stylebox":
+		&"stylebox":
 			return _set_stylebox(args)
-		"info":
+		&"info":
 			return _info(args)
 		_:
 			return { &"err": "Unknown theme_edit action: " + action }

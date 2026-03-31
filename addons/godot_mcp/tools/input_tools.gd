@@ -22,9 +22,9 @@ func input(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"list":
+		&"list":
 			return _get_actions(args)
-		"set":
+		&"set":
 			return _set_action(args)
 		_:
 			return { &"err": "Unknown input_edit action: " + action }
@@ -70,11 +70,11 @@ func _set_action(args: Dictionary) -> Dictionary:
 		return { &"err": "Missing 'operation'. Use: add, remove, set" }
 
 	match operation:
-		"add":
+		&"add":
 			return _add(input_action, args)
-		"remove":
+		&"remove":
 			return _remove(input_action)
-		"set":
+		&"set":
 			return _replace(input_action, args)
 		_:
 			return { &"err": "Unknown operation: %s. Use: add, remove, set" % operation }
@@ -140,31 +140,31 @@ func _replace(input_action: String, args: Dictionary) -> Dictionary:
 func _create_input_event(desc: Dictionary) -> Dictionary:
 	var type: String = desc.get(&"type", "")
 	match type:
-		"key":
-			var key_string: String = desc.get(&"key", "")
-			if key_string.is_empty():
-				return { &"err": "Missing 'key' for key event" }
+		&"key":
+			if not desc.has(&"key"):
+				return {&"err": "Missing 'key' for key event"}
 			var event: InputEventKey = InputEventKey.new()
+			var key_string: String = desc[&"key"]
 			var keycode: Key = OS.find_keycode_from_string(key_string)
 			if keycode == 0:
 				return { &"err": "Unknown key: " + key_string }
 			event.physical_keycode = keycode
 			return { &"event": event }
-		"mouse_button":
+		&"mouse_button":
 			var button_index: int = desc.get(&"button_index", 0)
 			if button_index <= 0:
 				return { &"err": "Invalid 'button_index' for mouse_button (must be >= 1)" }
 			var event: InputEventMouseButton = InputEventMouseButton.new()
 			event.button_index = button_index
 			return { &"event": event }
-		"joypad_button":
+		&"joypad_button":
 			var button_index: int = desc.get(&"button_index", -1)
 			if button_index < 0:
 				return { &"err": "Missing or invalid 'button_index' for joypad_button" }
 			var event: InputEventJoypadButton = InputEventJoypadButton.new()
 			event.button_index = button_index
 			return { &"event": event }
-		"joypad_motion":
+		&"joypad_motion":
 			var axis: int = desc.get(&"axis", -1)
 			if axis < 0:
 				return { &"err": "Missing or invalid 'axis' for joypad_motion" }

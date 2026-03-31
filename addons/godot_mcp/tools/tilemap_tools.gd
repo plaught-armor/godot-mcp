@@ -21,17 +21,17 @@ func tmap(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"set_cell":
+		&"set_cell":
 			return _set_cell(args)
-		"fill_rect":
+		&"fill_rect":
 			return _fill_rect(args)
-		"get_cell":
+		&"get_cell":
 			return _get_cell(args)
-		"clear":
+		&"clear":
 			return _clear(args)
-		"info":
+		&"info":
 			return _info(args)
-		"used_cells":
+		&"used_cells":
 			return _get_used_cells(args)
 		_:
 			return { &"err": "Unknown tilemap_edit action: " + action }

@@ -22,6 +22,58 @@ var _utils: ToolUtils
 var _project_path: String = ProjectSettings.globalize_path("res://")
 
 
+func proj(args: Dictionary) -> Dictionary:
+	args.merge(args.get(&"properties", {}))
+	match args[&"action"]:
+		&"settings":
+			return get_project_settings(args)
+		&"set_setting":
+			return set_project_setting(args)
+		&"node_props":
+			return get_node_properties(args)
+		&"autoloads":
+			return get_autoloads(args)
+		&"add_autoload":
+			return _add_autoload(args)
+		&"rm_autoload":
+			return _rm_autoload(args)
+		&"console":
+			return get_console_log(args)
+		&"errors":
+			return get_errors(args)
+		&"debug_errors":
+			return get_debug_errors(args)
+		&"clear_console":
+			return clear_console_log(args)
+		&"open":
+			return open_in_godot(args)
+		&"tree":
+			return scene_tree_dump(args)
+		&"play":
+			return play_project(args)
+		&"stop":
+			return stop_project(args)
+		&"running":
+			return is_project_running(args)
+		&"uid":
+			return get_uid(args)
+		&"class_info":
+			return query_class_info(args)
+		&"classes":
+			return query_classes(args)
+		&"export_presets":
+			return _list_export_presets()
+		&"export_info":
+			return _export_info()
+		&"export_cmd":
+			return _export_cmd(args)
+	return {&"err": "Unknown proj action: " + str(args.get(&"action", ""))}
+
+
+func shell(args: Dictionary) -> Dictionary:
+	return run_shell_command(args)
+
+
 func set_editor_plugin(plugin: EditorPlugin) -> void:
 	_editor_plugin = plugin
 
@@ -114,7 +166,30 @@ func get_autoloads(_args: Dictionary) -> Dictionary:
 				&"singleton": is_singleton,
 			},
 		)
-	return { &"autoloads": _utils.tabular(autoloads, [&"name", &"path", &"singleton"]) }
+	return {&"autoloads": _utils.tabular(autoloads, [&"name", &"path", &"singleton"])}
+
+
+func _add_autoload(args: Dictionary) -> Dictionary:
+	var autoload_name: String = args[&"name"]
+	var path: String = args[&"path"]
+	var singleton: bool = args.get(&"singleton", true)
+	var setting_key: String = "autoload/" + autoload_name
+	if ProjectSettings.has_setting(setting_key):
+		return {&"err": "Autoload already exists: " + autoload_name}
+	var value: String = ("*" if singleton else "") + path
+	ProjectSettings.set_setting(setting_key, value)
+	ProjectSettings.save()
+	return {}
+
+
+func _rm_autoload(args: Dictionary) -> Dictionary:
+	var autoload_name: String = args[&"name"]
+	var setting_key: String = "autoload/" + autoload_name
+	if not ProjectSettings.has_setting(setting_key):
+		return {&"err": "Autoload not found: " + autoload_name}
+	ProjectSettings.set_setting(setting_key, null)
+	ProjectSettings.save()
+	return {}
 
 
 # =============================================================================
@@ -243,13 +318,13 @@ func get_console_log(args: Dictionary) -> Dictionary:
 		var filtered: Array[String] = []
 		for line: String in all_lines:
 			match severity:
-				"error":
+				&"error":
 					if line.containsn("ERROR") or line.containsn("SCRIPT ERROR"):
 						filtered.append(line)
-				"warning":
+				&"warning":
 					if line.containsn("WARNING"):
 						filtered.append(line)
-				"info":
+				&"info":
 					if not line.containsn("ERROR") and not line.containsn("WARNING"):
 						filtered.append(line)
 		all_lines = filtered
@@ -269,7 +344,7 @@ func get_console_log(args: Dictionary) -> Dictionary:
 # =============================================================================
 # get_errors
 # =============================================================================
-const _ERROR_PREFIXES: PackedStringArray = [
+static var _ERROR_PREFIXES: PackedStringArray = [
 	"ERROR:",
 	"SCRIPT ERROR:",
 	"USER ERROR:",
@@ -620,15 +695,15 @@ func git(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"status":
+		&"status":
 			return _git_status(args)
-		"commit":
+		&"commit":
 			return _git_commit(args)
-		"diff":
+		&"diff":
 			return _git_diff(args)
-		"log":
+		&"log":
 			return _git_log(args)
-		"stash_push", "stash_pop", "stash_list":
+		&"stash_push", &"stash_pop", &"stash_list":
 			args[&"action"] = action.substr(6) # strip "stash_" prefix
 			return _git_stash(args)
 	return { &"err": "Unknown git action: " + action }
@@ -673,7 +748,6 @@ func _git_status(_args: Dictionary) -> Dictionary:
 	return {
 		&"branch": branch,
 		&"files": _utils.tabular(files, [&"path", &"status"]),
-		&"clean": files.size() == 0,
 	}
 
 
@@ -682,11 +756,11 @@ func _git_status(_args: Dictionary) -> Dictionary:
 # =============================================================================
 func _git_commit(args: Dictionary) -> Dictionary:
 	var message: String = args[&"message"]
-	var files: Array = args.get(&"files", []) # Variant array from JSON
+	var files: Array = args.get(&"files", [])
 	var stage_all: bool = args.get(&"all", false)
 
 	if message.strip_edges().is_empty():
-		return { &"err": "Missing 'message'" }
+		return {&"err": "Missing 'message'"}
 
 	var project_path: String = _project_path
 
@@ -808,12 +882,12 @@ func _git_log(args: Dictionary) -> Dictionary:
 ## Git stash operations: push, pop, or list.
 func _git_stash(args: Dictionary) -> Dictionary:
 	var action: String = args[&"action"]
-	var message: String = args[&"message"]
 
 	match action:
-		"push":
+		&"push":
 			var git_args: PackedStringArray = ["-C", _project_path, "stash", "push"]
-			if not message.is_empty():
+			if args.has(&"message"):
+				var message: String = args[&"message"]
 				git_args.append("-m")
 				git_args.append(message)
 			var output: Array = []
@@ -821,13 +895,13 @@ func _git_stash(args: Dictionary) -> Dictionary:
 			if exit_code != 0:
 				return { &"err": "git stash push failed (exit %d)" % exit_code }
 			return {}
-		"pop":
+		&"pop":
 			var output: Array = []
 			var exit_code: int = OS.execute("git", ["-C", _project_path, "stash", "pop"], output)
 			if exit_code != 0:
 				return { &"err": "git stash pop failed (exit %d): %s" % [exit_code, output[0] if output.size() > 0 else ""] }
 			return {}
-		"list":
+		&"list":
 			var output: Array = []
 			var exit_code: int = OS.execute("git", ["-C", _project_path, "stash", "list"], output)
 			if exit_code != 0:
@@ -845,7 +919,7 @@ func _git_stash(args: Dictionary) -> Dictionary:
 # =============================================================================
 # run_shell_command - Execute a shell command in the project directory
 # =============================================================================
-const _BLOCKED_COMMANDS: PackedStringArray = ["rm", "sudo", "chmod", "chown", "mkfs", "dd", "kill", "killall", "pkill", "shutdown", "reboot", "init", "systemctl"]
+static var _BLOCKED_COMMANDS: PackedStringArray = ["rm", "sudo", "chmod", "chown", "mkfs", "dd", "kill", "killall", "pkill", "shutdown", "reboot", "init", "systemctl"]
 
 
 ## Execute a shell command in the project directory.
@@ -1031,4 +1105,58 @@ func query_classes(args: Dictionary) -> Dictionary:
 		filtered.append(cls)
 
 	filtered.sort()
-	return { &"classes": filtered }
+	return {&"classes": filtered}
+
+
+# =============================================================================
+# export — export presets and project export info
+# =============================================================================
+func export(args: Dictionary) -> Dictionary:
+	args.merge(args.get(&"properties", {}))
+	match args[&"action"]:
+		&"list_presets":
+			return _list_export_presets()
+		&"info":
+			return _export_info()
+		&"cmd":
+			return _export_cmd(args)
+	return {&"err": "Unknown export action (use list_presets, info, cmd)"}
+
+
+func _list_export_presets() -> Dictionary:
+	var cfg_path: String = ProjectSettings.globalize_path("res://export_presets.cfg")
+	if not FileAccess.file_exists(cfg_path):
+		return {&"presets": []}
+	var cfg: ConfigFile = ConfigFile.new()
+	if cfg.load(cfg_path) != OK:
+		return {&"err": "Failed to parse export_presets.cfg"}
+	var presets: Array[Dictionary] = []
+	var idx: int = 0
+	while cfg.has_section("preset." + str(idx)):
+		var section: String = "preset." + str(idx)
+		presets.append({
+			&"idx": idx,
+			&"name": cfg.get_value(section, "name", ""),
+			&"platform": cfg.get_value(section, "platform", ""),
+			&"runnable": cfg.get_value(section, "runnable", false),
+			&"path": cfg.get_value(section, "export_path", ""),
+		})
+		idx += 1
+	return {&"presets": presets}
+
+
+func _export_info() -> Dictionary:
+	return {
+		&"has_presets": FileAccess.file_exists(ProjectSettings.globalize_path("res://export_presets.cfg")),
+		&"godot": OS.get_executable_path(),
+		&"project": ProjectSettings.globalize_path("res://"),
+		&"templates": OS.get_data_dir().path_join("export_templates"),
+	}
+
+
+func _export_cmd(args: Dictionary) -> Dictionary:
+	var preset_name: String = args[&"preset"]
+	var debug: bool = args.get(&"debug", false)
+	var cmd: String = OS.get_executable_path()
+	var cli_args: PackedStringArray = ["--headless", "--path", ProjectSettings.globalize_path("res://"), "--export-" + ("debug" if debug else "release"), preset_name]
+	return {&"cmd": cmd, &"args": Array(cli_args)}

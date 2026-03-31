@@ -21,17 +21,17 @@ func audio(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"list":
+		&"list":
 			return _get_buses()
-		"add":
+		&"add":
 			return _add_bus(args)
-		"set":
+		&"set":
 			return _set_bus(args)
-		"effect":
+		&"effect":
 			return _add_effect(args)
-		"player":
+		&"player":
 			return _add_player(args)
-		"info":
+		&"info":
 			return _info(args)
 		_:
 			return { &"err": "Unknown audio_edit action: " + action }
@@ -122,57 +122,57 @@ func _add_effect(args: Dictionary) -> Dictionary:
 	var effect: AudioEffect
 
 	match effect_type.to_lower():
-		"reverb":
+		&"reverb":
 			var e := AudioEffectReverb.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"chorus":
+		&"chorus":
 			var e := AudioEffectChorus.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"delay":
+		&"delay":
 			var e := AudioEffectDelay.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, effect_params[k])
 			effect = e
-		"compressor":
+		&"compressor":
 			var e := AudioEffectCompressor.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"limiter":
+		&"limiter":
 			var e := AudioEffectLimiter.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"phaser":
+		&"phaser":
 			var e := AudioEffectPhaser.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"distortion":
+		&"distortion":
 			var e := AudioEffectDistortion.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, effect_params[k])
 			effect = e
-		"lowpass":
+		&"lowpass":
 			var e := AudioEffectLowPassFilter.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"highpass":
+		&"highpass":
 			var e := AudioEffectHighPassFilter.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"bandpass":
+		&"bandpass":
 			var e := AudioEffectBandPassFilter.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))
 			effect = e
-		"amplify":
+		&"amplify":
 			var e := AudioEffectAmplify.new()
 			for k: String in effect_params:
 				if k in e: e.set(k, float(effect_params[k]))

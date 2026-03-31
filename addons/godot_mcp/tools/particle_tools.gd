@@ -21,15 +21,15 @@ func ptcl(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"create":
+		&"create":
 			return _create(args)
-		"material":
+		&"material":
 			return _set_material(args)
-		"gradient":
+		&"gradient":
 			return _set_color_gradient(args)
-		"preset":
+		&"preset":
 			return _apply_preset(args)
-		"info":
+		&"info":
 			return _info(args)
 		_:
 			return { &"err": "Unknown particle_edit action: " + action }
@@ -155,7 +155,7 @@ func _apply_preset(args: Dictionary) -> Dictionary:
 
 	var preset: String = args[&"preset"]
 	match preset:
-		"explosion":
+		&"explosion":
 			mat.direction = Vector3(0, -1, 0)
 			mat.spread = 180.0
 			mat.initial_velocity_min = 5.0
@@ -163,7 +163,7 @@ func _apply_preset(args: Dictionary) -> Dictionary:
 			mat.gravity = Vector3(0, -9.8, 0)
 			node.one_shot = true
 			node.explosiveness = 1.0
-		"fire":
+		&"fire":
 			mat.direction = Vector3(0, -1, 0)
 			mat.spread = 15.0
 			mat.initial_velocity_min = 2.0
@@ -171,7 +171,7 @@ func _apply_preset(args: Dictionary) -> Dictionary:
 			mat.gravity = Vector3(0, 0, 0)
 			mat.scale_min = 0.5
 			mat.scale_max = 1.5
-		"smoke":
+		&"smoke":
 			mat.direction = Vector3(0, -1, 0)
 			mat.spread = 20.0
 			mat.initial_velocity_min = 0.5
@@ -179,7 +179,7 @@ func _apply_preset(args: Dictionary) -> Dictionary:
 			mat.gravity = Vector3(0, 0, 0)
 			mat.scale_min = 1.0
 			mat.scale_max = 3.0
-		"sparks":
+		&"sparks":
 			mat.direction = Vector3(0, -1, 0)
 			mat.spread = 60.0
 			mat.initial_velocity_min = 3.0
@@ -187,14 +187,14 @@ func _apply_preset(args: Dictionary) -> Dictionary:
 			mat.gravity = Vector3(0, 9.8, 0)
 			mat.scale_min = 0.1
 			mat.scale_max = 0.3
-		"rain":
+		&"rain":
 			mat.direction = Vector3(0, 1, 0)
 			mat.spread = 5.0
 			mat.initial_velocity_min = 10.0
 			mat.initial_velocity_max = 15.0
 			mat.gravity = Vector3(0, 9.8, 0)
 			mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-		"snow":
+		&"snow":
 			mat.direction = Vector3(0, 1, 0)
 			mat.spread = 30.0
 			mat.initial_velocity_min = 0.5

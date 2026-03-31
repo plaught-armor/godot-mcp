@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/bridge"
@@ -15,7 +13,7 @@ import (
 
 const (
 	serverName    = "godot-mcp-server"
-	serverVersion = "0.7.0-rc1"
+	serverVersion = "0.12.0-rc1"
 )
 
 // New creates and configures the MCP server.
@@ -38,12 +36,11 @@ func newEager(server *mcp.Server, b bridge.Bridge) *mcp.Server {
 	server.AddTool(
 		&mcp.Tool{
 			Name:        "get_godot_status",
-			Description: "Check Godot connection status. Pass instance/set_primary to manage multi-instance.",
+			Description: "Check Godot connection status. Pass set_primary to change primary instance.",
 			InputSchema: &tools.Schema{
 				Type: "object",
 				Properties: map[string]*tools.Schema{
-					"instance":    {Type: "string", Description: "Target instance ID"},
-					"set_primary": {Type: "string", Description: "Set primary instance ID"},
+					"set_primary": {Type: "string"},
 				},
 			},
 		},
@@ -75,10 +72,9 @@ func newLazy(server *mcp.Server, b bridge.Bridge) *mcp.Server {
 			InputSchema: &tools.Schema{
 				Type: "object",
 				Properties: map[string]*tools.Schema{
-					"enable":      {Type: "array", Description: "Categories to enable", Items: &tools.Schema{Type: "string"}},
-					"disable":     {Type: "array", Description: "Categories to disable", Items: &tools.Schema{Type: "string"}},
-					"instance":    {Type: "string", Description: "Target instance ID"},
-					"set_primary": {Type: "string", Description: "Set primary instance ID"},
+					"enable":      {Type: "array", Items: &tools.Schema{Type: "string"}},
+					"disable":     {Type: "array", Items: &tools.Schema{Type: "string"}},
+					"set_primary": {Type: "string"},
 				},
 			},
 		},
@@ -241,26 +237,17 @@ func runtimeToolHandler(b bridge.Bridge, td *tools.ToolDef, ctx context.Context,
 	if !b.IsRuntimeConnected() {
 		return errorResultWithSuggestion(
 			fmt.Errorf("game is not running"),
-			"Use play_project to start the game first",
+			"Use proj(action:play) to start the game first",
 		)
 	}
 
 	raw, err := b.InvokeRuntimeTool(ctx, td.Name, args, instanceID, runtimePID)
 	if err != nil {
-		// If a runtime tool timed out, the debugger may have paused the game.
-		// Ask the editor plugin to press Continue so the next retry can succeed.
-		if strings.Contains(err.Error(), "timed out") {
-			if notifyErr := b.SendNotification("debugger_continue", nil, instanceID); notifyErr != nil {
-				log.Printf("[MCP] Failed to send debugger_continue: %v", notifyErr)
-			} else {
-				log.Printf("[MCP] Sent debugger_continue after runtime timeout")
-			}
-		}
 		return errorResult(err)
 	}
 
-	// Special case: capture_screenshot returns image data
-	if td.Name == "capture_screenshot" {
+	// Runtime actions that return image data (screenshot, camera capture)
+	if hasImageJSON(raw) {
 		return screenshotResult(raw)
 	}
 
@@ -342,7 +329,16 @@ func errorResultWithSuggestion(err error, suggestion string) (*mcp.CallToolResul
 	}, nil
 }
 
-// isErrorJSON checks if raw JSON contains a top-level "err" key.
+func hasImageJSON(data json.RawMessage) bool {
+	var probe struct {
+		Image *string `json:"img"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return false
+	}
+	return probe.Image != nil
+}
+
 func isErrorJSON(data json.RawMessage) bool {
 	var probe struct {
 		Error *string `json:"err"`

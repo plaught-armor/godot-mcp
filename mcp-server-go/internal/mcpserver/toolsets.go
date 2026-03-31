@@ -21,7 +21,7 @@ func newToolSetManager(server *mcp.Server, b bridge.Bridge) *ToolSetManager {
 	return &ToolSetManager{
 		server: server,
 		bridge: b,
-		active: make(map[string]bool),
+		active: make(map[string]bool, 20),
 	}
 }
 
@@ -58,8 +58,6 @@ func (m *ToolSetManager) EnableCategories(cats ...string) []string {
 // DisableCategories removes tool categories from the active set.
 func (m *ToolSetManager) DisableCategories(cats ...string) []string {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	var disabled []string
 	var removeNames []string
 	for _, cat := range cats {
@@ -72,6 +70,8 @@ func (m *ToolSetManager) DisableCategories(cats ...string) []string {
 		delete(m.active, cat)
 		disabled = append(disabled, cat)
 	}
+	m.mu.Unlock()
+
 	if len(removeNames) > 0 {
 		m.server.RemoveTools(removeNames...)
 	}

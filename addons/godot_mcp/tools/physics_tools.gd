@@ -22,17 +22,17 @@ func phys(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"collision":
+		&"collision":
 			return _setup_collision(args)
-		"layers":
+		&"layers":
 			return _set_layers(args)
-		"get_layers":
+		&"get_layers":
 			return _get_layers(args)
-		"raycast":
+		&"raycast":
 			return _add_raycast(args)
-		"body":
+		&"body":
 			return _setup_body(args)
-		"info":
+		&"info":
 			return _info(args)
 		_:
 			return { &"err": "Unknown physics_edit action: " + action }

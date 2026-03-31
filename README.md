@@ -6,7 +6,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 68 tools · Proxy bridge · Runtime bridge · Interactive project visualizer · MIT license
+> Godot 4.x · 22 consolidated tools · HTTP daemon mode · EngineDebugger runtime IPC · Proxy bridge · Interactive project visualizer · MIT license
 
 ---
 
@@ -111,20 +111,36 @@ Hit **Restart Project** in the Godot editor. Check the **top-right corner** — 
 
 ## What Can It Do?
 
-### 59 Tools Across 7 Categories
+### 22 Consolidated Tools
 
-| Category | Tools | Examples |
-|----------|-------|---------|
-| **File Operations** | 13 | Browse directories, read/create/search files, bulk read/edit, find references, list resources, rename/delete files and folders |
-| **Scene Operations** | 7 | Create/read scenes, batch scene edits (add/remove/move/reparent/rename/set properties), attach/detach scripts, collision shapes, textures |
-| **Script Operations** | 7–8 | Create/edit/validate/format scripts, list scripts, get symbols, find class definitions, batch validate |
-| **Project Tools** | 21 | Get/set project settings, input map, collision layers, console log, debug errors, scene tree dumps, play/stop project, ClassDB introspection, UID lookup |
-| **Git & Shell** | 2 | Consolidated git operations (status/commit/diff/log/stash), shell commands |
-| **Runtime Tools** | 8 | Screenshots, live scene tree, get/set properties, call methods, metrics, consolidated input injection, signal watching |
-| **Asset Generation** | 1 | Generate 2D sprites from SVG |
+Every tool uses an `action` enum for multiple operations in one schema, minimizing token overhead.
+
+| Tool | Actions | What it does |
+|------|---------|-------------|
+| `file` | ls, read, reads, create, search, mkdir, rm, rmdir, rename, replace, bulk_edit, refs, resources | File operations |
+| `scene` | create, read, edit, batch, find_by_type, set_by_type, cross_scene_set, attach_script, detach_script, texture | Scene editing |
+| `script` | create, edit, validate, validate_batch, list, symbols, find_class, format | GDScript operations |
+| `proj` | settings, set_setting, node_props, autoloads, console, errors, debug_errors, clear_console, open, tree, play, stop, running, uid, class_info, classes, export_presets, export_info, export_cmd | Project management |
+| `git` | status, commit, diff, log, stash_push, stash_pop, stash_list | Version control |
+| `shell` | (direct) | Execute shell commands |
+| `rt` | screenshot, tree, prop, set_prop, call, metrics, input, sig_watch, prop_watch, ui, cam_spawn, cam_move, cam_capture, cam_restore, nav, log | Runtime game tools |
+| `anim` | list, create, track, keyframe, info, remove, new_tree, tree, add_state, rm_state, add_trans, rm_trans, blend_node, set_param | Animation |
+| `s3d` | mesh, lighting, material, environment, camera, gridmap | 3D scene |
+| `phys` | collision, layers, get_layers, raycast, body, info | Physics |
+| `nav` | region, bake, agent, layers, info | Navigation |
+| `tmap` | set_cell, fill_rect, get_cell, clear, info, used_cells | TileMap |
+| `ptcl` | create, material, gradient, preset, info | Particles |
+| `audio` | list, add, set, effect, player, info | Audio buses |
+| `input` | list, set | Input map |
+| `shader` | create, read, edit, assign, param, params | Shaders |
+| `theme` | create, color, constant, font_size, stylebox, info | UI themes |
+| `tres` | read, edit, create, preview | Resources |
+| `perf` | monitors, summary | Profiling |
+| `analyze` | unused, signals, complexity, references, circular, stats, live_signals | Project analysis |
+| `generate_2d_asset` | (direct) | 2D sprite generation |
 
 > `format_script` requires [gdscript-formatter](https://github.com/GDQuest/gdscript-formatter) on PATH. If not found, the tool is hidden from AI clients automatically.
-> Runtime tools require the game to be running (`play_project` first). They operate on the live game process, not the editor.
+> Runtime tools require the game to be running (`play_project` first). They communicate with the game via EngineDebugger IPC through the editor.
 
 ### Interactive Visualizer
 
@@ -166,38 +182,54 @@ The Godot plugin adds settings under **Project → Project Settings → Godot MC
 ## Architecture
 
 ```
-┌─────────────┐    MCP (stdio)    ┌─────────────┐   WebSocket    ┌──────────────┐
-│  AI Client   │◄────────────────►│  MCP Server  │◄─────────────►│ Godot Editor │
-│  (Claude,    │                  │  (Go binary) │   port 6505   │  (Plugin)    │
-│   Cursor)    │                  │              │◄─────────────►│              │
-└─────────────┘                  │  Visualizer  │  (same port)  │ Running Game │
-                                 │  HTTP :6510  │               │  (Autoload)  │
-                                 └──────┬───────┘               └──────────────┘
-                                        │
-                                 ┌──────▼───────┐
-                                 │   Browser     │
-                                 │  Visualizer   │
-                                 └──────────────┘
+                                                           ┌──────────────┐
+┌─────────────┐  MCP (stdio or HTTP)  ┌─────────────┐     │ Godot Editor │
+│  AI Client   │◄────────────────────►│  MCP Server  │◄───►│  (Plugin)    │
+│  (Claude,    │                      │  (Go binary) │ WS  │              │
+│   Cursor)    │                      │              │6505 │  Debugger    │
+└─────────────┘                      │  Visualizer  │     │  Plugin      │
+                                     │  HTTP :6510  │     │      │       │
+┌─────────────┐  MCP (HTTP :6506)    │              │     │      │ IPC   │
+│  AI Client 2 │◄────────────────────►│  (--http     │     │      ▼       │
+│  (Cursor,    │                      │   daemon)    │     │ Running Game │
+│   Codex)     │                      └──────┬───────┘     │  (Autoload)  │
+└─────────────┘                              │             └──────────────┘
+                                      ┌──────▼───────┐
+                                      │   Browser     │
+                                      │  Visualizer   │
+                                      └──────────────┘
 ```
 
-The Go server maintains two WebSocket connections on port 6505: one to the editor plugin (for scene/script/project tools) and one to the running game's autoload (for runtime tools like screenshots, input injection, and live inspection).
+**Editor tools** (scene/script/project) go from the Go server to the editor plugin via WebSocket on port 6505.
+
+**Runtime tools** (screenshots, input injection, live inspection) go from the Go server to the editor, then through Godot's built-in **EngineDebugger IPC** channel to the running game. No extra port or connection needed.
+
+**HTTP daemon mode** (`--http` or `GODOT_MCP_HTTP=1`) starts a persistent HTTP server on port 6506, allowing multiple AI clients to share one Godot connection. Idle auto-shutdown when all editors disconnect.
+
+**Proxy bridge** — if a second MCP server starts while one is already running, it connects as a proxy instead of killing the first. Both servers share the same Godot connection.
 
 ---
 
 ## Limitations
 
 - **Local only** — runs on localhost, no remote connections
-- **One project at a time** — each server connects to one Godot editor instance
 - **No undo for MCP edits** — the visualizer has undo/redo, but AI client tool calls save directly (use version control)
 - **AI struggles with complex layouts** — UI composition and some node property setups still need manual work
+- **Godot 4.5+ recommended** — runtime tools use rest parameters (`...args`) which require Godot 4.5+. Editor tools work on 4.x
 
 ---
 
 ## Development
 
 ```bash
+# Build
 cd mcp-server-go
 make build
+
+# Test (requires Godot 4.5+ binary — set GODOT= to override path)
+cd ..
+make test              # GDScript parse check + unit tests + Go build/vet
+make test-integration  # Full Go server + headless Godot editor pipeline
 ```
 
 Binary is at `mcp-server-go/bin/godot-mcp-server`. Cross-compile for all platforms with `make build-all`.

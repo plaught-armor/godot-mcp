@@ -21,15 +21,15 @@ func nav(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"region":
+		&"region":
 			return _setup_region(args)
-		"bake":
+		&"bake":
 			return _bake(args)
-		"agent":
+		&"agent":
 			return _setup_agent(args)
-		"layers":
+		&"layers":
 			return _set_layers(args)
-		"info":
+		&"info":
 			return _info(args)
 		_:
 			return { &"err": "Unknown navigation_edit action: " + action }

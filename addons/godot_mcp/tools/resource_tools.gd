@@ -21,13 +21,13 @@ func tres(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"read":
+		&"read":
 			return _read(args)
-		"edit":
+		&"edit":
 			return _edit(args)
-		"create":
+		&"create":
 			return _create(args)
-		"preview":
+		&"preview":
 			return _preview(args)
 		_:
 			return { &"err": "Unknown resource_edit action: " + action }

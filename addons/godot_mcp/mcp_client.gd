@@ -8,7 +8,7 @@ class_name MCPClient
 signal connected
 signal disconnected
 signal tool_requested(request_id: String, tool_name: String, args: Dictionary)
-signal debugger_continue_requested
+signal runtime_tool_requested(request_id: String, tool_name: String, args: Dictionary)
 signal visualizer_opened(url: String)
 signal visualizer_failed(error: String)
 
@@ -76,7 +76,22 @@ func disconnect_from_server() -> void:
 
 
 func send_tool_result(request_id: String, result: Variant = null) -> void:
-	_send_message({ &"type": &"tool_result", &"id": request_id, &"result": result })
+	_send_message({&"type": &"tool_result", &"id": request_id, &"result": result})
+
+
+## Send a runtime tool result with pre-serialized JSON (avoids double-serialization).
+## request_id is always a numeric string from Go's atomic counter — safe to interpolate.
+func send_raw_tool_result(request_id: String, result_json: String) -> void:
+	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		if not request_id.is_valid_int():
+			push_error("[GMCP] Invalid request_id in raw result: ", request_id)
+			return
+		socket.send_text('{"type":"tool_result","id":"' + request_id + '","result":' + result_json + '}')
+
+
+## Notify Go server of runtime connection status change.
+func send_runtime_status(is_running: bool) -> void:
+	_send_message({&"type": &"runtime_status", &"result": {&"running": is_running}})
 
 
 func send_visualizer_request(project_map: Dictionary) -> void:
@@ -144,21 +159,23 @@ func _handle_message(json_string: String) -> void:
 		&"ping":
 			_send_message(_PONG_MSG)
 		&"tool_invoke":
-			var request_id: String = message.get(&"id", "")
-			var tool_name: String = message.get(&"tool", "")
-			var args: Dictionary = message.get(&"args", { })
-			if not tool_name.begins_with(&"visualizer."):
+			var request_id: String = message[&"id"]
+			var tool_name: String = message[&"tool"]
+			var args: Dictionary = message.get(&"args", {})
+			if not tool_name.begins_with("visualizer."):
 				print("[GMCP] Tool request: ", tool_name, " (", request_id, ")")
 			tool_requested.emit(request_id, tool_name, args)
-		&"debugger_continue":
-			debugger_continue_requested.emit()
+		&"runtime_tool_invoke":
+			var request_id: String = message[&"id"]
+			var tool_name: String = message[&"tool"]
+			var args: Dictionary = message.get(&"args", {})
+			print("[GMCP] Runtime tool request: ", tool_name, " (", request_id, ")")
+			runtime_tool_requested.emit(request_id, tool_name, args)
 		&"visualizer_status":
-			var url: String = message.get(&"url", "")
-			var err: String = message.get(&"err", "")
-			if url != "":
-				visualizer_opened.emit(url)
+			if message.has(&"url"):
+				visualizer_opened.emit(message[&"url"])
 			else:
-				visualizer_failed.emit(err)
+				visualizer_failed.emit(message.get(&"err", ""))
 		_:
 			print("[GMCP] Unknown message type: ", msg_type)
 

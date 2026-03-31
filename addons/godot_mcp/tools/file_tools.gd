@@ -11,7 +11,7 @@ const DEFAULT_MAX_BYTES: int = 200_000
 const DEFAULT_MAX_RESULTS: int = 200
 const MAX_TRAVERSAL_DEPTH: int = 20
 const MAX_BULK_FILES: int = 20
-const _REGEX_META_CHARS: PackedStringArray = ["\\", ".", "+", "*", "?", "^", "$", "{", "}", "(", ")", "[", "]", "|"]
+static var _REGEX_META_CHARS: PackedStringArray = ["\\", ".", "+", "*", "?", "^", "$", "{", "}", "(", ")", "[", "]", "|"]
 
 var _editor_plugin: EditorPlugin = null
 var _exclude_dirs: PackedStringArray = []
@@ -24,6 +24,38 @@ func set_editor_plugin(plugin: EditorPlugin) -> void:
 
 func set_utils(utils: ToolUtils) -> void:
 	_utils = utils
+
+
+func file(args: Dictionary) -> Dictionary:
+	args.merge(args.get(&"properties", {}))
+	match args[&"action"]:
+		&"ls":
+			return list_dir(args)
+		&"read":
+			return read_file(args)
+		&"reads":
+			return read_files(args)
+		&"create":
+			return create_file(args)
+		&"search":
+			return search_project(args)
+		&"mkdir":
+			return create_folder(args)
+		&"rm":
+			return delete_file(args)
+		&"rmdir":
+			return delete_folder(args)
+		&"rename":
+			return rename_file(args)
+		&"replace":
+			return replace_in_files(args)
+		&"bulk_edit":
+			return bulk_edit(args)
+		&"refs":
+			return find_references(args)
+		&"resources":
+			return list_resources(args)
+	return {&"err": "Unknown file action: " + str(args.get(&"action", ""))}
 
 
 # =============================================================================

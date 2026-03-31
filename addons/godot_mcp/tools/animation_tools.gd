@@ -23,33 +23,33 @@ func anim(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
 	var action: String = args[&"action"]
 	match action:
-		"list":
+		&"list":
 			return _list(args)
-		"create":
+		&"create":
 			return _create(args)
-		"track":
+		&"track":
 			return _add_track(args)
-		"keyframe":
+		&"keyframe":
 			return _set_keyframe(args)
-		"info":
+		&"info":
 			return _info(args)
-		"remove":
+		&"remove":
 			return _remove(args)
-		"new_tree":
+		&"new_tree":
 			return _create_tree(args)
-		"tree":
+		&"tree":
 			return _get_tree_structure(args)
-		"add_state":
+		&"add_state":
 			return _add_state(args)
-		"rm_state":
+		&"rm_state":
 			return _remove_state(args)
-		"add_trans":
+		&"add_trans":
 			return _add_transition(args)
-		"rm_trans":
+		&"rm_trans":
 			return _remove_transition(args)
-		"blend_node":
+		&"blend_node":
 			return _set_blend_node(args)
-		"set_param":
+		&"set_param":
 			return _set_parameter(args)
 		_:
 			return { &"err": "Unknown animation_edit action: " + action }
@@ -129,7 +129,7 @@ func _create(args: Dictionary) -> Dictionary:
 
 	var anim_name: String = args[&"name"]
 
-	var anim := Animation.new()
+	var anim: Animation = Animation.new()
 	anim.length = args.get(&"length", 1.0)
 	anim.loop_mode = int(args.get(&"loop_mode", 0))
 
@@ -155,22 +155,22 @@ func _add_track(args: Dictionary) -> Dictionary:
 	var track_type_str: String = args.get(&"track_type", "value")
 	var track_type: int = Animation.TYPE_VALUE
 	match track_type_str:
-		"value": track_type = Animation.TYPE_VALUE
-		"position_2d": track_type = Animation.TYPE_POSITION_3D
-		"rotation_2d": track_type = Animation.TYPE_ROTATION_3D
-		"scale_2d": track_type = Animation.TYPE_SCALE_3D
-		"method": track_type = Animation.TYPE_METHOD
-		"bezier": track_type = Animation.TYPE_BEZIER
-		"blend_shape": track_type = Animation.TYPE_BLEND_SHAPE
+		&"value": track_type = Animation.TYPE_VALUE
+		&"position_2d": track_type = Animation.TYPE_POSITION_3D
+		&"rotation_2d": track_type = Animation.TYPE_ROTATION_3D
+		&"scale_2d": track_type = Animation.TYPE_SCALE_3D
+		&"method": track_type = Animation.TYPE_METHOD
+		&"bezier": track_type = Animation.TYPE_BEZIER
+		&"blend_shape": track_type = Animation.TYPE_BLEND_SHAPE
 
 	var track_idx: int = anim.add_track(track_type)
 	anim.track_set_path(track_idx, NodePath(track_path))
 
 	if args.has(&"update_mode") and track_type == Animation.TYPE_VALUE:
 		match args[&"update_mode"]:
-			"continuous": anim.value_track_set_update_mode(track_idx, Animation.UPDATE_CONTINUOUS)
-			"discrete": anim.value_track_set_update_mode(track_idx, Animation.UPDATE_DISCRETE)
-			"capture": anim.value_track_set_update_mode(track_idx, Animation.UPDATE_CAPTURE)
+			&"continuous": anim.value_track_set_update_mode(track_idx, Animation.UPDATE_CONTINUOUS)
+			&"discrete": anim.value_track_set_update_mode(track_idx, Animation.UPDATE_DISCRETE)
+			&"capture": anim.value_track_set_update_mode(track_idx, Animation.UPDATE_CAPTURE)
 
 	return { &"ti": track_idx }
 
@@ -193,7 +193,7 @@ func _set_keyframe(args: Dictionary) -> Dictionary:
 
 	# Parse string values
 	if value is String:
-		var expr := Expression.new()
+		var expr: Expression = Expression.new()
 		if expr.parse(value) == OK:
 			var parsed: Variant = expr.execute()
 			if parsed != null:
@@ -253,7 +253,7 @@ func _create_tree(args: Dictionary) -> Dictionary:
 	if not parent:
 		return { &"err": "Parent not found" }
 
-	var tree := AnimationTree.new()
+	var tree: AnimationTree = AnimationTree.new()
 	tree.name = args.get(&"name", "AnimationTree")
 	tree.tree_root = AnimationNodeStateMachine.new()
 
@@ -295,13 +295,18 @@ func _read_sm(sm: AnimationNodeStateMachine) -> Dictionary:
 			var state_name: String = pname.get_slice("/", 1)
 			if state_name != "Start" and state_name != "End":
 				var child: AnimationNode = sm.get_node(StringName(state_name))
-				var info: Dictionary = { &"name": state_name }
+				var pos: Vector2 = sm.get_node_position(StringName(state_name))
+				var info: Dictionary = {&"name": state_name, &"pos": "V2(%s,%s)" % [pos.x, pos.y]}
 				info.merge(_read_node_structure(child))
 				states.append(info)
 
 	var transitions: Array[Dictionary] = []
 	for i: int in sm.get_transition_count():
-		transitions.append({ &"from": str(sm.get_transition_from(i)), &"to": str(sm.get_transition_to(i)), &"switch_mode": sm.get_transition(i).switch_mode, &"advance_mode": sm.get_transition(i).advance_mode })
+		var t: AnimationNodeStateMachineTransition = sm.get_transition(i)
+		var td: Dictionary = {&"from": str(sm.get_transition_from(i)), &"to": str(sm.get_transition_to(i)), &"switch_mode": t.switch_mode, &"advance_mode": t.advance_mode, &"xfade": t.xfade_time}
+		if not t.advance_expression.is_empty():
+			td[&"expr"] = t.advance_expression
+		transitions.append(td)
 
 	return { &"type": "AnimationNodeStateMachine", &"states": states, &"transitions": transitions }
 
@@ -314,7 +319,8 @@ func _read_bt(bt: AnimationNodeBlendTree) -> Dictionary:
 			var n_name: String = pname.get_slice("/", 1)
 			if n_name != "output":
 				var child: AnimationNode = bt.get_node(StringName(n_name))
-				var info: Dictionary = { &"name": n_name, &"type": child.get_class() }
+				var pos: Vector2 = bt.get_node_position(StringName(n_name))
+				var info: Dictionary = {&"name": n_name, &"type": child.get_class(), &"pos": "V2(%s,%s)" % [pos.x, pos.y]}
 				if child is AnimationNodeAnimation:
 					info[&"animation"] = str((child as AnimationNodeAnimation).animation)
 				nodes.append(info)
@@ -338,14 +344,14 @@ func _add_state(args: Dictionary) -> Dictionary:
 	var state_type: String = args.get(&"state_type", "animation")
 	var node: AnimationNode
 	match state_type:
-		"animation":
-			var anim_node := AnimationNodeAnimation.new()
+		&"animation":
+			var anim_node: AnimationNodeAnimation = AnimationNodeAnimation.new()
 			if args.has(&"animation"):
 				anim_node.animation = StringName(args[&"animation"])
 			node = anim_node
-		"blend_tree":
+		&"blend_tree":
 			node = AnimationNodeBlendTree.new()
-		"state_machine":
+		&"state_machine":
 			node = AnimationNodeStateMachine.new()
 		_:
 			return { &"err": "Unknown state_type: " + state_type }
@@ -384,17 +390,21 @@ func _add_transition(args: Dictionary) -> Dictionary:
 
 	var from_state: String = args[&"from_state"]
 	var to_state: String = args[&"to_state"]
+	if from_state != "Start" and not sm.has_node(StringName(from_state)):
+		return {&"err": "State not found: " + from_state}
+	if to_state != "End" and not sm.has_node(StringName(to_state)):
+		return {&"err": "State not found: " + to_state}
 
-	var transition := AnimationNodeStateMachineTransition.new()
+	var transition: AnimationNodeStateMachineTransition = AnimationNodeStateMachineTransition.new()
 
-	match args.get(&"switch_mode", "immediate"):
-		"at_end": transition.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
-		"immediate": transition.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_IMMEDIATE
+	match args.get(&"switch_mode", &"immediate"):
+		&"at_end", &"sync": transition.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_AT_END
+		&"immediate": transition.switch_mode = AnimationNodeStateMachineTransition.SWITCH_MODE_IMMEDIATE
 
-	match args.get(&"advance_mode", "enabled"):
-		"disabled": transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_DISABLED
-		"enabled": transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED
-		"auto": transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
+	match args.get(&"advance_mode", &"enabled"):
+		&"disabled": transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_DISABLED
+		&"enabled": transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_ENABLED
+		&"auto": transition.advance_mode = AnimationNodeStateMachineTransition.ADVANCE_MODE_AUTO
 
 	if args.has(&"advance_expression"):
 		transition.advance_expression = args[&"advance_expression"]
@@ -418,6 +428,8 @@ func _remove_transition(args: Dictionary) -> Dictionary:
 
 	var from_state: String = args[&"from_state"]
 	var to_state: String = args[&"to_state"]
+	if not sm.has_transition(StringName(from_state), StringName(to_state)):
+		return {&"err": "No transition from " + from_state + " to " + to_state}
 	sm.remove_transition(StringName(from_state), StringName(to_state))
 	return {}
 
@@ -448,20 +460,20 @@ func _set_blend_node(args: Dictionary) -> Dictionary:
 
 	var node: AnimationNode
 	match bt_node_type:
-		"Animation":
-			var anim_node := AnimationNodeAnimation.new()
+		&"Animation":
+			var anim_node: AnimationNodeAnimation = AnimationNodeAnimation.new()
 			if args.has(&"animation"):
 				anim_node.animation = StringName(args[&"animation"])
 			node = anim_node
-		"Add2": node = AnimationNodeAdd2.new()
-		"Blend2": node = AnimationNodeBlend2.new()
-		"Add3": node = AnimationNodeAdd3.new()
-		"Blend3": node = AnimationNodeBlend3.new()
-		"TimeScale": node = AnimationNodeTimeScale.new()
-		"TimeSeek": node = AnimationNodeTimeSeek.new()
-		"Transition": node = AnimationNodeTransition.new()
-		"OneShot": node = AnimationNodeOneShot.new()
-		"Sub2": node = AnimationNodeSub2.new()
+		&"Add2": node = AnimationNodeAdd2.new()
+		&"Blend2": node = AnimationNodeBlend2.new()
+		&"Add3": node = AnimationNodeAdd3.new()
+		&"Blend3": node = AnimationNodeBlend3.new()
+		&"TimeScale": node = AnimationNodeTimeScale.new()
+		&"TimeSeek": node = AnimationNodeTimeSeek.new()
+		&"Transition": node = AnimationNodeTransition.new()
+		&"OneShot": node = AnimationNodeOneShot.new()
+		&"Sub2": node = AnimationNodeSub2.new()
 		_:
 			return { &"err": "Unknown bt_node_type: " + bt_node_type }
 
@@ -482,9 +494,11 @@ func _set_parameter(args: Dictionary) -> Dictionary:
 	if not parameter.begins_with("parameters/"):
 		parameter = "parameters/" + parameter
 
-	var value: Variant = args.get(&"value")
+	if not args.has(&"value"):
+		return {&"err": "Missing value"}
+	var value: Variant = args[&"value"]
 	if value is String:
-		var expr := Expression.new()
+		var expr: Expression = Expression.new()
 		if expr.parse(value) == OK:
 			var parsed: Variant = expr.execute()
 			if parsed != null:
