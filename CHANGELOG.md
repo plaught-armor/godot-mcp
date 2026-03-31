@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.12.0-rc1] - 2026-03-31
+## [0.12.0-rc2] - 2026-03-31
 
 ### Added
 - **EngineDebugger IPC** — runtime tools route through Godot's built-in debugger channel instead of a separate WebSocket. Zero config in the game process, no extra port, no race conditions
