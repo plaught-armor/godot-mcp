@@ -25,6 +25,7 @@ var _thread: Thread
 var _mutex: Mutex
 var _pending_requests: Array[Dictionary] = [] # [{id, tool, args}]
 var _thread_running: bool = false
+var _watched_window_ids: Array[int] = []
 
 
 func _enter_tree() -> void:
@@ -79,11 +80,16 @@ func _enter_tree() -> void:
 	# Start connection
 	_mcp_client.connect_to_server()
 
+	# Auto-dismiss: watch for new dialog windows being added to the scene
+	_setup_dialog_monitoring()
+
 	print("[GMCP] Plugin loaded - connecting to MCP server...")
 
 
 func _exit_tree() -> void:
 	print("[GMCP] Plugin unloading...")
+
+	_teardown_dialog_monitoring()
 
 	# Stop accepting new work and wait for the background thread to finish
 	_thread_running = false
@@ -133,6 +139,13 @@ const SETTINGS: Dictionary = {
 		&"hint": PROPERTY_HINT_NONE,
 		&"hint_string": "",
 		&"description": "Instance ID for multi-editor support. Leave empty to auto-derive from project folder name.",
+	},
+	&"godot_mcp/auto_dismiss_dialogs": {
+		&"type": TYPE_BOOL,
+		&"default": true,
+		&"hint": PROPERTY_HINT_NONE,
+		&"hint_string": "",
+		&"description": "Auto-dismiss blocking editor dialogs (reload, save confirmations) during MCP tool execution.",
 	},
 }
 
@@ -282,3 +295,51 @@ func _on_runtime_started(_session_id: int) -> void:
 
 func _on_runtime_stopped(_session_id: int) -> void:
 	_mcp_client.send_runtime_status(_debugger_plugin.is_runtime_connected())
+
+
+# =============================================================================
+# Auto-dismiss blocking editor dialogs (signal-based, no polling)
+# =============================================================================
+func _setup_dialog_monitoring() -> void:
+	var root: Window = EditorInterface.get_base_control().get_tree().root
+	root.child_entered_tree.connect(_on_root_child_entered)
+	for child: Node in root.get_children():
+		if child is Window:
+			_watch_window(child)
+
+
+func _teardown_dialog_monitoring() -> void:
+	var root: Window = EditorInterface.get_base_control().get_tree().root
+	if root.child_entered_tree.is_connected(_on_root_child_entered):
+		root.child_entered_tree.disconnect(_on_root_child_entered)
+	_watched_window_ids.clear()
+
+
+func _on_root_child_entered(node: Node) -> void:
+	if node is Window:
+		_watch_window(node)
+
+
+func _watch_window(win: Window) -> void:
+	var wid: int = win.get_instance_id()
+	if wid in _watched_window_ids:
+		return
+	_watched_window_ids.append(wid)
+	# Use about_to_popup only — avoids double-fire from visibility_changed
+	win.about_to_popup.connect(_try_dismiss.bind(win))
+	win.tree_exiting.connect(_unwatch_window.bind(wid))
+
+
+func _unwatch_window(wid: int) -> void:
+	var idx: int = _watched_window_ids.find(wid)
+	if idx >= 0:
+		_watched_window_ids.remove_at(idx)
+
+
+func _try_dismiss(win: Window) -> void:
+	if not ProjectSettings.get_setting(&"godot_mcp/auto_dismiss_dialogs", true):
+		return
+	if not win is AcceptDialog or not win.exclusive or win is FileDialog:
+		return
+	print("[GMCP] Auto-dismissed: %s" % win.title)
+	win.hide()

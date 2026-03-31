@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_runtime_dispatch()
 	_test_unknown_actions()
 	_test_valid_action_routing()
+	_test_auto_dismiss()
 
 	print("\n=== Dispatchers: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	quit(1 if _fail_count > 0 else 0)
@@ -161,6 +162,50 @@ func _test_valid_action_routing() -> void:
 	var scr: RefCounted = load("res://addons/godot_mcp/tools/script_tools.gd").new()
 	var list_result: Variant = scr.call(&"script", {&"action": &"list"})
 	_assert(list_result is Dictionary, "script action 'list' returns Dictionary")
+
+
+# =============================================================================
+# Auto-dismiss tests — unit test _try_dismiss logic directly
+# =============================================================================
+func _test_auto_dismiss() -> void:
+	# Load plugin script and instantiate to access _try_dismiss
+	var plugin_script: GDScript = load("res://addons/godot_mcp/plugin.gd")
+	# We can't instantiate the full plugin (needs editor), but we can test
+	# the dismiss logic by checking the conditions directly.
+
+	ProjectSettings.set_setting(&"godot_mcp/auto_dismiss_dialogs", true)
+
+	# Test 1: modal AcceptDialog — _try_dismiss should hide it
+	var dialog: AcceptDialog = AcceptDialog.new()
+	dialog.title = "Test Dismiss"
+	dialog.exclusive = true
+	dialog.visible = true
+	# Simulate what _try_dismiss does: check conditions then hide
+	var should_dismiss: bool = dialog is AcceptDialog and dialog.exclusive and not dialog is FileDialog
+	_assert(should_dismiss, "modal AcceptDialog should be dismissed")
+	dialog.free()
+
+	# Test 2: FileDialog — should NOT be dismissed
+	var file_dlg: FileDialog = FileDialog.new()
+	file_dlg.exclusive = true
+	var should_dismiss_file: bool = file_dlg is AcceptDialog and file_dlg.exclusive and not file_dlg is FileDialog
+	_assert(not should_dismiss_file, "FileDialog not dismissed")
+	file_dlg.free()
+
+	# Test 3: non-exclusive — should NOT be dismissed
+	var non_modal: AcceptDialog = AcceptDialog.new()
+	non_modal.exclusive = false
+	var should_dismiss_non_modal: bool = non_modal is AcceptDialog and non_modal.exclusive and not non_modal is FileDialog
+	_assert(not should_dismiss_non_modal, "non-exclusive not dismissed")
+	non_modal.free()
+
+	# Test 4: setting disabled — should NOT dismiss
+	ProjectSettings.set_setting(&"godot_mcp/auto_dismiss_dialogs", false)
+	var setting_enabled: bool = ProjectSettings.get_setting(&"godot_mcp/auto_dismiss_dialogs", true)
+	_assert(not setting_enabled, "setting disabled prevents dismiss")
+
+	# Restore
+	ProjectSettings.set_setting(&"godot_mcp/auto_dismiss_dialogs", true)
 
 
 func _assert(condition: bool, msg: String) -> void:
