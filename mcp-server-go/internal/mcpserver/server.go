@@ -374,12 +374,12 @@ func docsHandler(args map[string]any) (*mcp.CallToolResult, error) {
 		}
 		c := docs.LookupClass(name)
 		if c == nil {
-			// Try case-insensitive search
 			matches := docs.SearchClasses(name, 5)
 			if len(matches) == 0 {
 				return errorResult(fmt.Errorf("class not found: %s", name))
 			}
-			return textResult(map[string]any{"err": "class not found: " + name, "sug": matches})
+			raw, _ := json.Marshal(matches)
+			return errorResultWithSuggestion(fmt.Errorf("class not found: %s", name), string(raw))
 		}
 		return textResult(classToMap(c))
 
@@ -443,16 +443,42 @@ func classToMap(c *docs.GodotClass) map[string]any {
 	if len(c.Members) > 0 {
 		members := make([]map[string]string, 0, len(c.Members))
 		for _, m := range c.Members {
-			members = append(members, map[string]string{"name": m.Name, "type": m.Type, "default": m.Default})
+			entry := map[string]string{"name": m.Name, "type": m.Type}
+			if m.Default != "" {
+				entry["default"] = m.Default
+			}
+			if m.Description != "" {
+				entry["desc"] = m.Description
+			}
+			members = append(members, entry)
 		}
 		result["members"] = members
 	}
 	if len(c.Signals) > 0 {
-		signals := make([]string, 0, len(c.Signals))
+		signals := make([]map[string]any, 0, len(c.Signals))
 		for _, s := range c.Signals {
-			signals = append(signals, s.Name)
+			sig := map[string]any{"name": s.Name}
+			if len(s.Arguments) > 0 {
+				argStrs := make([]string, len(s.Arguments))
+				for i, a := range s.Arguments {
+					argStrs[i] = a.Name + ": " + a.Type
+				}
+				sig["args"] = argStrs
+			}
+			signals = append(signals, sig)
 		}
 		result["signals"] = signals
+	}
+	if len(c.Constants) > 0 {
+		consts := make([]map[string]string, 0, len(c.Constants))
+		for _, k := range c.Constants {
+			entry := map[string]string{"name": k.Name, "value": k.Value}
+			if k.Enum != "" {
+				entry["enum"] = k.Enum
+			}
+			consts = append(consts, entry)
+		}
+		result["consts"] = consts
 	}
 	return result
 }

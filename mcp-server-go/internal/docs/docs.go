@@ -112,7 +112,7 @@ func LookupClass(name string) *GodotClass {
 func SearchClasses(query string, limit int) []string {
 	ensureLoaded()
 	q := strings.ToLower(query)
-	var results []string
+	results := make([]string, 0, limit)
 	for _, name := range classNames {
 		if strings.Contains(strings.ToLower(name), q) {
 			results = append(results, name)
@@ -128,8 +128,9 @@ func SearchClasses(query string, limit int) []string {
 func SearchMethods(query string, limit int) []map[string]string {
 	ensureLoaded()
 	q := strings.ToLower(query)
-	var results []map[string]string
-	for _, c := range classes {
+	results := make([]map[string]string, 0, limit)
+	for _, name := range classNames {
+		c := classes[name]
 		for _, m := range c.Methods {
 			if strings.Contains(strings.ToLower(m.Name), q) {
 				results = append(results, map[string]string{

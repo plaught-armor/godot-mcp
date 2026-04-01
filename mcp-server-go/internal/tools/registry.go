@@ -50,7 +50,7 @@ var categoryAssignment = map[string]string{
 }
 
 func init() {
-	AllTools = make([]ToolDef, 0, 30)
+	AllTools = make([]ToolDef, 0, 25)
 	AllTools = append(AllTools, fileTools...)
 	AllTools = append(AllTools, sceneTools...)
 	AllTools = append(AllTools, scriptTools...)
