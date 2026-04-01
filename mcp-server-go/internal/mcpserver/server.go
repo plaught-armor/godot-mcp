@@ -356,129 +356,34 @@ func isErrorJSON(data json.RawMessage) bool {
 }
 
 func docsHandler(args map[string]any) (*mcp.CallToolResult, error) {
-	// Flatten properties
-	if props, ok := args["properties"].(map[string]any); ok {
-		for k, v := range props {
-			if _, exists := args[k]; !exists {
-				args[k] = v
-			}
-		}
+	className, _ := args["class"].(string)
+	methodName, _ := args["method"].(string)
+	if className == "" || methodName == "" {
+		return errorResult(fmt.Errorf("missing class or method"))
 	}
-
-	action, _ := args["action"].(string)
-	switch action {
-	case "class":
-		name, _ := args["name"].(string)
-		if name == "" {
-			return errorResult(fmt.Errorf("missing class name"))
-		}
-		c := docs.LookupClass(name)
-		if c == nil {
-			matches := docs.SearchClasses(name, 5)
-			if len(matches) == 0 {
-				return errorResult(fmt.Errorf("class not found: %s", name))
-			}
-			raw, _ := json.Marshal(matches)
-			return errorResultWithSuggestion(fmt.Errorf("class not found: %s", name), string(raw))
-		}
-		return textResult(classToMap(c))
-
-	case "search":
-		query, _ := args["query"].(string)
-		if query == "" {
-			return errorResult(fmt.Errorf("missing query"))
-		}
-		limit := 20
-		if l, ok := args["limit"].(float64); ok {
-			limit = int(l)
-		}
-		return textResult(map[string]any{"classes": docs.SearchClasses(query, limit)})
-
-	case "method":
-		query, _ := args["query"].(string)
-		if query == "" {
-			return errorResult(fmt.Errorf("missing query"))
-		}
-		limit := 20
-		if l, ok := args["limit"].(float64); ok {
-			limit = int(l)
-		}
-		return textResult(map[string]any{"methods": docs.SearchMethods(query, limit)})
+	c, err := docs.FetchClass(className)
+	if err != nil {
+		return errorResult(err)
 	}
-
-	return errorResult(fmt.Errorf("unknown docs action: %s", action))
-}
-
-func classToMap(c *docs.GodotClass) map[string]any {
-	result := map[string]any{
-		"name":    c.Name,
-		"brief":   c.BriefDescription,
-		"desc":    c.Description,
-	}
-	if c.Inherits != "" {
-		result["inherits"] = c.Inherits
-	}
-	if len(c.Methods) > 0 {
-		methods := make([]map[string]any, 0, len(c.Methods))
-		for _, m := range c.Methods {
-			md := map[string]any{"name": m.Name, "return": m.Return.Type}
-			if len(m.Arguments) > 0 {
-				argStrs := make([]string, len(m.Arguments))
-				for i, a := range m.Arguments {
-					s := a.Name + ": " + a.Type
-					if a.Default != "" {
-						s += " = " + a.Default
-					}
-					argStrs[i] = s
+	for _, m := range c.Methods {
+		if m.Name == methodName {
+			sig := m.Name + "("
+			for i, a := range m.Args {
+				if i > 0 {
+					sig += ", "
 				}
-				md["args"] = argStrs
-			}
-			if m.Description != "" {
-				md["desc"] = m.Description
-			}
-			methods = append(methods, md)
-		}
-		result["methods"] = methods
-	}
-	if len(c.Members) > 0 {
-		members := make([]map[string]string, 0, len(c.Members))
-		for _, m := range c.Members {
-			entry := map[string]string{"name": m.Name, "type": m.Type}
-			if m.Default != "" {
-				entry["default"] = m.Default
-			}
-			if m.Description != "" {
-				entry["desc"] = m.Description
-			}
-			members = append(members, entry)
-		}
-		result["members"] = members
-	}
-	if len(c.Signals) > 0 {
-		signals := make([]map[string]any, 0, len(c.Signals))
-		for _, s := range c.Signals {
-			sig := map[string]any{"name": s.Name}
-			if len(s.Arguments) > 0 {
-				argStrs := make([]string, len(s.Arguments))
-				for i, a := range s.Arguments {
-					argStrs[i] = a.Name + ": " + a.Type
+				sig += a.Name + ": " + a.Type
+				if a.Default != "" {
+					sig += " = " + a.Default
 				}
-				sig["args"] = argStrs
 			}
-			signals = append(signals, sig)
-		}
-		result["signals"] = signals
-	}
-	if len(c.Constants) > 0 {
-		consts := make([]map[string]string, 0, len(c.Constants))
-		for _, k := range c.Constants {
-			entry := map[string]string{"name": k.Name, "value": k.Value}
-			if k.Enum != "" {
-				entry["enum"] = k.Enum
+			sig += ") -> " + m.Return.Type
+			result := map[string]any{"sig": sig}
+			if m.Description != "" {
+				result["desc"] = m.Description
 			}
-			consts = append(consts, entry)
+			return textResult(result)
 		}
-		result["consts"] = consts
 	}
-	return result
+	return errorResult(fmt.Errorf("method %s not found on %s", methodName, className))
 }

@@ -1,45 +1,48 @@
-// Package docs provides embedded Godot class reference documentation
-// from the official XML files in godot/doc/classes/.
+// Package docs fetches Godot class reference XML from GitHub raw content
+// on demand and caches parsed results in memory per session.
 package docs
 
 import (
-	"embed"
 	"encoding/xml"
-	"log"
+	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"sync"
+	"time"
 )
 
-//go:embed classes/*.xml
-var classFiles embed.FS
+const rawURL = "https://raw.githubusercontent.com/godotengine/godot/master/doc/classes/%s.xml"
 
-// GodotClass represents a parsed class from the XML reference.
+var (
+	cache   = make(map[string]*GodotClass, 64)
+	cacheMu sync.RWMutex
+	client  = &http.Client{Timeout: 10 * time.Second}
+)
+
 type GodotClass struct {
-	Name             string         `xml:"name,attr"`
-	Inherits         string         `xml:"inherits,attr"`
-	BriefDescription string         `xml:"brief_description"`
-	Description      string         `xml:"description"`
-	Methods          []GodotMethod  `xml:"methods>method"`
-	Members          []GodotMember  `xml:"members>member"`
-	Signals          []GodotSignal  `xml:"signals>signal"`
-	Constants        []GodotConst   `xml:"constants>constant"`
-}
-
-// GodotMethod represents a method in the class reference.
-type GodotMethod struct {
 	Name        string        `xml:"name,attr"`
-	Qualifiers  string        `xml:"qualifiers,attr"`
-	Return      GodotReturn   `xml:"return"`
-	Arguments   []GodotArg    `xml:"param"`
+	Inherits    string        `xml:"inherits,attr"`
+	Brief       string        `xml:"brief_description"`
 	Description string        `xml:"description"`
+	Methods     []GodotMethod `xml:"methods>method"`
+	Members     []GodotMember `xml:"members>member"`
+	Signals     []GodotSignal `xml:"signals>signal"`
+	Constants   []GodotConst  `xml:"constants>constant"`
 }
 
-// GodotReturn is a method return type.
-type GodotReturn struct {
+type GodotMethod struct {
+	Name        string     `xml:"name,attr"`
+	Qualifiers  string     `xml:"qualifiers,attr"`
+	Return      GodotRet   `xml:"return"`
+	Args        []GodotArg `xml:"param"`
+	Description string     `xml:"description"`
+}
+
+type GodotRet struct {
 	Type string `xml:"type,attr"`
 }
 
-// GodotArg is a method argument.
 type GodotArg struct {
 	Index   int    `xml:"index,attr"`
 	Name    string `xml:"name,attr"`
@@ -47,7 +50,6 @@ type GodotArg struct {
 	Default string `xml:"default,attr"`
 }
 
-// GodotMember is a class property.
 type GodotMember struct {
 	Name        string `xml:"name,attr"`
 	Type        string `xml:"type,attr"`
@@ -55,100 +57,74 @@ type GodotMember struct {
 	Description string `xml:",chardata"`
 }
 
-// GodotSignal is a signal definition.
 type GodotSignal struct {
 	Name        string     `xml:"name,attr"`
-	Arguments   []GodotArg `xml:"param"`
+	Args        []GodotArg `xml:"param"`
 	Description string     `xml:"description"`
 }
 
-// GodotConst is a constant or enum value.
 type GodotConst struct {
-	Name        string `xml:"name,attr"`
-	Value       string `xml:"value,attr"`
-	Enum        string `xml:"enum,attr"`
-	Description string `xml:",chardata"`
+	Name  string `xml:"name,attr"`
+	Value string `xml:"value,attr"`
+	Enum  string `xml:"enum,attr"`
 }
 
-var (
-	classes     map[string]*GodotClass
-	classNames  []string
-	loadOnce    sync.Once
-)
-
-func ensureLoaded() {
-	loadOnce.Do(func() {
-		classes = make(map[string]*GodotClass, 1000)
-		entries, err := classFiles.ReadDir("classes")
-		if err != nil {
-			log.Printf("[docs] Failed to read embedded classes: %v", err)
-			return
-		}
-		for _, e := range entries {
-			if !strings.HasSuffix(e.Name(), ".xml") {
-				continue
-			}
-			data, err := classFiles.ReadFile("classes/" + e.Name())
-			if err != nil {
-				continue
-			}
-			var c GodotClass
-			if xml.Unmarshal(data, &c) == nil && c.Name != "" {
-				classes[c.Name] = &c
-				classNames = append(classNames, c.Name)
-			}
-		}
-		log.Printf("[docs] Loaded %d class references", len(classes))
-	})
-}
-
-// LookupClass returns a class by exact name.
-func LookupClass(name string) *GodotClass {
-	ensureLoaded()
-	return classes[name]
-}
-
-// SearchClasses returns class names matching a substring (case-insensitive).
-func SearchClasses(query string, limit int) []string {
-	ensureLoaded()
-	q := strings.ToLower(query)
-	results := make([]string, 0, limit)
-	for _, name := range classNames {
-		if strings.Contains(strings.ToLower(name), q) {
-			results = append(results, name)
-			if len(results) >= limit {
-				break
-			}
-		}
+// FetchClass fetches and caches a class from GitHub raw XML.
+func FetchClass(className string) (*GodotClass, error) {
+	cacheMu.RLock()
+	if c, ok := cache[className]; ok {
+		cacheMu.RUnlock()
+		return c, nil
 	}
-	return results
-}
+	cacheMu.RUnlock()
 
-// SearchMethods finds methods matching a name substring across all classes.
-func SearchMethods(query string, limit int) []map[string]string {
-	ensureLoaded()
-	q := strings.ToLower(query)
-	results := make([]map[string]string, 0, limit)
-	for _, name := range classNames {
-		c := classes[name]
-		for _, m := range c.Methods {
-			if strings.Contains(strings.ToLower(m.Name), q) {
-				results = append(results, map[string]string{
-					"class":  c.Name,
-					"method": m.Name,
-					"return": m.Return.Type,
-				})
-				if len(results) >= limit {
-					return results
-				}
-			}
-		}
+	url := fmt.Sprintf(rawURL, className)
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetch docs: %w", err)
 	}
-	return results
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return nil, fmt.Errorf("class not found: %s", className)
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub returned %d for %s", resp.StatusCode, className)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read docs: %w", err)
+	}
+
+	var c GodotClass
+	if err := xml.Unmarshal(body, &c); err != nil {
+		return nil, fmt.Errorf("parse docs XML: %w", err)
+	}
+
+	// Clean whitespace in descriptions
+	c.Brief = strings.TrimSpace(c.Brief)
+	c.Description = strings.TrimSpace(c.Description)
+	for i := range c.Methods {
+		c.Methods[i].Description = strings.TrimSpace(c.Methods[i].Description)
+	}
+	for i := range c.Members {
+		c.Members[i].Description = strings.TrimSpace(c.Members[i].Description)
+	}
+	for i := range c.Signals {
+		c.Signals[i].Description = strings.TrimSpace(c.Signals[i].Description)
+	}
+
+	cacheMu.Lock()
+	cache[className] = &c
+	cacheMu.Unlock()
+
+	return &c, nil
 }
 
-// ClassCount returns the number of loaded classes.
-func ClassCount() int {
-	ensureLoaded()
-	return len(classes)
+// CacheCount returns the number of cached classes.
+func CacheCount() int {
+	cacheMu.RLock()
+	defer cacheMu.RUnlock()
+	return len(cache)
 }

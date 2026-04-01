@@ -3,14 +3,14 @@ package tools
 var docsTools = []ToolDef{
 	{
 		Name:        "docs",
-		Description: "Godot class reference: lookup classes, search methods, browse API.",
+		Description: "Look up a Godot class method's docs from GitHub.",
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"action":     {Type: "string", Enum: []string{"class", "search", "method"}},
-				"properties": {Type: "object"},
+				"class":  {Type: "string"},
+				"method": {Type: "string"},
 			},
-			Required: []string{"action"},
+			Required: []string{"class", "method"},
 		},
 		MockFn: func(args map[string]any) any {
 			return map[string]any{}
