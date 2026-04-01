@@ -12,6 +12,7 @@ var coreTools = map[string]bool{
 	"file":   true,
 	"script": true,
 	"proj":   true,
+	"docs":   true,
 }
 
 // categoryAssignment maps tool names to their category.
@@ -69,6 +70,7 @@ func init() {
 	AllTools = append(AllTools, audioTools...)
 	AllTools = append(AllTools, particleTools...)
 	AllTools = append(AllTools, analysisTools...)
+	AllTools = append(AllTools, docsTools...)
 
 	// Assign categories
 	for i := range AllTools {

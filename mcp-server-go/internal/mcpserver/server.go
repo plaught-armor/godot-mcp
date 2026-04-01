@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/bridge"
+	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/docs"
 	"github.com/plaught-armor/godot-mcp/mcp-server-go/internal/tools"
 )
 
@@ -211,6 +212,11 @@ func toolHandler(b bridge.Bridge, td *tools.ToolDef) mcp.ToolHandler {
 			return runtimeToolHandler(b, td, ctx, args, instanceID, runtimePID)
 		}
 
+		// Docs tool runs locally in Go — no Godot connection needed
+		if td.Name == "docs" {
+			return docsHandler(args)
+		}
+
 		// Check connection before invoking — only use mocks when Godot
 		// was never connected, not when it crashes mid-invocation.
 		wasConnected := b.IsConnected()
@@ -347,4 +353,106 @@ func isErrorJSON(data json.RawMessage) bool {
 		return false
 	}
 	return probe.Error != nil
+}
+
+func docsHandler(args map[string]any) (*mcp.CallToolResult, error) {
+	// Flatten properties
+	if props, ok := args["properties"].(map[string]any); ok {
+		for k, v := range props {
+			if _, exists := args[k]; !exists {
+				args[k] = v
+			}
+		}
+	}
+
+	action, _ := args["action"].(string)
+	switch action {
+	case "class":
+		name, _ := args["name"].(string)
+		if name == "" {
+			return errorResult(fmt.Errorf("missing class name"))
+		}
+		c := docs.LookupClass(name)
+		if c == nil {
+			// Try case-insensitive search
+			matches := docs.SearchClasses(name, 5)
+			if len(matches) == 0 {
+				return errorResult(fmt.Errorf("class not found: %s", name))
+			}
+			return textResult(map[string]any{"err": "class not found: " + name, "sug": matches})
+		}
+		return textResult(classToMap(c))
+
+	case "search":
+		query, _ := args["query"].(string)
+		if query == "" {
+			return errorResult(fmt.Errorf("missing query"))
+		}
+		limit := 20
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		return textResult(map[string]any{"classes": docs.SearchClasses(query, limit)})
+
+	case "method":
+		query, _ := args["query"].(string)
+		if query == "" {
+			return errorResult(fmt.Errorf("missing query"))
+		}
+		limit := 20
+		if l, ok := args["limit"].(float64); ok {
+			limit = int(l)
+		}
+		return textResult(map[string]any{"methods": docs.SearchMethods(query, limit)})
+	}
+
+	return errorResult(fmt.Errorf("unknown docs action: %s", action))
+}
+
+func classToMap(c *docs.GodotClass) map[string]any {
+	result := map[string]any{
+		"name":    c.Name,
+		"brief":   c.BriefDescription,
+		"desc":    c.Description,
+	}
+	if c.Inherits != "" {
+		result["inherits"] = c.Inherits
+	}
+	if len(c.Methods) > 0 {
+		methods := make([]map[string]any, 0, len(c.Methods))
+		for _, m := range c.Methods {
+			md := map[string]any{"name": m.Name, "return": m.Return.Type}
+			if len(m.Arguments) > 0 {
+				argStrs := make([]string, len(m.Arguments))
+				for i, a := range m.Arguments {
+					s := a.Name + ": " + a.Type
+					if a.Default != "" {
+						s += " = " + a.Default
+					}
+					argStrs[i] = s
+				}
+				md["args"] = argStrs
+			}
+			if m.Description != "" {
+				md["desc"] = m.Description
+			}
+			methods = append(methods, md)
+		}
+		result["methods"] = methods
+	}
+	if len(c.Members) > 0 {
+		members := make([]map[string]string, 0, len(c.Members))
+		for _, m := range c.Members {
+			members = append(members, map[string]string{"name": m.Name, "type": m.Type, "default": m.Default})
+		}
+		result["members"] = members
+	}
+	if len(c.Signals) > 0 {
+		signals := make([]string, 0, len(c.Signals))
+		for _, s := range c.Signals {
+			signals = append(signals, s.Name)
+		}
+		result["signals"] = signals
+	}
+	return result
 }
