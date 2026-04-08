@@ -8,6 +8,7 @@ var analysisTools = []ToolDef{
 			Type: "object",
 			Properties: map[string]*Schema{
 				"action":     {Type: "string", Enum: []string{"unused", "signals", "complexity", "references", "circular", "stats", "live_signals"}},
+				"query":      {Type: "string"},
 				"properties": {Type: "object"},
 			},
 			Required: []string{"action"},

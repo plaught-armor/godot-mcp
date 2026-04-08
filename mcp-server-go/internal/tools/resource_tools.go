@@ -9,6 +9,7 @@ var resourceTools = []ToolDef{
 			Properties: map[string]*Schema{
 				"action":     {Type: "string", Enum: []string{"read", "edit", "create", "preview"}},
 				"path":       {Type: "string"},
+				"type":       {Type: "string"},
 				"properties": {Type: "object"},
 			},
 			Required: []string{"action", "path"},

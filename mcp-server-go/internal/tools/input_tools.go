@@ -7,8 +7,10 @@ var inputTools = []ToolDef{
 		InputSchema: &Schema{
 			Type: "object",
 			Properties: map[string]*Schema{
-				"action":     {Type: "string", Enum: []string{"list", "set"}},
-				"properties": {Type: "object"},
+				"action":       {Type: "string", Enum: []string{"list", "set"}},
+				"input_action": {Type: "string"},
+				"operation":    {Type: "string"},
+				"properties":   {Type: "object"},
 			},
 			Required: []string{"action"},
 		},

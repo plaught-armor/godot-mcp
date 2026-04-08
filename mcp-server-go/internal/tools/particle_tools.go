@@ -10,6 +10,8 @@ var particleTools = []ToolDef{
 				"action":     {Type: "string", Enum: []string{"create", "material", "gradient", "preset", "info"}},
 				"scene_path": {Type: "string"},
 				"node_path":  {Type: "string"},
+				"colors":     {Type: "array", Items: &Schema{Type: "string"}},
+				"preset":     {Type: "string"},
 				"properties": {Type: "object"},
 			},
 			Required: []string{"action"},
