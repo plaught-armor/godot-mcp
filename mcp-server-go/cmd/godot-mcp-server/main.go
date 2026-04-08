@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,50 +23,40 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(0)
 
+	// Client mode: proxy stdio ↔ HTTP daemon.
+	if hasFlag("--client") {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := runClient(ctx); err != nil {
+			log.Printf("[godot-mcp-server] %v", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	lazy := os.Getenv("GODOT_MCP_LAZY") == "1"
-	httpMode := hasFlag("--http") || os.Getenv("GODOT_MCP_HTTP") == "1"
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	log.Printf("[godot-mcp-server] Starting...")
 
-	// Try to own the WebSocket port. If another server already owns it,
-	// fall back to proxy mode instead of killing the existing process.
-	var br bridge.Bridge
-
-	primary := bridge.New(bridge.DefaultPort, bridge.DefaultTimeout)
-	if err := primary.Start(ctx); err != nil {
-		log.Printf("[godot-mcp-server] Port %d in use, switching to proxy mode...", bridge.DefaultPort)
-		proxy := bridge.NewProxy(bridge.DefaultPort, bridge.DefaultTimeout)
-		if err := proxy.Start(ctx); err != nil {
-			log.Printf("[godot-mcp-server] Proxy connection failed: %v", err)
-			log.Printf("[godot-mcp-server] Continuing in mock-only mode")
-			br = primary // use the unstarted bridge — will return mock results
-		} else {
-			br = proxy
-			log.Printf("[godot-mcp-server] Connected as proxy to primary bridge on port %d", bridge.DefaultPort)
-		}
-	} else {
-		br = primary
-		log.Printf("[godot-mcp-server] WebSocket server listening on port %d", bridge.DefaultPort)
+	lockFile, err := acquireLock()
+	if err != nil {
+		log.Printf("[godot-mcp-server] Another instance is already running")
+		os.Exit(1)
 	}
+	defer releaseLock(lockFile)
 
-	// Create visualizer server
+	br := bridge.New(bridge.DefaultPort, bridge.DefaultTimeout)
+	if err := br.Start(ctx); err != nil {
+		log.Printf("[godot-mcp-server] Failed to start WebSocket on port %d: %v", bridge.DefaultPort, err)
+		os.Exit(1)
+	}
+	log.Printf("[godot-mcp-server] WebSocket server listening on port %d", bridge.DefaultPort)
+
 	viz := visualizer.New(br)
 
-	// Connection logging (HTTP mode overrides this with idle-shutdown callback)
-	if !httpMode {
-		br.OnConnectionChange(func(connected bool, instanceID string, info *bridge.GodotInfo) {
-			if connected {
-				log.Printf("[godot-mcp-server] Godot %q connected", instanceID)
-			} else {
-				log.Printf("[godot-mcp-server] Godot %q disconnected", instanceID)
-			}
-		})
-	}
-
-	// Handle visualizer requests from Godot (no-op for proxy mode)
 	br.OnVisualizerRequest(func(_ context.Context, instanceID string, data json.RawMessage) {
 		var projectMap any
 		if err := json.Unmarshal(data, &projectMap); err != nil {
@@ -89,22 +78,126 @@ func main() {
 	} else {
 		log.Printf("[godot-mcp-server] Tools: %d", len(tools.AllTools)+1)
 	}
-	log.Printf("[godot-mcp-server] Mode: mock (waiting for Godot connection)")
 
 	srv := mcpserver.New(br, lazy)
-
-	if httpMode {
-		runHTTP(ctx, cancel, srv, br, viz)
-	} else {
-		log.Printf("[godot-mcp-server] Running on stdio")
-		if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil {
-			log.Printf("[godot-mcp-server] Fatal error: %v", err)
-			os.Exit(1)
-		}
-	}
+	runHTTP(ctx, cancel, srv, br, viz)
 
 	viz.Stop()
 	br.Stop()
+}
+
+// idleTracker manages a unified idle timer that considers both Godot editor
+// connections and MCP HTTP request activity. The server shuts down only when
+// both are idle for the configured duration.
+type idleTracker struct {
+	timeout time.Duration
+	cancel  context.CancelFunc
+
+	mu         sync.Mutex
+	godotCount int
+	httpCount  int // active MCP sessions (SSE streams)
+	timer       *time.Timer
+	hadActivity bool // true once any connection or request has arrived
+}
+
+// newIdleTracker creates a tracker. The idle timer only starts after the first
+// connection is made and subsequently lost — the daemon stays alive indefinitely
+// until something connects, so Godot has time to find it.
+func newIdleTracker(timeout time.Duration, cancel context.CancelFunc) *idleTracker {
+	t := &idleTracker{timeout: timeout, cancel: cancel}
+	log.Printf("[godot-mcp-server] Idle shutdown: %s (after last disconnect)", timeout)
+	return t
+}
+
+func (t *idleTracker) fire() {
+	log.Printf("[godot-mcp-server] Idle timeout — shutting down")
+	t.cancel()
+}
+
+// godotConnected increments the editor count and cancels any pending idle timer.
+func (t *idleTracker) godotConnected() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.godotCount++
+	if t.timer != nil {
+		t.timer.Stop()
+		t.timer = nil
+	}
+}
+
+// godotDisconnected decrements the editor count. If no editors remain, starts
+// the idle timer (MCP requests will reset it if they arrive).
+func (t *idleTracker) godotDisconnected() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.godotCount--
+	if t.godotCount <= 0 {
+		t.godotCount = 0
+		t.startTimerLocked()
+	}
+}
+
+// requestActivity resets the idle timer. Called on every MCP HTTP request.
+func (t *idleTracker) requestActivity() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.hadActivity = true
+	// Don't reset if Godot editors are connected — no need to track idle.
+	if t.godotCount > 0 {
+		return
+	}
+	t.startTimerLocked()
+}
+
+func (t *idleTracker) startTimerLocked() {
+	// Don't start idle timer if we haven't had any connections yet,
+	// or if there are active HTTP sessions (SSE streams).
+	if !t.hadActivity || t.httpCount > 0 {
+		if t.timer != nil {
+			t.timer.Stop()
+			t.timer = nil
+		}
+		return
+	}
+	if t.timer != nil {
+		t.timer.Stop()
+	}
+	t.timer = time.AfterFunc(t.timeout, t.fire)
+}
+
+// wrapHandler returns middleware that resets the idle timer on each HTTP request.
+// SSE streams (GET with Accept: text/event-stream) are tracked as active sessions
+// that suppress the idle timer for their duration.
+func (t *idleTracker) wrapHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isSSE := r.Method == "GET" && r.Header.Get("Accept") == "text/event-stream"
+		if isSSE {
+			t.mu.Lock()
+			t.httpCount++
+			t.hadActivity = true
+			if t.timer != nil {
+				t.timer.Stop()
+				t.timer = nil
+			}
+			t.mu.Unlock()
+		} else {
+			t.requestActivity()
+		}
+
+		next.ServeHTTP(w, r)
+
+		if isSSE {
+			t.mu.Lock()
+			t.httpCount--
+			if t.httpCount <= 0 {
+				t.httpCount = 0
+				if t.godotCount <= 0 {
+					t.startTimerLocked()
+				}
+			}
+			t.mu.Unlock()
+		}
+	})
 }
 
 func runHTTP(ctx context.Context, cancel context.CancelFunc, srv *mcp.Server, br bridge.Bridge, viz *visualizer.Server) {
@@ -122,6 +215,8 @@ func runHTTP(ctx context.Context, cancel context.CancelFunc, srv *mcp.Server, br
 		}
 	}
 
+	idle := newIdleTracker(idleTimeout, cancel)
+
 	handler := mcp.NewStreamableHTTPHandler(
 		func(_ *http.Request) *mcp.Server { return srv },
 		&mcp.StreamableHTTPOptions{},
@@ -129,35 +224,16 @@ func runHTTP(ctx context.Context, cancel context.CancelFunc, srv *mcp.Server, br
 
 	httpSrv := &http.Server{
 		Addr:    ":" + strconv.Itoa(httpPort),
-		Handler: handler,
+		Handler: idle.wrapHandler(handler),
 	}
 
-	// Idle shutdown: when all Godot instances disconnect, start a timer. Cancel if one reconnects.
-	// Uses atomic counter to avoid TOCTOU with br.IsConnected().
-	var (
-		activeCount atomic.Int32
-		idleMu      sync.Mutex
-		idleTimer   *time.Timer
-	)
 	br.OnConnectionChange(func(connected bool, instanceID string, info *bridge.GodotInfo) {
-		idleMu.Lock()
-		defer idleMu.Unlock()
 		if connected {
-			activeCount.Add(1)
-			if idleTimer != nil {
-				idleTimer.Stop()
-				idleTimer = nil
-			}
+			idle.godotConnected()
 			log.Printf("[godot-mcp-server] Godot %q connected", instanceID)
 		} else {
 			log.Printf("[godot-mcp-server] Godot %q disconnected", instanceID)
-			if activeCount.Add(-1) == 0 {
-				log.Printf("[godot-mcp-server] All Godot instances disconnected, shutting down in %s", idleTimeout)
-				idleTimer = time.AfterFunc(idleTimeout, func() {
-					log.Printf("[godot-mcp-server] Idle timeout — shutting down")
-					cancel()
-				})
-			}
+			idle.godotDisconnected()
 		}
 	})
 
@@ -185,3 +261,31 @@ func hasFlag(flag string) bool {
 	}
 	return false
 }
+
+// lockPath returns a consistent path for the daemon lockfile.
+func lockPath() string {
+	dir := os.TempDir()
+	return dir + "/godot-mcp-server.lock"
+}
+
+// acquireLock takes an exclusive flock on the lockfile. Returns the file
+// (caller must defer releaseLock) or an error if another daemon holds it.
+func acquireLock() (*os.File, error) {
+	f, err := os.OpenFile(lockPath(), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+// releaseLock releases the flock and removes the lockfile.
+func releaseLock(f *os.File) {
+	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	os.Remove(f.Name())
+	f.Close()
+}
+

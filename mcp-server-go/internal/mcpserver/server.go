@@ -14,7 +14,7 @@ import (
 
 const (
 	serverName    = "godot-mcp-server"
-	serverVersion = "0.12.0-rc2"
+	serverVersion = "0.12.0-rc3"
 )
 
 // New creates and configures the MCP server.

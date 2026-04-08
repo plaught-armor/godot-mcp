@@ -6,7 +6,7 @@
 
 Build games faster with Claude, Cursor, or any MCP-compatible AI — no copy-pasting, no context switching. AI reads, writes, and manipulates your scenes, scripts, nodes, and project settings directly.
 
-> Godot 4.x · 22 consolidated tools · HTTP daemon mode · EngineDebugger runtime IPC · Proxy bridge · Interactive project visualizer · MIT license
+> Godot 4.x · 22 consolidated tools · HTTP daemon with idle shutdown · EngineDebugger runtime IPC · Interactive project visualizer · MIT license
 
 ---
 
@@ -54,13 +54,16 @@ chmod +x ~/.local/bin/godot-mcp-server
 
 ### 3. Add the server to your AI client
 
+The MCP server runs as an HTTP daemon. AI clients connect via `--client` mode, which auto-starts the daemon if needed and proxies stdio ↔ HTTP. Multiple clients share one daemon — no port conflicts.
+
 **Claude Desktop** — Settings → Developer → Edit Config:
 
 ```json
 {
   "mcpServers": {
     "godot": {
-      "command": "godot-mcp-server"
+      "command": "godot-mcp-server",
+      "args": ["--client"]
     }
   }
 }
@@ -71,7 +74,8 @@ Windows without PATH — use the full path instead:
 {
   "mcpServers": {
     "godot": {
-      "command": "C:\\Tools\\godot-mcp-server.exe"
+      "command": "C:\\Tools\\godot-mcp-server.exe",
+      "args": ["--client"]
     }
   }
 }
@@ -79,7 +83,7 @@ Windows without PATH — use the full path instead:
 
 **Claude Code:**
 ```bash
-claude mcp add godot godot-mcp-server
+claude mcp add godot -- godot-mcp-server --client
 ```
 
 Works with any MCP-compatible client (Cursor, Windsurf, Cline, etc.) — same JSON format.
@@ -91,6 +95,7 @@ Works with any MCP-compatible client (Cursor, Windsurf, Cline, etc.) — same JS
   "mcpServers": {
     "godot": {
       "command": "godot-mcp-server",
+      "args": ["--client"],
       "env": { "GODOT_MCP_LAZY": "1" }
     }
   }
@@ -183,30 +188,31 @@ The Godot plugin adds settings under **Project → Project Settings → Godot MC
 
 ```
                                                            ┌──────────────┐
-┌─────────────┐  MCP (stdio or HTTP)  ┌─────────────┐     │ Godot Editor │
-│  AI Client   │◄────────────────────►│  MCP Server  │◄───►│  (Plugin)    │
-│  (Claude,    │                      │  (Go binary) │ WS  │              │
-│   Cursor)    │                      │              │6505 │  Debugger    │
-└─────────────┘                      │  Visualizer  │     │  Plugin      │
-                                     │  HTTP :6510  │     │      │       │
-┌─────────────┐  MCP (HTTP :6506)    │              │     │      │ IPC   │
-│  AI Client 2 │◄────────────────────►│  (--http     │     │      ▼       │
-│  (Cursor,    │                      │   daemon)    │     │ Running Game │
-│   Codex)     │                      └──────┬───────┘     │  (Autoload)  │
-└─────────────┘                              │             └──────────────┘
-                                      ┌──────▼───────┐
-                                      │   Browser     │
-                                      │  Visualizer   │
-                                      └──────────────┘
+┌─────────────┐  stdio   ┌──────────┐                     │ Godot Editor │
+│  AI Client   │◄────────►│ --client │  MCP (HTTP)         │  (Plugin)    │
+│  (Claude,    │          │  proxy   │◄──────────┐         │              │
+│   Cursor)    │          └──────────┘           │         │  Debugger    │
+└─────────────┘                          ┌───────▼───────┐ │  Plugin      │
+                                         │  MCP Server   │ │      │       │
+┌─────────────┐  stdio   ┌──────────┐   │  (Go daemon)  │ │      │ IPC   │
+│  AI Client 2 │◄────────►│ --client │◄─►│  HTTP :6506   │ │      ▼       │
+│  (Zed,       │          │  proxy   │   │               │ │ Running Game │
+│   Codex)     │          └──────────┘   │  Visualizer   │ │  (Autoload)  │
+└─────────────┘                          │  HTTP :6510   │ └──────────────┘
+                                         │           WS  │        ▲
+                                         │          6505 │────────┘
+                                         └───────┬───────┘
+                                          ┌──────▼───────┐
+                                          │   Browser     │
+                                          │  Visualizer   │
+                                          └──────────────┘
 ```
 
-**Editor tools** (scene/script/project) go from the Go server to the editor plugin via WebSocket on port 6505.
+**HTTP daemon** — the server runs as a persistent HTTP daemon on port 6506. AI clients connect via `--client` mode, which proxies stdio ↔ HTTP. Multiple clients share one daemon and one Godot connection. The daemon auto-shuts down after 30s of inactivity (configurable via `GODOT_MCP_IDLE_TIMEOUT_MS`).
 
-**Runtime tools** (screenshots, input injection, live inspection) go from the Go server to the editor, then through Godot's built-in **EngineDebugger IPC** channel to the running game. No extra port or connection needed.
+**Editor tools** (scene/script/project) go from the daemon to the editor plugin via WebSocket on port 6505.
 
-**HTTP daemon mode** (`--http` or `GODOT_MCP_HTTP=1`) starts a persistent HTTP server on port 6506, allowing multiple AI clients to share one Godot connection. Idle auto-shutdown when all editors disconnect.
-
-**Proxy bridge** — if a second MCP server starts while one is already running, it connects as a proxy instead of killing the first. Both servers share the same Godot connection.
+**Runtime tools** (screenshots, input injection, live inspection) go from the daemon to the editor, then through Godot's built-in **EngineDebugger IPC** channel to the running game. No extra port or connection needed.
 
 ---
 

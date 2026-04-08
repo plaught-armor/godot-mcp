@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.0-rc3] - 2026-04-08
+
+### Changed
+- **Daemon+client architecture** — replaced ProxyBridge with HTTP daemon + stdio client proxy. Multiple AI clients share one daemon via `--client` mode. Auto-starts daemon if needed, auto-restarts on daemon death
+- **Stale connection replacement** — bridge replaces dead editor connections instead of rejecting reconnects, fixing Godot restart failures
+- **Idle shutdown improvements** — timer only starts after first connection is lost (not on boot), active MCP sessions suppress the timer
+- **Ping failure closes connection** — unblocks readLoop immediately instead of waiting for OS TCP timeout
+
+### Removed
+- `ProxyBridge` and all proxy WebSocket code — replaced by HTTP daemon multiplexing
+
 ## [0.12.0-rc2] - 2026-03-31
 
 ### Added

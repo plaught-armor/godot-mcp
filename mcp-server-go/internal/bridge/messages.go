@@ -20,23 +20,3 @@ type ToolInvokeMessage struct {
 	Tool string         `json:"tool"`
 	Args map[string]any `json:"args"`
 }
-
-// ProxyRequest is sent from a ProxyBridge client to the primary GodotBridge.
-type ProxyRequest struct {
-	Type             string         `json:"type"`
-	ID               string         `json:"id,omitempty"`
-	Tool             string         `json:"tool,omitempty"`
-	Args             map[string]any `json:"args,omitempty"`
-	Instance         string         `json:"instance,omitempty"`
-	RuntimePID       int            `json:"runtime_pid,omitempty"`
-	NotificationType string         `json:"notification_type,omitempty"`
-	Fields           map[string]any `json:"fields,omitempty"`
-}
-
-// ProxyResponse is sent from the primary GodotBridge back to a proxy client.
-type ProxyResponse struct {
-	Type   string          `json:"type"`
-	ID     string          `json:"id"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  string          `json:"err,omitempty"`
-}

@@ -434,8 +434,6 @@ func (b *GodotBridge) handleUpgrade(ctx context.Context, w http.ResponseWriter, 
 	switch msg.Type {
 	case "godot_ready":
 		b.acceptEditor(ctx, conn, msg)
-	case "proxy_ready":
-		b.acceptProxy(ctx, conn)
 	default:
 		log.Printf("[GodotBridge] Unknown hello type: %s", msg.Type)
 		conn.Close(websocket.StatusProtocolError, "unknown hello type")
@@ -458,11 +456,31 @@ func (b *GodotBridge) acceptEditor(ctx context.Context, conn *websocket.Conn, he
 	instanceID := deriveInstanceID(hello)
 
 	b.mu.Lock()
-	if _, exists := b.instances[instanceID]; exists {
+	if old, exists := b.instances[instanceID]; exists {
+		// Stale connection — Godot restarted before we detected the disconnect.
+		// Tear down the old connection so the new one can take its place.
+		log.Printf("[GodotBridge] Replacing stale editor %q connection", instanceID)
+		var toNotify []chan invokeResult
+		old.pendingMu.Lock()
+		for id, p := range old.pending {
+			toNotify = append(toNotify, p.ch)
+			delete(old.pending, id)
+		}
+		old.pendingMu.Unlock()
+		if old.cancelRead != nil {
+			old.cancelRead()
+		}
+		if old.conn != nil {
+			old.conn.Close(websocket.StatusGoingAway, "replaced by new connection")
+		}
+		delete(b.instances, instanceID)
 		b.mu.Unlock()
-		log.Printf("[GodotBridge] Rejecting editor %q - already connected", instanceID)
-		conn.Close(websocket.StatusCode(4000), "Instance already connected: "+instanceID)
-		return
+
+		for _, ch := range toNotify {
+			ch <- invokeResult{Err: errGodotDisconnect}
+		}
+
+		b.mu.Lock()
 	}
 
 	readCtx, cancelRead := context.WithCancel(ctx)
@@ -493,7 +511,7 @@ func (b *GodotBridge) acceptEditor(ctx context.Context, conn *websocket.Conn, he
 
 	go b.pingLoop(readCtx, conn, &inst.writeMu)
 	b.readLoop(readCtx, conn, inst)
-	b.handleDisconnect(instanceID)
+	b.handleDisconnect(instanceID, inst)
 }
 
 
@@ -589,23 +607,28 @@ func (b *GodotBridge) resolveResult(pmu *sync.Mutex, pending map[string]*pending
 }
 
 
-func (b *GodotBridge) handleDisconnect(instanceID string) {
+func (b *GodotBridge) handleDisconnect(instanceID string, expected *editorConn) {
 	var toNotify []chan invokeResult
 
 	b.mu.Lock()
-	inst, ok := b.instances[instanceID]
+	current, ok := b.instances[instanceID]
+	if ok && current != expected {
+		// Instance was replaced by a new connection — don't clean up the replacement.
+		b.mu.Unlock()
+		return
+	}
 	var info *GodotInfo
 	if ok {
-		info = inst.info
+		info = current.info
 		// Collect all pending request channels (editor + runtime tools share the same map)
-		inst.pendingMu.Lock()
-		for id, p := range inst.pending {
+		current.pendingMu.Lock()
+		for id, p := range current.pending {
 			toNotify = append(toNotify, p.ch)
-			delete(inst.pending, id)
+			delete(current.pending, id)
 		}
-		inst.pendingMu.Unlock()
-		if inst.cancelRead != nil {
-			inst.cancelRead()
+		current.pendingMu.Unlock()
+		if current.cancelRead != nil {
+			current.cancelRead()
 		}
 		delete(b.instances, instanceID)
 
@@ -643,6 +666,9 @@ func (b *GodotBridge) pingLoop(ctx context.Context, conn *websocket.Conn, wmu *s
 			wmu.Unlock()
 			wcancel()
 			if err != nil {
+				// Close the connection so readLoop unblocks immediately
+				// instead of waiting for the OS to detect the dead TCP socket.
+				conn.Close(websocket.StatusGoingAway, "ping failed")
 				return
 			}
 		}
@@ -668,94 +694,3 @@ func (b *GodotBridge) notifyConnectionChange(connected bool, instanceID string, 
 	}()
 }
 
-var proxySem = make(chan struct{}, 16)
-
-// acceptProxy handles a proxy client connection.
-// The proxy sends tool_invoke / status_request / set_primary messages;
-// the primary bridge executes them and writes back the result.
-func (b *GodotBridge) acceptProxy(ctx context.Context, conn *websocket.Conn) {
-	log.Printf("[GodotBridge] Proxy client connected")
-
-	readCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	var writeMu sync.Mutex
-	go b.pingLoop(readCtx, conn, &writeMu)
-
-	for {
-		_, data, err := conn.Read(readCtx)
-		if err != nil {
-			if readCtx.Err() == nil {
-				log.Printf("[GodotBridge] Proxy read error: %v", err)
-			}
-			break
-		}
-
-		var msg ProxyRequest
-		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("[GodotBridge] Invalid proxy message: %v", err)
-			continue
-		}
-
-		switch msg.Type {
-		case "tool_invoke":
-			proxySem <- struct{}{}
-			go func() {
-				defer func() { <-proxySem }()
-				var raw json.RawMessage
-				var invokeErr error
-				if msg.RuntimePID != 0 {
-					raw, invokeErr = b.InvokeRuntimeTool(readCtx, msg.Tool, msg.Args, msg.Instance, msg.RuntimePID)
-				} else {
-					raw, invokeErr = b.InvokeTool(readCtx, msg.Tool, msg.Args, msg.Instance)
-				}
-
-				resp := ProxyResponse{Type: "tool_result", ID: msg.ID}
-				if invokeErr != nil {
-					resp.Error = invokeErr.Error()
-				} else {
-					resp.Result = raw
-				}
-
-				out, _ := json.Marshal(resp)
-				wctx, wcancel := context.WithTimeout(readCtx, 5*time.Second)
-				writeMu.Lock()
-				conn.Write(wctx, websocket.MessageText, out)
-				writeMu.Unlock()
-				wcancel()
-			}()
-
-		case "status_request":
-			status := b.GetStatus()
-			raw, _ := json.Marshal(status)
-			resp := ProxyResponse{Type: "status_response", ID: msg.ID, Result: raw}
-			out, _ := json.Marshal(resp)
-			wctx, wcancel := context.WithTimeout(readCtx, 5*time.Second)
-			writeMu.Lock()
-			conn.Write(wctx, websocket.MessageText, out)
-			writeMu.Unlock()
-			wcancel()
-
-		case "set_primary":
-			var errStr string
-			if err := b.SetPrimary(msg.Instance); err != nil {
-				errStr = err.Error()
-			}
-			resp := ProxyResponse{Type: "set_primary_response", ID: msg.ID, Error: errStr}
-			out, _ := json.Marshal(resp)
-			wctx, wcancel := context.WithTimeout(readCtx, 5*time.Second)
-			writeMu.Lock()
-			conn.Write(wctx, websocket.MessageText, out)
-			writeMu.Unlock()
-			wcancel()
-
-		case "notification":
-			b.SendNotification(msg.NotificationType, msg.Fields, msg.Instance)
-
-		default:
-			log.Printf("[GodotBridge] Unknown proxy message type: %s", msg.Type)
-		}
-	}
-
-	log.Printf("[GodotBridge] Proxy client disconnected")
-}

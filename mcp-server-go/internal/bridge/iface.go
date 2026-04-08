@@ -15,8 +15,7 @@ type VisualizerCallback func(ctx context.Context, instanceID string, data json.R
 var _ Bridge = (*GodotBridge)(nil)
 
 // Bridge is the interface consumed by the MCP server and visualizer.
-// GodotBridge implements it directly; ProxyBridge forwards calls to
-// an existing GodotBridge over WebSocket.
+// GodotBridge is the sole implementation.
 type Bridge interface {
 	Start(ctx context.Context) error
 	Stop()
