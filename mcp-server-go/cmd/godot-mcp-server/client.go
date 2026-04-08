@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -60,9 +59,9 @@ func ensureDaemon(port int) error {
 	if err != nil {
 		return fmt.Errorf("open lockfile: %w", err)
 	}
-	syscall.Flock(int(lf.Fd()), syscall.LOCK_EX) // blocking
+	flockExclusive(lf) // blocking
 	defer func() {
-		syscall.Flock(int(lf.Fd()), syscall.LOCK_UN)
+		flockUnlock(lf)
 		lf.Close()
 	}()
 
@@ -80,7 +79,7 @@ func ensureDaemon(port int) error {
 
 	log.Printf("[client] Starting daemon: %s", exe)
 	cmd := exec.Command(exe)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = daemonSysProcAttr()
 	cmd.Env = os.Environ()
 	cmd.Stdin = nil
 	cmd.Stdout = nil
@@ -92,7 +91,7 @@ func ensureDaemon(port int) error {
 
 	// Release the lock so the daemon can acquire it during startup.
 	// The lock's purpose (serializing client spawns) is already fulfilled.
-	syscall.Flock(int(lf.Fd()), syscall.LOCK_UN)
+	flockUnlock(lf)
 
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {

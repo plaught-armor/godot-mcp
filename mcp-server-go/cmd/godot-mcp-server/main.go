@@ -8,8 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync"
 	"syscall"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -275,7 +275,7 @@ func acquireLock() (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := flockExclusiveNB(f); err != nil {
 		f.Close()
 		return nil, err
 	}
@@ -284,7 +284,7 @@ func acquireLock() (*os.File, error) {
 
 // releaseLock releases the flock and removes the lockfile.
 func releaseLock(f *os.File) {
-	syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	flockUnlock(f)
 	os.Remove(f.Name())
 	f.Close()
 }
