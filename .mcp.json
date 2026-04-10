@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "godot": {
-      "command": "godot-mcp-server",
-      "args": ["--client"]
-    }
-  }
-}
