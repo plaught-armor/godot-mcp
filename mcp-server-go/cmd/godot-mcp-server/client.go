@@ -159,12 +159,42 @@ func proxyStdio(ctx context.Context, endpoint string, port int) error {
 		readSSE(resp.Body, writeStdout)
 	}()
 
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
+	// Read stdin with an inactivity timeout. If the parent process (claude)
+	// is orphaned and stops sending requests, we exit to avoid accumulating
+	// stale client processes.
+	stdinLines := make(chan []byte)
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Buffer(make([]byte, 1<<20), 1<<20)
+		for scanner.Scan() {
+			line := make([]byte, len(scanner.Bytes()))
+			copy(line, scanner.Bytes())
+			stdinLines <- line
+		}
+		close(stdinLines)
+	}()
+
+	const stdinTimeout = 10 * time.Minute
+	timer := time.NewTimer(stdinTimeout)
+	defer timer.Stop()
 
 	sseStarted := false
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	for {
+		var line []byte
+		select {
+		case l, ok := <-stdinLines:
+			if !ok {
+				return nil // stdin closed
+			}
+			line = l
+			timer.Reset(stdinTimeout)
+		case <-timer.C:
+			log.Printf("[client] No stdin activity for %s — exiting", stdinTimeout)
+			return nil
+		case <-ctx.Done():
+			return nil
+		}
+
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
@@ -229,8 +259,6 @@ func proxyStdio(ctx context.Context, endpoint string, port int) error {
 			}
 		}
 	}
-
-	return scanner.Err()
 }
 
 // readSSE reads an SSE stream and calls emit for each data payload.
