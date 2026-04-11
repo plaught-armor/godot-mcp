@@ -12,7 +12,7 @@ const MCPDebuggerScript = preload("res://addons/godot_mcp/mcp_debugger.gd")
 # Everything else runs on the main thread (filesystem refresh, editor UI, etc.).
 func _is_background_safe(tool_name: StringName) -> bool:
 	match tool_name:
-		&"file", &"script", &"analyze", &"map_scenes", &"perf":
+		&"file", &"analyze", &"map_scenes", &"perf":
 			return true
 	return false
 
