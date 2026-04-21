@@ -14,7 +14,6 @@ var sceneTools = []ToolDef{
 				"root_node_name": {Type: "string"},
 				"node_name":      {Type: "string"},
 				"node_type":      {Type: "string"},
-				"property_name":  {Type: "string"},
 				"new_name":       {Type: "string"},
 				"new_parent_path": {Type: "string"},
 				"script_path":    {Type: "string"},

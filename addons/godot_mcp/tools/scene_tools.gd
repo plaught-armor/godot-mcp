@@ -525,13 +525,13 @@ func remove_node(args: Dictionary) -> Dictionary:
 func modify_node_property(args: Dictionary) -> Dictionary:
 	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
 	var node_path: String = args[&"node_path"]
-	var property_name: String = args[&"property_name"]
+	var property: String = args[&"property"]
 	var value: Variant = args[&"value"]
 
 	if scene_path.is_empty() or scene_path == "res://":
 		return { &"err": "Missing 'scene_path'" }
-	if property_name.strip_edges().is_empty():
-		return { &"err": "Missing 'property_name'" }
+	if property.strip_edges().is_empty():
+		return { &"err": "Missing 'property'" }
 	if value == null:
 		return { &"err": "Missing 'value'" }
 
@@ -543,17 +543,17 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 		var target: Node = _find_live_node(live_root, node_path)
 		if not target:
 			return { &"err": "Node not found: " + node_path, &"sug": "Use read_scene to see node paths in this scene" }
-		if not (property_name in target):
-			return { &"err": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property_name, node_path, target.get_class()] }
+		if not (property in target):
+			return { &"err": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property, node_path, target.get_class()] }
 
-		var old_value: Variant = target.get(property_name)
+		var old_value: Variant = target.get(property)
 		if old_value is Resource and not (parsed is Resource):
-			return { &"err": "Property '%s' expects a Resource. Use specialized tools (set_collision_shape, set_sprite_texture) instead." % property_name }
+			return { &"err": "Property '%s' expects a Resource. Use specialized tools (set_collision_shape, set_sprite_texture) instead." % property }
 
 		var ur: EditorUndoRedoManager = _get_undo_redo()
-		ur.create_action("MCP: Set %s.%s" % [node_path, property_name])
-		ur.add_do_property(target, property_name, parsed)
-		ur.add_undo_property(target, property_name, old_value)
+		ur.create_action("MCP: Set %s.%s" % [node_path, property])
+		ur.add_do_property(target, property, parsed)
+		ur.add_undo_property(target, property, old_value)
 		ur.commit_action()
 
 		return { &"old": str(old_value) }
@@ -570,19 +570,19 @@ func modify_node_property(args: Dictionary) -> Dictionary:
 		return { &"err": "Node not found: " + node_path, &"sug": "Use read_scene to see node paths in this scene" }
 
 	# Check property exists
-	if not (property_name in target):
+	if not (property in target):
 		var node_type: String = target.get_class()
 		root.queue_free()
-		return { &"err": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property_name, node_path, node_type] }
+		return { &"err": "Property '%s' not found on %s (%s). Use get_node_properties to discover available properties." % [property, node_path, node_type] }
 
-	var old_value: Variant = target.get(property_name)
+	var old_value: Variant = target.get(property)
 
 	# Validate resource type compatibility
 	if old_value is Resource and not (parsed is Resource):
 		root.queue_free()
-		return { &"err": "Property '%s' expects a Resource. Use specialized tools (set_collision_shape, set_sprite_texture) instead." % property_name }
+		return { &"err": "Property '%s' expects a Resource. Use specialized tools (set_collision_shape, set_sprite_texture) instead." % property }
 
-	target.set(property_name, parsed)
+	target.set(property, parsed)
 
 	var err: Dictionary = _save_scene(root, scene_path)
 	if not err.is_empty():
@@ -1290,14 +1290,14 @@ func get_scene_node_properties(args: Dictionary) -> Dictionary:
 func set_scene_node_property(args: Dictionary) -> Dictionary:
 	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
 	var node_path: String = args[&"node_path"]
-	var property_name: String = args[&"property_name"]
+	var property: String = args[&"property"]
 	var value: Variant = args[&"value"]
 	var value_type: int = args.get(&"value_type", -1)
 
 	if scene_path.is_empty() or scene_path == "res://":
 		return { &"err": "Missing 'scene_path'" }
-	if property_name.strip_edges().is_empty():
-		return { &"err": "Missing 'property_name'" }
+	if property.strip_edges().is_empty():
+		return { &"err": "Missing 'property'" }
 
 	var parsed_value: Variant = _parse_typed_value(value, value_type)
 
@@ -1308,11 +1308,11 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 		if not target:
 			return { &"err": "Node not found: " + node_path }
 
-		var old_value: Variant = target.get(property_name)
+		var old_value: Variant = target.get(property)
 		var ur: EditorUndoRedoManager = _get_undo_redo()
-		ur.create_action("MCP: Set %s.%s" % [node_path, property_name])
-		ur.add_do_property(target, property_name, parsed_value)
-		ur.add_undo_property(target, property_name, old_value)
+		ur.create_action("MCP: Set %s.%s" % [node_path, property])
+		ur.add_do_property(target, property, parsed_value)
+		ur.add_undo_property(target, property, old_value)
 		ur.commit_action()
 
 		return { &"old": _utils.serialize_value(old_value) }
@@ -1329,10 +1329,10 @@ func set_scene_node_property(args: Dictionary) -> Dictionary:
 		return { &"err": "Node not found: " + node_path }
 
 	# Parse value based on type
-	var old_value: Variant = target.get(property_name)
+	var old_value: Variant = target.get(property)
 
 	# Set the property
-	target.set(property_name, parsed_value)
+	target.set(property, parsed_value)
 
 	var err: Dictionary = _save_scene(root, scene_path)
 	if not err.is_empty():

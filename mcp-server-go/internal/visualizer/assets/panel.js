@@ -1713,7 +1713,7 @@ async function saveSceneNodeProperty(scenePath, nodePath, propName, value, value
     async () => {
       const result = await sendCommand('set_scene_node_property', {
         scene_path: scenePath, node_path: nodePath,
-        property_name: propName, value: value, value_type: valueType
+        property: propName, value: value, value_type: valueType
       });
       if (result.error) throw new Error(result.error || 'Unknown error');
     },
@@ -1721,7 +1721,7 @@ async function saveSceneNodeProperty(scenePath, nodePath, propName, value, value
       if (oldValue === undefined) return; // Can't undo without old value
       const result = await sendCommand('set_scene_node_property', {
         scene_path: scenePath, node_path: nodePath,
-        property_name: propName, value: oldValue, value_type: valueType
+        property: propName, value: oldValue, value_type: valueType
       });
       if (result.error) throw new Error(result.error || 'Unknown error');
       // Re-open the panel to reflect restored value
