@@ -61,6 +61,10 @@ func _get_actions(args: Dictionary) -> Dictionary:
 
 
 func _set_action(args: Dictionary) -> Dictionary:
+	if not args.has(&"input_action"):
+		return { &"err": "Missing 'input_action'" }
+	if not args.has(&"operation"):
+		return { &"err": "Missing 'operation'. Use: add, remove, set" }
 	var input_action: String = args[&"input_action"]
 	var operation: String = args[&"operation"]
 

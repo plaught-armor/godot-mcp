@@ -53,6 +53,8 @@ func _find_node(node_path: String) -> Node:
 
 
 func _create(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = _utils.validate_res_path(args[&"path"])
 
 	var content: String = args.get(&"content", "")
@@ -84,6 +86,8 @@ func _create(args: Dictionary) -> Dictionary:
 
 
 func _read(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = _utils.validate_res_path(args[&"path"])
 	if not FileAccess.file_exists(path):
 		return { &"err": "Shader not found: " + path }
@@ -97,6 +101,8 @@ func _read(args: Dictionary) -> Dictionary:
 
 
 func _edit(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = _utils.validate_res_path(args[&"path"])
 	if not FileAccess.file_exists(path):
 		return { &"err": "Shader not found: " + path }
@@ -141,6 +147,10 @@ func _edit(args: Dictionary) -> Dictionary:
 
 
 func _assign(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"shader_path"):
+		return { &"err": "Missing 'shader_path'" }
 	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }
@@ -169,6 +179,12 @@ func _assign(args: Dictionary) -> Dictionary:
 
 
 func _set_param(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"param"):
+		return { &"err": "Missing 'param'" }
+	if not args.has(&"value"):
+		return { &"err": "Missing 'value'" }
 	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }
@@ -192,6 +208,8 @@ func _set_param(args: Dictionary) -> Dictionary:
 
 
 func _get_params(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
 	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }

@@ -38,7 +38,7 @@ func tmap(args: Dictionary) -> Dictionary:
 
 
 func _find_tilemap(args: Dictionary) -> TileMapLayer:
-	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
 	var node_path: String = args[&"node_path"]
 	var root: Node = _editor_plugin.get_editor_interface().get_edited_scene_root()
 	if not root:
@@ -52,6 +52,8 @@ func _find_tilemap(args: Dictionary) -> TileMapLayer:
 
 
 func _set_cell(args: Dictionary) -> Dictionary:
+	if not args.has(&"x") or not args.has(&"y"):
+		return { &"err": "Missing 'x' or 'y'" }
 	var tilemap: TileMapLayer = _find_tilemap(args)
 	if not tilemap:
 		return { &"err": "TileMapLayer not found at: " + args[&"node_path"] }
@@ -64,6 +66,8 @@ func _set_cell(args: Dictionary) -> Dictionary:
 
 
 func _fill_rect(args: Dictionary) -> Dictionary:
+	if not args.has(&"x1") or not args.has(&"y1") or not args.has(&"x2") or not args.has(&"y2"):
+		return { &"err": "Missing 'x1','y1','x2','y2'" }
 	var tilemap: TileMapLayer = _find_tilemap(args)
 	if not tilemap:
 		return { &"err": "TileMapLayer not found at: " + args[&"node_path"] }
@@ -86,6 +90,8 @@ func _fill_rect(args: Dictionary) -> Dictionary:
 
 
 func _get_cell(args: Dictionary) -> Dictionary:
+	if not args.has(&"x") or not args.has(&"y"):
+		return { &"err": "Missing 'x' or 'y'" }
 	var tilemap: TileMapLayer = _find_tilemap(args)
 	if not tilemap:
 		return { &"err": "TileMapLayer not found at: " + args[&"node_path"] }

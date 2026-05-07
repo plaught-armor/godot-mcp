@@ -62,7 +62,7 @@ func file(args: Dictionary) -> Dictionary:
 # list_dir - List files and folders in a directory
 # =============================================================================
 func list_dir(args: Dictionary) -> Dictionary:
-	var root: String = _utils.validate_res_path(args[&"root"])
+	var root: String = _utils.validate_res_path(args.get(&"root", "res://"))
 	if root.is_empty():
 		return { &"err": "Path escapes project root" }
 	var include_hidden: bool = args.get(&"include_hidden", false)
@@ -113,6 +113,8 @@ func list_dir(args: Dictionary) -> Dictionary:
 # read_file - Read contents of a file
 # =============================================================================
 func read_file(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path' parameter" }
 	var path: String = args[&"path"]
 	var start_line: int = args.get(&"start_line", 1)
 	var end_line: int = args.get(&"end_line", 0)
@@ -163,6 +165,8 @@ func read_file(args: Dictionary) -> Dictionary:
 ## Read multiple files in a single call. More efficient than calling
 ## [method read_file] repeatedly. Maximum [const MAX_BULK_FILES] files per call.
 func read_files(args: Dictionary) -> Dictionary:
+	if not args.has(&"paths"):
+		return { &"err": "Missing 'paths' array" }
 	var paths: Array[String]
 	paths.assign(args[&"paths"])
 	var max_bytes: int = args.get(&"max_bytes", DEFAULT_MAX_BYTES)
@@ -189,6 +193,8 @@ func read_files(args: Dictionary) -> Dictionary:
 ## Apply multiple text replacements across files in a single call.
 ## Each edit specifies a file, old text to find, and new text to replace it with.
 func bulk_edit(args: Dictionary) -> Dictionary:
+	if not args.has(&"edits"):
+		return { &"err": "Missing 'edits' array" }
 	var edits: Array
 	edits.assign(args[&"edits"])
 	if edits.is_empty():
@@ -254,6 +260,10 @@ func bulk_edit(args: Dictionary) -> Dictionary:
 # create_file - Create or overwrite a text file
 # =============================================================================
 func create_file(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
+	if not args.has(&"content"):
+		return { &"err": "Missing 'content'" }
 	var path: String = args[&"path"]
 	var content: String = args[&"content"]
 	var overwrite: bool = args.get(&"overwrite", false)
@@ -288,6 +298,8 @@ func create_file(args: Dictionary) -> Dictionary:
 # search_project - Search for text in project files
 # =============================================================================
 func search_project(args: Dictionary) -> Dictionary:
+	if not args.has(&"query"):
+		return { &"err": "Missing 'query'" }
 	var query: String = args[&"query"]
 	var glob_filter: String = args.get(&"glob", "")
 	var max_results: int = args.get(&"max_results", DEFAULT_MAX_RESULTS)
@@ -440,6 +452,10 @@ func _matches_glob(path: String, pattern: String) -> bool:
 # replace_in_files - Bulk find-and-replace across project files
 # =============================================================================
 func replace_in_files(args: Dictionary) -> Dictionary:
+	if not args.has(&"search"):
+		return { &"err": "Missing 'search'" }
+	if not args.has(&"replace"):
+		return { &"err": "Missing 'replace'" }
 	var search: String = args[&"search"]
 	var replace: String = args[&"replace"]
 	var glob_filter: String = args.get(&"glob", "")
@@ -551,6 +567,8 @@ static func _is_binary_ext(ext: String) -> bool:
 # create_folder - Create a directory
 # =============================================================================
 func create_folder(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }
@@ -575,14 +593,15 @@ func create_folder(args: Dictionary) -> Dictionary:
 # delete_file - Delete a file with optional backup
 # =============================================================================
 func delete_file(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
+	if not args.get(&"confirm", false):
+		return { &"err": "Must set confirm=true to delete" }
 	var path: String = args[&"path"]
-	var confirm: bool = args[&"confirm"]
 	var create_backup: bool = args.get(&"create_backup", true)
 
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }
-	if not confirm:
-		return { &"err": "Must set confirm=true to delete" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
@@ -609,14 +628,15 @@ func delete_file(args: Dictionary) -> Dictionary:
 # delete_folder - Delete an empty directory
 # =============================================================================
 func delete_folder(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
+	if not args.get(&"confirm", false):
+		return { &"err": "Must set confirm=true to delete" }
 	var path: String = args[&"path"]
-	var confirm: bool = args[&"confirm"]
 	var recursive: bool = args.get(&"recursive", false)
 
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }
-	if not confirm:
-		return { &"err": "Must set confirm=true to delete" }
 
 	path = _utils.validate_res_path(path)
 	if path.is_empty():
@@ -682,6 +702,10 @@ func _remove_dir_recursive(path: String) -> bool:
 # rename_file - Rename or move a file
 # =============================================================================
 func rename_file(args: Dictionary) -> Dictionary:
+	if not args.has(&"old_path"):
+		return { &"err": "Missing 'old_path'" }
+	if not args.has(&"new_path"):
+		return { &"err": "Missing 'new_path'" }
 	var old_path: String = args[&"old_path"]
 	var new_path: String = args[&"new_path"]
 
@@ -721,6 +745,8 @@ func rename_file(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Find all references to a symbol using word-boundary regex matching.
 func find_references(args: Dictionary) -> Dictionary:
+	if not args.has(&"symbol"):
+		return { &"err": "Missing 'symbol'" }
 	var symbol: String = args[&"symbol"]
 	var glob_filter: String = args.get(&"glob", "")
 	var max_results: int = args.get(&"max_results", DEFAULT_MAX_RESULTS)

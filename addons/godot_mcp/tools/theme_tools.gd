@@ -38,6 +38,8 @@ func theme(args: Dictionary) -> Dictionary:
 
 
 func _create(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = _utils.validate_res_path(args[&"path"])
 
 	var theme := Theme.new()
@@ -54,7 +56,7 @@ func _create(args: Dictionary) -> Dictionary:
 
 func _find_control(args: Dictionary) -> Control:
 	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
-	var node_path: String = args[&"node_path"]
+	var node_path: String = args.get(&"node_path", "")
 
 	var root: Node = _editor_plugin.get_editor_interface().get_edited_scene_root()
 	if not root:
@@ -69,6 +71,12 @@ func _find_control(args: Dictionary) -> Control:
 
 
 func _set_color(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
+	if not args.has(&"color"):
+		return { &"err": "Missing 'color'" }
 	var control: Control = _find_control(args)
 	if not control:
 		return { &"err": "Control node not found at: " + args[&"node_path"] }
@@ -81,6 +89,12 @@ func _set_color(args: Dictionary) -> Dictionary:
 
 
 func _set_constant(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
+	if not args.has(&"value"):
+		return { &"err": "Missing 'value'" }
 	var control: Control = _find_control(args)
 	if not control:
 		return { &"err": "Control node not found at: " + args[&"node_path"] }
@@ -93,6 +107,12 @@ func _set_constant(args: Dictionary) -> Dictionary:
 
 
 func _set_font_size(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
+	if not args.has(&"size"):
+		return { &"err": "Missing 'size'" }
 	var control: Control = _find_control(args)
 	if not control:
 		return { &"err": "Control node not found at: " + args[&"node_path"] }
@@ -105,6 +125,10 @@ func _set_font_size(args: Dictionary) -> Dictionary:
 
 
 func _set_stylebox(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var control: Control = _find_control(args)
 	if not control:
 		return { &"err": "Control node not found at: " + args[&"node_path"] }
@@ -141,6 +165,8 @@ func _set_stylebox(args: Dictionary) -> Dictionary:
 
 
 func _info(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
 	var control: Control = _find_control(args)
 	if not control:
 		return { &"err": "Control node not found at: " + args[&"node_path"] }

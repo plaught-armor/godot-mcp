@@ -61,6 +61,8 @@ func _read(args: Dictionary) -> Dictionary:
 
 
 func _edit(args: Dictionary) -> Dictionary:
+	if not args.has(&"properties"):
+		return { &"err": "Missing 'properties'" }
 	var path: String = _utils.validate_res_path(args[&"path"])
 	if not FileAccess.file_exists(path):
 		return { &"err": "Resource not found: " + path }
@@ -93,6 +95,8 @@ func _edit(args: Dictionary) -> Dictionary:
 
 
 func _create(args: Dictionary) -> Dictionary:
+	if not args.has(&"type"):
+		return { &"err": "Missing 'type'" }
 	var path: String = _utils.validate_res_path(args[&"path"])
 
 	var resource_type: String = args[&"type"]

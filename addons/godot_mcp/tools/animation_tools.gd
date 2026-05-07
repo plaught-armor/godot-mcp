@@ -123,6 +123,8 @@ func _list(args: Dictionary) -> Dictionary:
 
 
 func _create(args: Dictionary) -> Dictionary:
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var player: AnimationPlayer = _find_player(args)
 	if not player:
 		return { &"err": "AnimationPlayer not found" }
@@ -142,6 +144,10 @@ func _create(args: Dictionary) -> Dictionary:
 
 
 func _add_track(args: Dictionary) -> Dictionary:
+	if not args.has(&"animation"):
+		return { &"err": "Missing 'animation'" }
+	if not args.has(&"track_path"):
+		return { &"err": "Missing 'track_path'" }
 	var player: AnimationPlayer = _find_player(args)
 	if not player:
 		return { &"err": "AnimationPlayer not found" }
@@ -176,6 +182,14 @@ func _add_track(args: Dictionary) -> Dictionary:
 
 
 func _set_keyframe(args: Dictionary) -> Dictionary:
+	if not args.has(&"animation"):
+		return { &"err": "Missing 'animation'" }
+	if not args.has(&"track_index"):
+		return { &"err": "Missing 'track_index'" }
+	if not args.has(&"time"):
+		return { &"err": "Missing 'time'" }
+	if not args.has(&"value"):
+		return { &"err": "Missing 'value'" }
 	var player: AnimationPlayer = _find_player(args)
 	if not player:
 		return { &"err": "AnimationPlayer not found" }
@@ -208,6 +222,8 @@ func _set_keyframe(args: Dictionary) -> Dictionary:
 
 
 func _info(args: Dictionary) -> Dictionary:
+	if not args.has(&"animation"):
+		return { &"err": "Missing 'animation'" }
 	var player: AnimationPlayer = _find_player(args)
 	if not player:
 		return { &"err": "AnimationPlayer not found" }
@@ -228,6 +244,8 @@ func _info(args: Dictionary) -> Dictionary:
 
 
 func _remove(args: Dictionary) -> Dictionary:
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var player: AnimationPlayer = _find_player(args)
 	if not player:
 		return { &"err": "AnimationPlayer not found" }
@@ -328,6 +346,8 @@ func _read_bt(bt: AnimationNodeBlendTree) -> Dictionary:
 
 
 func _add_state(args: Dictionary) -> Dictionary:
+	if not args.has(&"state_name"):
+		return { &"err": "Missing 'state_name'" }
 	var tree: AnimationTree = _find_tree(args)
 	if not tree:
 		return { &"err": "AnimationTree not found" }
@@ -361,6 +381,8 @@ func _add_state(args: Dictionary) -> Dictionary:
 
 
 func _remove_state(args: Dictionary) -> Dictionary:
+	if not args.has(&"state_name"):
+		return { &"err": "Missing 'state_name'" }
 	var tree: AnimationTree = _find_tree(args)
 	if not tree:
 		return { &"err": "AnimationTree not found" }
@@ -379,6 +401,10 @@ func _remove_state(args: Dictionary) -> Dictionary:
 
 
 func _add_transition(args: Dictionary) -> Dictionary:
+	if not args.has(&"from_state"):
+		return { &"err": "Missing 'from_state'" }
+	if not args.has(&"to_state"):
+		return { &"err": "Missing 'to_state'" }
 	var tree: AnimationTree = _find_tree(args)
 	if not tree:
 		return { &"err": "AnimationTree not found" }
@@ -417,6 +443,10 @@ func _add_transition(args: Dictionary) -> Dictionary:
 
 
 func _remove_transition(args: Dictionary) -> Dictionary:
+	if not args.has(&"from_state"):
+		return { &"err": "Missing 'from_state'" }
+	if not args.has(&"to_state"):
+		return { &"err": "Missing 'to_state'" }
 	var tree: AnimationTree = _find_tree(args)
 	if not tree:
 		return { &"err": "AnimationTree not found" }
@@ -435,6 +465,12 @@ func _remove_transition(args: Dictionary) -> Dictionary:
 
 
 func _set_blend_node(args: Dictionary) -> Dictionary:
+	if not args.has(&"blend_tree_state"):
+		return { &"err": "Missing 'blend_tree_state'" }
+	if not args.has(&"bt_node_name"):
+		return { &"err": "Missing 'bt_node_name'" }
+	if not args.has(&"bt_node_type"):
+		return { &"err": "Missing 'bt_node_type'" }
 	var tree: AnimationTree = _find_tree(args)
 	if not tree:
 		return { &"err": "AnimationTree not found" }
@@ -486,6 +522,8 @@ func _set_blend_node(args: Dictionary) -> Dictionary:
 
 
 func _set_parameter(args: Dictionary) -> Dictionary:
+	if not args.has(&"parameter"):
+		return { &"err": "Missing 'parameter'" }
 	var tree: AnimationTree = _find_tree(args)
 	if not tree:
 		return { &"err": "AnimationTree not found" }

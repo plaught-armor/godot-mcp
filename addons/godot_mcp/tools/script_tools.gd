@@ -94,6 +94,8 @@ static func _is_safe_command(cmd: String) -> bool:
 # edit_script - Apply a small surgical code edit to a GDScript file
 # =============================================================================
 func edit_script(args: Dictionary) -> Dictionary:
+	if not args.has(&"edit"):
+		return { &"err": "Missing 'edit' payload" }
 	var edit: Dictionary = args[&"edit"]
 	if edit.is_empty():
 		return { &"err": "Missing 'edit' payload" }
@@ -176,6 +178,8 @@ func edit_script(args: Dictionary) -> Dictionary:
 # validate_script
 # =============================================================================
 func validate_script(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }
@@ -262,6 +266,8 @@ const MAX_VALIDATE_BATCH: int = 50
 
 ## Validate multiple GDScript files in a single call.
 func validate_scripts(args: Dictionary) -> Dictionary:
+	if not args.has(&"paths"):
+		return { &"err": "Missing 'paths' array" }
 	var paths: Array[String]
 	paths.assign(args[&"paths"])
 	if paths.is_empty():
@@ -286,6 +292,8 @@ func validate_scripts(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Return all user-defined methods, variables, and signals from a GDScript file.
 func get_script_symbols(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }
@@ -389,6 +397,8 @@ func get_script_symbols(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Search all [code].gd[/code] files for [code]class_name ClassName[/code].
 func find_class_definition(args: Dictionary) -> Dictionary:
+	if not args.has(&"class_name"):
+		return { &"err": "Missing 'class_name'" }
 	var cls_name: String = args[&"class_name"]
 	if cls_name.strip_edges().is_empty():
 		return { &"err": "Missing 'class_name'" }
@@ -464,6 +474,10 @@ func _collect_scripts(path: String, out: PackedStringArray, depth: int = 0) -> v
 # create_script - Create a new GDScript file
 # =============================================================================
 func create_script(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path' parameter" }
+	if not args.has(&"content"):
+		return { &"err": "Missing 'content'" }
 	var path: String = args[&"path"]
 	var content: String = args[&"content"]
 
@@ -505,6 +519,8 @@ func create_script(args: Dictionary) -> Dictionary:
 # format_script - Format a GDScript file using gdscript-formatter
 # =============================================================================
 func format_script(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }

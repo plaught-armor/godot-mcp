@@ -69,6 +69,8 @@ func _get_buses() -> Dictionary:
 
 
 func _add_bus(args: Dictionary) -> Dictionary:
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var bus_name: String = args[&"name"]
 	for i: int in range(AudioServer.bus_count):
 		if AudioServer.get_bus_name(i) == bus_name:
@@ -92,6 +94,8 @@ func _add_bus(args: Dictionary) -> Dictionary:
 
 
 func _set_bus(args: Dictionary) -> Dictionary:
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var bus_name: String = args[&"name"]
 	var idx: int = AudioServer.get_bus_index(bus_name)
 	if idx < 0:
@@ -112,6 +116,10 @@ func _set_bus(args: Dictionary) -> Dictionary:
 
 
 func _add_effect(args: Dictionary) -> Dictionary:
+	if not args.has(&"bus"):
+		return { &"err": "Missing 'bus'" }
+	if not args.has(&"effect_type"):
+		return { &"err": "Missing 'effect_type'" }
 	var bus_name: String = args[&"bus"]
 	var effect_type: String = args[&"effect_type"]
 	var bus_idx: int = AudioServer.get_bus_index(bus_name)
@@ -185,6 +193,10 @@ func _add_effect(args: Dictionary) -> Dictionary:
 
 
 func _add_player(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var root: Node = _get_edited_root()
 	if not root:
 		return { &"err": "No scene open" }
@@ -222,6 +234,8 @@ func _add_player(args: Dictionary) -> Dictionary:
 
 
 func _info(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
 	var node: Node = _find_node(args[&"node_path"])
 	if not node:
 		return { &"err": "Node not found" }

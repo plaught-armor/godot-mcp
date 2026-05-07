@@ -80,6 +80,8 @@ func _create(args: Dictionary) -> Dictionary:
 
 
 func _set_material(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
 	var node: Node = _find_particles(args[&"node_path"])
 	if not node:
 		return { &"err": "GPUParticles not found" }
@@ -118,6 +120,10 @@ func _set_material(args: Dictionary) -> Dictionary:
 
 
 func _set_color_gradient(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"colors"):
+		return { &"err": "Missing 'colors'" }
 	var node: Node = _find_particles(args[&"node_path"])
 	if not node:
 		return { &"err": "GPUParticles not found" }
@@ -144,6 +150,10 @@ func _set_color_gradient(args: Dictionary) -> Dictionary:
 
 
 func _apply_preset(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"preset"):
+		return { &"err": "Missing 'preset'" }
 	var node: Node = _find_particles(args[&"node_path"])
 	if not node:
 		return { &"err": "GPUParticles not found" }
@@ -208,6 +218,8 @@ func _apply_preset(args: Dictionary) -> Dictionary:
 
 
 func _info(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
 	var node: Node = _find_particles(args[&"node_path"])
 	if not node:
 		return { &"err": "GPUParticles not found" }

@@ -128,11 +128,13 @@ func get_project_settings(args: Dictionary) -> Dictionary:
 # set_project_setting
 # =============================================================================
 func set_project_setting(args: Dictionary) -> Dictionary:
-	var setting: String = args[&"setting"]
-	if setting.strip_edges().is_empty():
+	if not args.has(&"setting"):
 		return { &"err": "Missing 'setting'" }
 	if not args.has(&"value"):
 		return { &"err": "Missing 'value'" }
+	var setting: String = args[&"setting"]
+	if setting.strip_edges().is_empty():
+		return { &"err": "Missing 'setting'" }
 
 	var old_value: Variant = ProjectSettings.get_setting(setting) if ProjectSettings.has_setting(setting) else null
 	var new_value: Variant = args[&"value"]
@@ -170,6 +172,10 @@ func get_autoloads(_args: Dictionary) -> Dictionary:
 
 
 func _add_autoload(args: Dictionary) -> Dictionary:
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var autoload_name: String = args[&"name"]
 	var path: String = args[&"path"]
 	var singleton: bool = args.get(&"singleton", true)
@@ -183,6 +189,8 @@ func _add_autoload(args: Dictionary) -> Dictionary:
 
 
 func _rm_autoload(args: Dictionary) -> Dictionary:
+	if not args.has(&"name"):
+		return { &"err": "Missing 'name'" }
 	var autoload_name: String = args[&"name"]
 	var setting_key: String = "autoload/" + autoload_name
 	if not ProjectSettings.has_setting(setting_key):
@@ -205,6 +213,8 @@ const ENUM_HINTS: Dictionary = {
 
 
 func get_node_properties(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_type"):
+		return { &"err": "Missing 'node_type'" }
 	var node_type: String = args[&"node_type"]
 	if node_type.strip_edges().is_empty():
 		return { &"err": "Missing 'node_type'" }
@@ -567,6 +577,8 @@ func clear_console_log(_args: Dictionary) -> Dictionary:
 # open_in_godot
 # =============================================================================
 func open_in_godot(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = args[&"path"]
 	var line: int = args.get(&"line", 0)
 
@@ -755,6 +767,8 @@ func _git_status(_args: Dictionary) -> Dictionary:
 # git_commit - Stage files and commit
 # =============================================================================
 func _git_commit(args: Dictionary) -> Dictionary:
+	if not args.has(&"message"):
+		return { &"err": "Missing 'message'" }
 	var message: String = args[&"message"]
 	var files: Array = args.get(&"files", [])
 	var stage_all: bool = args.get(&"all", false)
@@ -958,6 +972,8 @@ func run_shell_command(args: Dictionary) -> Dictionary:
 # =============================================================================
 ## Return the UID for a given resource path.
 func get_uid(args: Dictionary) -> Dictionary:
+	if not args.has(&"path"):
+		return { &"err": "Missing 'path'" }
 	var path: String = args[&"path"]
 	if path.strip_edges().is_empty():
 		return { &"err": "Missing 'path'" }
@@ -981,6 +997,8 @@ func get_uid(args: Dictionary) -> Dictionary:
 # query_class_info — Full ClassDB introspection for a single class
 # =============================================================================
 func query_class_info(args: Dictionary) -> Dictionary:
+	if not args.has(&"class_name"):
+		return { &"err": "Missing 'class_name'" }
 	var class_name_str: String = args[&"class_name"]
 	if class_name_str.is_empty():
 		return { &"err": "Missing 'class_name'" }
@@ -1155,6 +1173,8 @@ func _export_info() -> Dictionary:
 
 
 func _export_cmd(args: Dictionary) -> Dictionary:
+	if not args.has(&"preset"):
+		return { &"err": "Missing 'preset'" }
 	var preset_name: String = args[&"preset"]
 	var debug: bool = args.get(&"debug", false)
 	var cmd: String = OS.get_executable_path()

@@ -72,7 +72,11 @@ func _find_live_node(root: Node, node_path: String) -> Node:
 # Absorbs former set_collision_shape
 # =============================================================================
 func _setup_collision(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"shape_type"):
+		return { &"err": "Missing 'shape_type'" }
+	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
 	var node_path: String = args[&"node_path"]
 	var shape_type: String = args[&"shape_type"]
 	var shape_params: Dictionary = args.get(&"shape_params", {})
@@ -120,7 +124,9 @@ func _setup_collision(args: Dictionary) -> Dictionary:
 # set_layers — configure collision_layer/collision_mask
 # =============================================================================
 func _set_layers(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
 	var node_path: String = args[&"node_path"]
 
 	var live_root: Node = _get_live_scene(scene_path)
@@ -169,7 +175,11 @@ func _collect_layers(prefix: String) -> Array[Dictionary]:
 # add_raycast — create RayCast2D/3D
 # =============================================================================
 func _add_raycast(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	if not args.has(&"target_position"):
+		return { &"err": "Missing 'target_position'" }
+	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
 	var node_path: String = args[&"node_path"]
 	var target_pos: Dictionary = args[&"target_position"]
 
@@ -207,7 +217,9 @@ func _add_raycast(args: Dictionary) -> Dictionary:
 # setup_body — configure physics body properties
 # =============================================================================
 func _setup_body(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
 	var node_path: String = args[&"node_path"]
 	var properties: Dictionary = args.get(&"properties", {})
 
@@ -230,7 +242,9 @@ func _setup_body(args: Dictionary) -> Dictionary:
 # info — enumerate collision shapes and raycasts in subtree
 # =============================================================================
 func _info(args: Dictionary) -> Dictionary:
-	var scene_path: String = _utils.validate_res_path(args[&"scene_path"])
+	if not args.has(&"node_path"):
+		return { &"err": "Missing 'node_path'" }
+	var scene_path: String = _utils.validate_res_path(args.get(&"scene_path", ""))
 	var node_path: String = args[&"node_path"]
 
 	var live_root: Node = _get_live_scene(scene_path)

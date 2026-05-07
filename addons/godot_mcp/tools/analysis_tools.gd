@@ -181,6 +181,8 @@ func _walk_complexity(node: Node, root: Node, types: Dictionary, scripts: Array[
 # script_references
 # =============================================================================
 func _script_references(args: Dictionary) -> Dictionary:
+	if not args.has(&"query"):
+		return { &"err": "Missing 'query'" }
 	var query: String = args[&"query"]
 	var path: String = args.get(&"path", "res://")
 	var include_addons: bool = args.get(&"include_addons", false)
