@@ -183,6 +183,10 @@ func _serialize_node(node: Node) -> Dictionary:
 # get_runtime_property
 # =============================================================================
 func _get_property(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"property"):
+		return {&"err": "missing 'property'"}
 	var node_path: String = args[&"node_path"]
 	var property: String = args[&"property"]
 	var node: Node = get_tree().root.get_node_or_null(node_path)
@@ -197,6 +201,12 @@ func _get_property(args: Dictionary) -> Dictionary:
 # set_runtime_property
 # =============================================================================
 func _set_property(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"property"):
+		return {&"err": "missing 'property'"}
+	if not args.has(&"value"):
+		return {&"err": "missing 'value'"}
 	var node_path: String = args[&"node_path"]
 	var property: String = args[&"property"]
 	var node: Node = get_tree().root.get_node_or_null(node_path)
@@ -213,6 +223,10 @@ func _set_property(args: Dictionary) -> Dictionary:
 # call_runtime_method
 # =============================================================================
 func _call_method(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"method"):
+		return {&"err": "missing 'method'"}
 	var node_path: String = args[&"node_path"]
 	var method: String = args[&"method"]
 	var node: Node = get_tree().root.get_node_or_null(node_path)
@@ -276,6 +290,8 @@ func _get_metrics() -> Dictionary:
 # =============================================================================
 func _dispatch_inject_input(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
+	if not args.has(&"type"):
+		return {&"err": "missing 'type'"}
 	var input_type: String = args[&"type"]
 	match input_type:
 		&"action":
@@ -294,6 +310,8 @@ func _dispatch_inject_input(args: Dictionary) -> Dictionary:
 # =============================================================================
 func _dispatch_signal_watch(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
+	if not args.has(&"action"):
+		return {&"err": "missing 'action'"}
 	var sig_action: String = args[&"action"]
 	match sig_action:
 		&"watch":
@@ -309,6 +327,8 @@ func _dispatch_signal_watch(args: Dictionary) -> Dictionary:
 # inject_action
 # =============================================================================
 func _inject_action(args: Dictionary) -> Dictionary:
+	if not args.has(&"action"):
+		return {&"err": "missing 'action'"}
 	var action: String = args[&"action"]
 	var pressed: bool = args.get(&"pressed", true)
 	var strength: float = args.get(&"strength", 1.0)
@@ -328,6 +348,8 @@ func _inject_action(args: Dictionary) -> Dictionary:
 # inject_key
 # =============================================================================
 func _inject_key(args: Dictionary) -> Dictionary:
+	if not args.has(&"keycode"):
+		return {&"err": "missing 'keycode'"}
 	var keycode_str: String = args[&"keycode"]
 	var keycode: int = OS.find_keycode_from_string(keycode_str)
 	if keycode == KEY_NONE:
@@ -350,6 +372,10 @@ func _inject_key(args: Dictionary) -> Dictionary:
 # inject_mouse_click
 # =============================================================================
 func _inject_mouse_click(args: Dictionary) -> Dictionary:
+	if not args.has(&"x"):
+		return {&"err": "missing 'x'"}
+	if not args.has(&"y"):
+		return {&"err": "missing 'y'"}
 	var x: float = args[&"x"]
 	var y: float = args[&"y"]
 	var button: String = args.get(&"button", "left")
@@ -402,6 +428,10 @@ func _inject_mouse_motion(args: Dictionary) -> Dictionary:
 # watch_signal
 # =============================================================================
 func _watch_signal(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"signal_name"):
+		return {&"err": "missing 'signal_name'"}
 	var node_path: String = args[&"node_path"]
 	var signal_name: String = args[&"signal_name"]
 	var node: Node = get_tree().root.get_node_or_null(node_path)
@@ -427,6 +457,10 @@ func _watch_signal(args: Dictionary) -> Dictionary:
 # unwatch_signal
 # =============================================================================
 func _unwatch_signal(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"signal_name"):
+		return {&"err": "missing 'signal_name'"}
 	var node_path: String = args[&"node_path"]
 	var signal_name: String = args[&"signal_name"]
 	var key: String = node_path + "::" + signal_name
@@ -643,6 +677,8 @@ func _send_result(id: String, result: Dictionary) -> void:
 # =============================================================================
 func _dispatch_runtime_watch(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
+	if not args.has(&"action"):
+		return {&"err": "missing 'action'"}
 	match args[&"action"]:
 		&"watch":
 			return _watch_property(args)
@@ -656,6 +692,10 @@ func _dispatch_runtime_watch(args: Dictionary) -> Dictionary:
 
 
 func _watch_property(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"property"):
+		return {&"err": "missing 'property'"}
 	var node_path: String = args[&"node_path"]
 	var property: String = args[&"property"]
 	var node: Node = get_tree().root.get_node_or_null(node_path)
@@ -674,6 +714,10 @@ func _watch_property(args: Dictionary) -> Dictionary:
 
 
 func _unwatch_property(args: Dictionary) -> Dictionary:
+	if not args.has(&"node_path"):
+		return {&"err": "missing 'node_path'"}
+	if not args.has(&"property"):
+		return {&"err": "missing 'property'"}
 	var node_path: String = args[&"node_path"]
 	var property: String = args[&"property"]
 	var key: String = node_path + "::" + property
@@ -852,6 +896,8 @@ func _inject_input_tracked_async(id: String, args: Dictionary) -> void:
 # =============================================================================
 func _dispatch_runtime_nav(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
+	if not args.has(&"action"):
+		return {&"err": "missing 'action'"}
 	var use_2d: bool = args.get(&"use_2d", false)
 	match args[&"action"]:
 		&"get_path":
@@ -864,6 +910,10 @@ func _dispatch_runtime_nav(args: Dictionary) -> Dictionary:
 
 
 func _nav_get_path(args: Dictionary, use_2d: bool) -> Dictionary:
+	if not args.has(&"from"):
+		return {&"err": "missing 'from'"}
+	if not args.has(&"to"):
+		return {&"err": "missing 'to'"}
 	var from: Variant = _deserialize_value(args[&"from"])
 	var to: Variant = _deserialize_value(args[&"to"])
 	if use_2d:
@@ -901,6 +951,8 @@ func _nav_get_distance(args: Dictionary, use_2d: bool) -> Dictionary:
 
 
 func _nav_snap(args: Dictionary, use_2d: bool) -> Dictionary:
+	if not args.has(&"point"):
+		return {&"err": "missing 'point'"}
 	var point: Variant = _deserialize_value(args[&"point"])
 	if use_2d:
 		var maps: Array[RID] = NavigationServer2D.get_maps()
@@ -918,6 +970,8 @@ func _nav_snap(args: Dictionary, use_2d: bool) -> Dictionary:
 # =============================================================================
 func _dispatch_runtime_log(args: Dictionary) -> Dictionary:
 	args.merge(args.get(&"properties", {}))
+	if not args.has(&"action"):
+		return {&"err": "missing 'action'"}
 	match args[&"action"]:
 		&"get":
 			return _get_runtime_log(args)
